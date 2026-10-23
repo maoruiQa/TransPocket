@@ -49,6 +49,7 @@ import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.settings.SettingsActivity;
 import nie.translator.rtranslator.tools.CustomLocale;
+import nie.translator.rtranslator.tools.LiveDraftSpeaker;
 import nie.translator.rtranslator.tools.TTS;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.GuiTools;
@@ -772,20 +773,15 @@ public class TranslationFragment extends Fragment {
 
             @Override
             public void onError(int reason) {
-                tts = null;
-                //notifyError(new int[]{reason}, -1);
+                // Keep the wrapper. A downloaded Live Draft voice can still speak when the system engine fails.
             }
         });
     }
 
     public void speak(String text, CustomLocale language) {
-        if (tts != null && tts.isActive()) {
-            if (tts.getVoice() != null && language.equals(new CustomLocale(tts.getVoice().getLocale()))) {
-                tts.speak(text, TextToSpeech.QUEUE_ADD, null, "c01");
-            } else {
-                tts.setLanguage(language, activity);
-                tts.speak(text, TextToSpeech.QUEUE_ADD, null, "c01");
-            }
+        if (tts != null && (tts.isActive() || LiveDraftSpeaker.canSpeak(activity, language.getLanguage()))) {
+            tts.setLanguage(language, activity);
+            tts.speak(text, TextToSpeech.QUEUE_ADD, null, "c01");
         }
     }
 

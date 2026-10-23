@@ -34,6 +34,8 @@ public class TTS {
     //object
     private TextToSpeech tts;
     private final Context appContext;
+    private UtteranceProgressListener progressListener;
+    private CustomLocale currentLocale;
 
     //Attributes used for getting the supported languages
     private static Thread getSupportedLanguageThread;
@@ -91,12 +93,27 @@ public class TTS {
     }
 
     public boolean isActive() {
-        return tts != null;
+        return tts != null || anyLiveDraftReady();
+    }
+
+    private boolean anyLiveDraftReady() {
+        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
+            if (LiveDraftVoices.isReady(appContext, voice.code)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
-        if (isActive()) {
-            float rate = appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+        float rate = appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+        if (currentLocale != null && LiveDraftSpeaker.canSpeak(appContext, currentLocale.getLanguage())) {
+            int result = LiveDraftSpeaker.speak(appContext, text == null ? "" : text.toString(), currentLocale.getLanguage(), rate, queueMode, progressListener, utteranceId);
+            if (result == TextToSpeech.SUCCESS) {
+                return result;
+            }
+        }
+        if (tts != null) {
             if (rate < 0.5f) {
                 rate = 0.5f;
             } else if (rate > 2f) {
@@ -125,28 +142,32 @@ public class TTS {
     }
 
     public int setOnUtteranceProgressListener(UtteranceProgressListener listener) {
-        if (isActive()) {
+        progressListener = listener;
+        if (tts != null) {
             return tts.setOnUtteranceProgressListener(listener);
         }
-        return TextToSpeech.ERROR;
+        return TextToSpeech.SUCCESS;
     }
 
     public int setLanguage(CustomLocale loc, Context context) {
-        if (isActive()) {
+        currentLocale = loc;
+        if (tts != null && loc != null) {
             return tts.setLanguage(new Locale(loc.getLocale().getLanguage()));
         }
-        return TextToSpeech.ERROR;
+        return tts != null ? TextToSpeech.ERROR : TextToSpeech.SUCCESS;
     }
 
     public int stop() {
-        if (isActive()) {
+        LiveDraftSpeaker.stop();
+        if (tts != null) {
             return tts.stop();
         }
-        return TextToSpeech.ERROR;
+        return TextToSpeech.SUCCESS;
     }
 
     public void shutdown() {
-        if (isActive()) {
+        LiveDraftSpeaker.release();
+        if (tts != null) {
             tts.shutdown();
         }
     }

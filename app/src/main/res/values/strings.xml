@@ -223,6 +223,9 @@
     <string name="description_model_gemma">Google TranslateGemma 4B instruction model, Q4_K_M GGUF of google/translategemma-4b-it. Highest quality of the on-device choices, and it needs about 4 GB of memory. Gemma terms apply.</string>
     <string name="error_missing_gemma">Download TranslateGemma before selecting it.</string>
     <string name="asr_model">Speech recognition</string>
+    <string name="title_live_draft">Live Draft</string>
+    <string name="description_live_draft">Optional. Choose a language to download an on-device voice. When that language\'s Live Draft model is on the phone, RTranslator speaks it instead of the system text-to-speech engine.</string>
+    <string name="description_live_draft_voice">About %1$d MB. Replaces the system voice for this language after the download finishes.</string>
     <string name="title_asr_whisper">Whisper Small</string>
     <string name="description_asr_whisper">OpenAI Whisper Small, the speech recognizer already used by the app. Partial int8, about 290 MB.</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>

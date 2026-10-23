@@ -52,6 +52,7 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.LiveDraftVoices;
 import nie.translator.rtranslator.tools.TTS;
 import nie.translator.rtranslator.voice_translation._conversation_mode._conversation.ConversationService;
 import nie.translator.rtranslator.voice_translation._conversation_mode.communication.ConversationBluetoothCommunicator;
@@ -341,21 +342,39 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public void getTTSLanguages(final boolean recycleResult, final GetLocalesListListener responseListener){
         if(recycleResult && !ttsLanguages.isEmpty()){
-            responseListener.onSuccess(ttsLanguages);
+            responseListener.onSuccess(withLiveDraftLanguages(ttsLanguages));
         }else{
             TTS.getSupportedLanguages(this, new TTS.SupportedLanguagesListener() {    //we load TTS languages to catch eventual TTS errors
                 @Override
                 public void onLanguagesListAvailable(ArrayList<CustomLocale> ttsLanguages) {
                     Global.this.ttsLanguages = ttsLanguages;
-                    responseListener.onSuccess(ttsLanguages);
+                    responseListener.onSuccess(withLiveDraftLanguages(ttsLanguages));
                 }
 
                 @Override
                 public void onError(int reason) {
-                    responseListener.onSuccess(new ArrayList<>());
+                    responseListener.onSuccess(withLiveDraftLanguages(new ArrayList<CustomLocale>()));
                 }
             });
         }
+    }
+
+    /** System TTS languages plus any Live Draft voice that is already on disk. */
+    private ArrayList<CustomLocale> withLiveDraftLanguages(ArrayList<CustomLocale> base) {
+        ArrayList<CustomLocale> merged = new ArrayList<>();
+        if (base != null) {
+            merged.addAll(base);
+        }
+        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
+            if (!LiveDraftVoices.isReady(this, voice.code)) {
+                continue;
+            }
+            CustomLocale locale = new CustomLocale(voice.code);
+            if (!CustomLocale.containsLanguage(merged, locale)) {
+                merged.add(locale);
+            }
+        }
+        return merged;
     }
 
 

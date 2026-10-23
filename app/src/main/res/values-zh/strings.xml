@@ -201,6 +201,9 @@
     <string name="description_model_gemma">Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 Q4_K_M GGUF。设备上质量最高的选项，大约需要 4 GB 内存。须遵守 Gemma 条款。</string>
     <string name="error_missing_gemma">请先下载 TranslateGemma，再选择它。</string>
     <string name="asr_model">语音识别</string>
+    <string name="title_live_draft">Live Draft</string>
+    <string name="description_live_draft">可选。勾选一种语言就会下载对应的本地语音。手机上已有这种语言的 Live Draft 模型时，朗读会用它，不再用系统文字转语音。</string>
+    <string name="description_live_draft_voice">大约 %1$d MB。下载完成后，这种语言用 Live Draft 朗读。</string>
     <string name="title_asr_whisper">Whisper Small</string>
     <string name="description_asr_whisper">应用目前使用的 OpenAI Whisper Small，部分 int8，大约 290 MB。</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>

@@ -38,6 +38,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
+import java.util.Collections;
 
 import nie.translator.rtranslator.GeneralActivity;
 import nie.translator.rtranslator.Global;
@@ -223,8 +224,11 @@ public class AccessActivity extends GeneralActivity {
                 global.getDictionaryDownloadInfo(),
                 global.getSileroVadDownloadInfo()
         };
+        ArrayList<DownloadGroupInfo> watched = new ArrayList<>();
+        Collections.addAll(watched, groups);
+        watched.addAll(nie.translator.rtranslator.tools.LiveDraftVoices.wantedDownloads(global));
         ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
-        for (DownloadGroupInfo group : groups) {
+        for (DownloadGroupInfo group : watched) {
             int index = saved.indexOf(group);
             if (index != -1 && !saved.get(index).isAllDownloadCompleted() && saved.get(index).getCurrentProgress() > 0) {
                 return true;

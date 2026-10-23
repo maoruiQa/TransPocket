@@ -14,8 +14,10 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
@@ -34,6 +36,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Locale;
+import java.util.Set;
 
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.LoadingActivity;
@@ -44,6 +48,7 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.LiveDraftVoices;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ResourceManagerView;
 import nie.translator.rtranslator.tools.gui.SegmentProgressBar;
@@ -108,6 +113,7 @@ public class ModelManagerFragment extends Fragment {
     private TextView textRamUsage2;
     private TextView recommendationText;
     private ImageView arrowMozilla;
+    private LinearLayout liveDraftList;
     private boolean guiStateRestored = false;
     private int baselineTranslationRadioId = View.NO_ID;
     private int baselineAsrRadioId = View.NO_ID;
@@ -161,6 +167,7 @@ public class ModelManagerFragment extends Fragment {
         textRamUsage2 = view.findViewById(R.id.textRamUsage2);
         recommendationText = view.findViewById(R.id.recommendationText);
         arrowMozilla = view.findViewById(R.id.arrowMozilla);
+        liveDraftList = view.findViewById(R.id.liveDraftList);
     }
 
     @Override
@@ -180,6 +187,7 @@ public class ModelManagerFragment extends Fragment {
         resourceManagers.put("qwen17Manager", new ResourceManager(activity, global.getQwen3Asr17DownloadInfo(), qwen17ManagerView, downloadManager));
         resourceManagers.put("tatoebaManager", new ResourceManager(activity, global.getTatoebaDownloadInfo(), tatoebaManagerView, downloadManager));
         resourceManagers.put("vadManager", new ResourceManager(activity, global.getSileroVadDownloadInfo(), vadManagerView, downloadManager));
+        buildLiveDraftRows();
 
         // initialize GUI based on shared preferences
         restoreGuiPreferenceState();
@@ -836,7 +844,59 @@ public class ModelManagerFragment extends Fragment {
         if (switchTranslationDict.isChecked() && !downloadManager.checkDownloadCompleted(global.getDictionaryDownloadInfo())) {
             return true;
         }
+        for (DownloadGroupInfo voice : LiveDraftVoices.wantedDownloads(activity)) {
+            if (!LiveDraftVoices.isReadyGroup(activity, voice) && !downloadManager.checkDownloadCompleted(voice)) {
+                return true;
+            }
+        }
         return false;
+    }
+
+    private void buildLiveDraftRows() {
+        if (liveDraftList == null) {
+            return;
+        }
+        liveDraftList.removeAllViews();
+        Set<String> wanted = LiveDraftVoices.wanted(activity);
+        Locale locale = Locale.getDefault();
+        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
+            DownloadGroupInfo download = voice.downloadInfo(activity);
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            ResourceManagerView view = new ResourceManagerView(activity);
+            view.setTitle(voice.displayName(locale));
+            view.setDescription(getString(R.string.description_live_draft_voice, voice.sizeMb()));
+            view.setModelSize(voice.sizeMb());
+            LinearLayout.LayoutParams viewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            viewParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
+            row.addView(view, viewParams);
+            CheckBox box = new CheckBox(activity);
+            box.setContentDescription(voice.displayName(locale));
+            LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            boxParams.topMargin = Tools.convertDpToPixels(activity, 16);
+            boxParams.setMarginEnd(Tools.convertDpToPixels(activity, 16));
+            row.addView(box, boxParams);
+            liveDraftList.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
+            if (LiveDraftVoices.isReady(activity, voice.code)) {
+                manager.setState(ResourceManagerView.State.DOWNLOADED, false);
+            }
+            resourceManagers.put("liveDraft-" + voice.code, manager);
+            box.setChecked(wanted.contains(voice.code));
+            box.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                    LiveDraftVoices.setWanted(activity, voice.code, isChecked);
+                    if (isChecked && !LiveDraftVoices.isReady(activity, voice.code)) {
+                        manager.setState(ResourceManagerView.State.DOWNLOADING);
+                        downloadManager.startDownload(download);
+                    } else if (!isChecked && !LiveDraftVoices.isReady(activity, voice.code)) {
+                        downloadManager.cancelDownload(download);
+                        manager.setState(ResourceManagerView.State.EMPTY);
+                    }
+                }
+            });
+        }
     }
 
     private void startRTranslator(){

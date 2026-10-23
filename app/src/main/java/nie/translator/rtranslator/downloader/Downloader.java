@@ -18,6 +18,10 @@ import com.downloader.PRDownloader;
 import com.downloader.Progress;
 import com.downloader.Status;
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
+
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -427,6 +431,11 @@ public class Downloader {
                     Path zipPath = Paths.get(path + zipname);
                     String topFolder = null;
 
+                    if (zipname.endsWith(".tar.bz2") || zipname.endsWith(".tbz2")) {
+                        unpackTarBz2(path, zipname, listener);
+                        return;
+                    }
+
                     if (new File(zipPath.toString()).exists()) {   //if the zip file is not present, very likely it has been deleted after the unzip and there has been some error in updating the status, so we consider the unpack successful.
 
                         // Using try-with-resources ensures streams close safely even on early exit
@@ -541,6 +550,102 @@ public class Downloader {
             });
             unzipThread.start();
         }
+    }
+
+    /** Extracts a .tar.bz2 next to the archive. Called on the unzip thread. */
+    private void unpackTarBz2(String path, String archiveName, UnpackListener listener) {
+        boolean success = true;
+        String topFolder = "";
+        File archive = new File(path, archiveName);
+        File root = new File(path);
+        if (archive.isFile()) {
+            try (InputStream fileIn = Files.newInputStream(archive.toPath());
+                 BZip2CompressorInputStream bzIn = new BZip2CompressorInputStream(new BufferedInputStream(fileIn));
+                 TarArchiveInputStream tarIn = new TarArchiveInputStream(bzIn)) {
+                String rootPath = root.getCanonicalPath();
+                TarArchiveEntry entry;
+                byte[] buffer = new byte[8192];
+                while ((entry = tarIn.getNextTarEntry()) != null) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        success = false;
+                        break;
+                    }
+                    String name = entry.getName().replace('\\', '/');
+                    if (name.startsWith("./")) {
+                        name = name.substring(2);
+                    }
+                    while (name.startsWith("/")) {
+                        name = name.substring(1);
+                    }
+                    if (name.isEmpty() || name.contains("..")) {
+                        continue;
+                    }
+                    if (topFolder.isEmpty() && name.contains("/")) {
+                        topFolder = name.substring(0, name.indexOf('/'));
+                    }
+                    File dest = new File(root, name);
+                    String destPath = dest.getCanonicalPath();
+                    if (!destPath.equals(rootPath) && !destPath.startsWith(rootPath + File.separator)) {
+                        success = false;
+                        break;
+                    }
+                    if (dest.exists()) {
+                        continue;
+                    }
+                    if (entry.isDirectory()) {
+                        dest.mkdirs();
+                        continue;
+                    }
+                    File parent = dest.getParentFile();
+                    if (parent != null) {
+                        parent.mkdirs();
+                    }
+                    File tmp = new File(dest.getAbsolutePath() + ".tmp");
+                    boolean fileComplete = true;
+                    try (FileOutputStream out = new FileOutputStream(tmp)) {
+                        int count;
+                        while ((count = tarIn.read(buffer)) != -1) {
+                            if (Thread.currentThread().isInterrupted()) {
+                                fileComplete = false;
+                                break;
+                            }
+                            out.write(buffer, 0, count);
+                        }
+                    }
+                    if (!fileComplete) {
+                        tmp.delete();
+                        success = false;
+                        break;
+                    }
+                    if (!tmp.renameTo(dest)) {
+                        tmp.delete();
+                        success = false;
+                        break;
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+                success = false;
+            }
+            if (Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            if (success && !archive.delete()) {
+                success = false;
+            }
+        }
+        final boolean done = success;
+        final String folder = topFolder;
+        mainHandler.post(() -> {
+            unzipThread = null;
+            if (listener != null) {
+                if (done) {
+                    listener.onSuccess(folder);
+                } else {
+                    listener.onFailure();
+                }
+            }
+        });
     }
 
     public abstract static class ClientCallback {
