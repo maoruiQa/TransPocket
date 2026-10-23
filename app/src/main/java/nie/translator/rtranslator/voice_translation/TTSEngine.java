@@ -19,6 +19,9 @@ import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 public class TTSEngine {
     public final static int DELAY_AFTER_TTS_INTERRUPTION_MS = 1500;
     private final ArrayDeque<Pair<GuiMessage, CustomLocale>> messageQueue = new ArrayDeque<>();
+    private final ArrayDeque<StreamPiece> streamQueue = new ArrayDeque<>();
+    private boolean streaming;
+    private long streamId = -1;
     @Nullable
     private Pair<GuiMessage, CustomLocale> executingMessage = null;
     private boolean speaking = false;
@@ -40,6 +43,11 @@ public class TTSEngine {
                     TTSEngine.this.tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                         @Override
                         public void onDone(String utteranceId) {
+                            streaming = false;
+                            streamId = -1;
+                            if (drainStreamQueue()) {
+                                return;
+                            }
                             if (listener != null) {
                                 boolean isLast = messageQueue.isEmpty();
                                 listener.onUtteranceFinished(getExecutingMessage(), isLast);
@@ -112,12 +120,105 @@ public class TTSEngine {
     }
 
 
+    public boolean canStream(CustomLocale language) {
+        return tts != null && tts.canStream(language);
+    }
+
+    /**
+     * Feeds one stable piece of an utterance. Live Draft keeps a single session
+     * open for {@code message}'s id. The system engine queues each piece.
+     */
+    public boolean speakPiece(GuiMessage message, CustomLocale language, boolean finished) {
+        if (pause || message == null || tts == null) {
+            return false;
+        }
+        String text = message.getMessage() == null || message.getMessage().getText() == null ? "" : message.getMessage().getText();
+        if (canStream(language)) {
+            return streamPiece(message, language, text, finished);
+        }
+        if (text.trim().isEmpty()) {
+            return false;
+        }
+        return speak(message, language);
+    }
+
     public boolean speak(GuiMessage message, CustomLocale language){
         messageQueue.addLast(new Pair<>(message, language));
-        if (!messageQueue.isEmpty() && !speaking && !pause) {
+        if (!messageQueue.isEmpty() && !speaking && !pause && !streaming) {
             return speak();
         }
         return false;
+    }
+
+    private boolean streamPiece(GuiMessage message, CustomLocale language, String text, boolean finished) {
+        long id = message.getMessageID();
+        if (streaming && streamId == id) {
+            if (text.length() > 0) {
+                tts.appendStream(text);
+            }
+            if (finished) {
+                tts.finishStream();
+            }
+            return true;
+        }
+        if (text.trim().isEmpty()) {
+            return false;
+        }
+        if (streaming || speaking) {
+            streamQueue.addLast(new StreamPiece(message, language, text, finished));
+            return true;
+        }
+        return openStream(message, language, text, finished);
+    }
+
+    private boolean openStream(GuiMessage message, CustomLocale language, String text, boolean finished) {
+        boolean wasSpeaking = speaking;
+        if (!tts.startStream(language, String.valueOf(message.getMessageID()))) {
+            if (text.trim().isEmpty()) {
+                return false;
+            }
+            return speak(message, language);
+        }
+        streaming = true;
+        streamId = message.getMessageID();
+        speaking = true;
+        executingMessage = new Pair<>(message, language);
+        if (listener != null) {
+            listener.onUtteranceStarting(message, !wasSpeaking);
+        }
+        if (text.length() > 0) {
+            tts.appendStream(text);
+        }
+        if (finished) {
+            tts.finishStream();
+        }
+        return true;
+    }
+
+    private boolean drainStreamQueue() {
+        if (pause || streamQueue.isEmpty() || tts == null) {
+            return false;
+        }
+        StreamPiece first = streamQueue.pollFirst();
+        if (!openStream(first.message, first.language, first.text, first.finished && !sameNext(first))) {
+            return false;
+        }
+        while (!streamQueue.isEmpty() && streamQueue.peekFirst().message.getMessageID() == streamId) {
+            StreamPiece next = streamQueue.pollFirst();
+            if (next.text.length() > 0) {
+                tts.appendStream(next.text);
+            }
+            if (next.finished) {
+                tts.finishStream();
+                break;
+            }
+        }
+        return true;
+    }
+
+    private boolean sameNext(StreamPiece piece) {
+        StreamPiece next = streamQueue.peekFirst();
+        return next != null && next.message.getMessageID() == piece.message.getMessageID();
     }
 
     private boolean speak(){
@@ -153,6 +254,8 @@ public class TTSEngine {
             handler.removeCallbacksAndMessages(null);
             if(tts != null) tts.stop();
             executingMessage = null;
+            streaming = false;
+            streamId = -1;
             pause = true;
         }
     }
@@ -162,7 +265,9 @@ public class TTSEngine {
             Log.i("tts_engine", "tts engine resumed");
             handler.removeCallbacksAndMessages(null);
             pause = false;
-            speak();
+            if (!drainStreamQueue()) {
+                speak();
+            }
         }
     }
 
@@ -179,6 +284,9 @@ public class TTSEngine {
         boolean notify = listener != null && (executingMessage != null || !messageQueue.isEmpty());
         GuiMessage oldExecutingMessage = getExecutingMessage();
         executingMessage = null;
+        streaming = false;
+        streamId = -1;
+        streamQueue.clear();
         messageQueue.clear();
         if(notify){
             listener.onUtteranceFinished(oldExecutingMessage, true);
@@ -206,6 +314,20 @@ public class TTSEngine {
     public boolean isActive() {
         if(tts != null) return tts.isActive();
         return false;
+    }
+
+    private static final class StreamPiece {
+        private final GuiMessage message;
+        private final CustomLocale language;
+        private final String text;
+        private final boolean finished;
+
+        private StreamPiece(GuiMessage message, CustomLocale language, String text, boolean finished) {
+            this.message = message;
+            this.language = language;
+            this.text = text;
+            this.finished = finished;
+        }
     }
 
     public static abstract class TTSEngineListener {

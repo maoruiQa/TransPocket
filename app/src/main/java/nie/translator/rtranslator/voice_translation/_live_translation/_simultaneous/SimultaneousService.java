@@ -265,6 +265,9 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     private void handleRecognition(String text, boolean isFinal, long submittedAt, long asrDone, int audioMs, boolean vadClause) {
+        if (text != null && !text.isEmpty() && isFinal) {
+            android.util.Log.i("simultaneous", "recognized vad=" + vadClause + " audioMs=" + audioMs + " text=" + text);
+        }
         if (text == null || text.isEmpty() || isMetaText(text) || !isFinal || sourceLanguage == null || targetLanguage == null) {
             return;
         }
@@ -358,7 +361,7 @@ public class SimultaneousService extends VoiceTranslationService {
         }
         clause.spoken = clause.spoken + chunk;
         GuiMessage spoken = new GuiMessage(new Message("", SimultaneousService.this, chunk), targetLanguage, targetLanguage, clause.id, false, true);
-        speak(spoken, targetLanguage);
+        speakPiece(spoken, targetLanguage, isFinal);
     }
 
     private static final class PendingClause {

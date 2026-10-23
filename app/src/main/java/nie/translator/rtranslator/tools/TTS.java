@@ -97,16 +97,36 @@ public class TTS {
     }
 
     private boolean anyLiveDraftReady() {
-        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
-            if (LiveDraftVoices.isReady(appContext, voice.code)) {
-                return true;
-            }
+        return LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_KOKORO)
+                || LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_COSYVOICE);
+    }
+
+    public boolean canStream(CustomLocale locale) {
+        return locale != null && LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage());
+    }
+
+    private float speechRate() {
+        return appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+    }
+
+    public boolean startStream(CustomLocale locale, String utteranceId) {
+        currentLocale = locale;
+        if (locale == null) {
+            return false;
         }
-        return false;
+        return LiveDraftSpeaker.start(appContext, locale.getLanguage(), speechRate(), progressListener, utteranceId);
+    }
+
+    public void appendStream(String text) {
+        LiveDraftSpeaker.append(text);
+    }
+
+    public void finishStream() {
+        LiveDraftSpeaker.finish();
     }
 
     public int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
-        float rate = appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+        float rate = speechRate();
         if (currentLocale != null && LiveDraftSpeaker.canSpeak(appContext, currentLocale.getLanguage())) {
             int result = LiveDraftSpeaker.speak(appContext, text == null ? "" : text.toString(), currentLocale.getLanguage(), rate, queueMode, progressListener, utteranceId);
             if (result == TextToSpeech.SUCCESS) {

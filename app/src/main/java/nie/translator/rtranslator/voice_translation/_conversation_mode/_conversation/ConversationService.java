@@ -33,6 +33,7 @@ import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.tools.BluetoothHeadsetUtils;
 import nie.translator.rtranslator.tools.CustomLocale;
+import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.tools.gui.peers.GuiPeer;
@@ -48,6 +49,9 @@ import nie.translator.rtranslator.voice_translation.neural_networks.voice.Record
 public class ConversationService extends VoiceTranslationService {
     //properties
     public static final int SPEECH_BEAM_SIZE = 4;
+    private final Object speechLock = new Object();
+    private long spokenResultId = -1;
+    private String spokenPrefix = "";
     public static final int TRANSLATOR_BEAM_SIZE = 1;
 
     //commands
@@ -180,8 +184,8 @@ public class ConversationService extends VoiceTranslationService {
                                 message.setTextToTranslate(text);
                                 message.setText(translatedText);
                                 GuiMessage guiMessage = new GuiMessage(message, inputLanguage, outputLanguage, resultID, false, isFinal);
-                                if(isFinal && CustomLocale.containsLanguage(ttsLanguages, outputLanguage) && !isAudioMute) { // check if the language can be spoken
-                                    speak(guiMessage, outputLanguage);
+                                if (CustomLocale.containsLanguage(ttsLanguages, outputLanguage) && !isAudioMute) {
+                                    feedTts(translatedText, resultID, isFinal, outputLanguage);
                                 }
                                 notifyMessage(guiMessage);
                                 // we save every new message in the exchanged messages so that the fragment can restore them
@@ -264,6 +268,48 @@ public class ConversationService extends VoiceTranslationService {
                 initializeVoiceRecorder();
             }
         });
+    }
+
+    private void feedTts(String translation, long resultID, boolean isFinal, CustomLocale outputLanguage) {
+        if (translation == null) {
+            translation = "";
+        }
+        if (ttsEngine != null && ttsEngine.canStream(outputLanguage)) {
+            boolean reset = false;
+            String chunk = null;
+            synchronized (speechLock) {
+                if (resultID != spokenResultId) {
+                    spokenResultId = resultID;
+                    spokenPrefix = "";
+                }
+                if (!translation.startsWith(spokenPrefix)) {
+                    if (!isFinal) {
+                        return;
+                    }
+                    reset = true;
+                    spokenPrefix = "";
+                }
+                String pending = translation.substring(spokenPrefix.length());
+                chunk = SimultaneousText.takeSpeakable(pending, isFinal);
+                if (chunk != null) {
+                    spokenPrefix = spokenPrefix + chunk;
+                }
+            }
+            if (reset) {
+                ttsEngine.stop();
+            }
+            if ((chunk == null || chunk.trim().isEmpty()) && !isFinal) {
+                return;
+            }
+            GuiMessage spoken = new GuiMessage(new Message("", this, chunk == null ? "" : chunk), outputLanguage, outputLanguage, resultID, false, true);
+            speakPiece(spoken, outputLanguage, isFinal);
+            return;
+        }
+        if (!isFinal) {
+            return;
+        }
+        GuiMessage spoken = new GuiMessage(new Message(global, translation), outputLanguage, outputLanguage, resultID, false, true);
+        speak(spoken, outputLanguage);
     }
 
     private void sendMessage(ConversationMessage conversationMessage) {

@@ -6,77 +6,101 @@ import android.content.SharedPreferences;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 import nie.translator.rtranslator.downloader.DownloadGroupInfo;
 import nie.translator.rtranslator.downloader.DownloadInfo;
 
 /**
- * Optional per-language Piper voices. A ready voice for a language replaces the system TTS for that language.
- * Archives come from the sherpa-onnx tts-models release and are extracted under files/LiveDraft/&lt;code&gt;/.
+ * On-device Live Draft engines. Kokoro is the default. Fun-CosyVoice 3 is optional.
+ * Piper voices are no longer offered. Files already on disk are left in place.
  */
 public final class LiveDraftVoices {
-    public static final String PREF_WANTED = "liveDraftLanguages";
-    private static final String BASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/";
+    public static final String ENGINE_KOKORO = "kokoro";
+    public static final String ENGINE_COSYVOICE = "cosyvoice3";
+    public static final String PREF_MODEL = "liveDraftModel";
 
-    private static final Voice[] VOICES = new Voice[]{
-            new Voice("zh", "vits-piper-zh_CN-huayan-medium.tar.bz2", 67255926L),
-            new Voice("en", "vits-piper-en_US-lessac-medium.tar.bz2", 67230653L),
-            new Voice("de", "vits-piper-de_DE-thorsten-medium.tar.bz2", 67214254L),
-            new Voice("fr", "vits-piper-fr_FR-siwis-medium.tar.bz2", 67207459L),
-            new Voice("es", "vits-piper-es_ES-davefx-medium.tar.bz2", 67184952L),
-            new Voice("ru", "vits-piper-ru_RU-irina-medium.tar.bz2", 67153308L),
-            new Voice("it", "vits-piper-it_IT-paola-medium.tar.bz2", 67221173L),
-            new Voice("pt", "vits-piper-pt_BR-faber-medium.tar.bz2", 67183065L),
-            new Voice("pl", "vits-piper-pl_PL-gosia-medium.tar.bz2", 67211182L),
-            new Voice("nl", "vits-piper-nl_NL-ronnie-medium.tar.bz2", 67194164L),
-            new Voice("uk", "vits-piper-uk_UA-ukrainian_tts-medium.tar.bz2", 80355083L),
-            new Voice("ar", "vits-piper-ar_JO-kareem-medium.tar.bz2", 67177830L),
-            new Voice("hi", "vits-piper-hi_IN-pratham-medium.tar.bz2", 67238438L),
-            new Voice("tr", "vits-piper-tr_TR-dfki-medium.tar.bz2", 67201221L),
-            new Voice("ko", "vits-mimic3-ko_KO-kss_low.tar.bz2", 66838474L),
-            new Voice("cs", "vits-piper-cs_CZ-jirka-medium.tar.bz2", 67212775L),
-            new Voice("vi", "vits-piper-vi_VN-vais1000-medium.tar.bz2", 67154040L),
-            new Voice("sv", "vits-piper-sv_SE-nst-medium.tar.bz2", 67144884L),
-            new Voice("da", "vits-piper-da_DK-talesyntese-medium.tar.bz2", 67185257L),
-            new Voice("el", "vits-piper-el_GR-rapunzelina-low.tar.bz2", 67105521L),
-            new Voice("fi", "vits-piper-fi_FI-harri-medium.tar.bz2", 67205198L),
-            new Voice("hu", "vits-piper-hu_HU-anna-medium.tar.bz2", 67167701L),
-            new Voice("ro", "vits-piper-ro_RO-mihai-medium.tar.bz2", 67182137L),
-            new Voice("sk", "vits-piper-sk_SK-lili-medium.tar.bz2", 67183092L),
-            new Voice("sl", "vits-piper-sl_SI-artur-medium.tar.bz2", 67025668L),
-            new Voice("ca", "vits-piper-ca_ES-upc_ona-medium.tar.bz2", 67223188L),
-            new Voice("fa", "vits-piper-fa_IR-gyro-medium.tar.bz2", 67183308L),
-            new Voice("id", "vits-piper-id_ID-news_tts-medium.tar.bz2", 67243848L),
-            new Voice("no", "vits-piper-no_NO-talesyntese-medium.tar.bz2", 67194829L),
-            new Voice("ne", "vits-piper-ne_NP-google-medium.tar.bz2", 80242801L),
-            new Voice("sw", "vits-piper-sw_CD-lanfrica-medium.tar.bz2", 67217230L),
-            new Voice("ka", "vits-piper-ka_GE-natia-medium.tar.bz2", 67209457L),
-            new Voice("lv", "vits-piper-lv_LV-aivars-medium.tar.bz2", 67196173L),
-            new Voice("lb", "vits-piper-lb_LU-marylux-medium.tar.bz2", 67184319L),
-            new Voice("ml", "vits-piper-ml_IN-arjun-medium.tar.bz2", 67222458L),
+    private static final String KOKORO_BASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/";
+    private static final String KOKORO_ARCHIVE = "kokoro-int8-multi-lang-v1_1.tar.bz2";
+    private static final long KOKORO_BYTES = 147031220L;
+    private static final String COSY_BASE = "https://huggingface.co/ayousanz/cosy-voice3-onnx/resolve/main/";
+
+    private static final String[] KOKORO_LANGUAGES = new String[]{"en", "zh"};
+    private static final String[] COSY_LANGUAGES = new String[]{"zh", "en", "ja", "ko", "de", "es", "fr", "it", "ru", "yue"};
+
+    /** v1.1-zh speaker ids. English defaults to af_maple. Chinese defaults to zf_001. */
+    private static final Speaker[] KOKORO_VOICES = new Speaker[]{
+            new Speaker(0, "en", "af_maple"),
+            new Speaker(1, "en", "af_sol"),
+            new Speaker(2, "en", "bf_vale"),
+            new Speaker(3, "zh", "zf_001"),
+            new Speaker(12, "zh", "zf_018"),
+            new Speaker(57, "zh", "zf_099"),
+            new Speaker(58, "zh", "zm_009"),
+            new Speaker(102, "zh", "zm_100"),
+    };
+
+    /**
+     * Prompt transcripts must match the reference clips. Nova's text is the one published
+     * with en_female_nova_greeting.wav. Onyx uses the greeting clip shipped beside it.
+     */
+    private static final Speaker[] COSY_VOICES = new Speaker[]{
+            new Speaker(0, "", "Nova", "en_female_nova_greeting.wav",
+                    "Hello, my name is Sarah. I'm excited to help you with your project today. Let me know if you have any questions."),
+            new Speaker(1, "", "Onyx", "en_male_onyx_greeting.wav",
+                    "Hello, my name is Onyx."),
+    };
+
+    private static final Asset[] COSY_FILES = new Asset[]{
+            new Asset("text_embedding_fp32.onnx", "text_embedding_fp32.onnx", 544538870L),
+            new Asset("llm_backbone_initial_fp16.onnx", "llm_backbone_initial_fp16.onnx", 716774004L),
+            new Asset("llm_backbone_decode_fp16.onnx", "llm_backbone_decode_fp16.onnx", 717252905L),
+            new Asset("llm_decoder_fp16.onnx", "llm_decoder_fp16.onnx", 12116511L),
+            new Asset("llm_speech_embedding_fp16.onnx", "llm_speech_embedding_fp16.onnx", 12116180L),
+            new Asset("flow_token_embedding_fp16.onnx", "flow_token_embedding_fp16.onnx", 1050554L),
+            new Asset("flow_speaker_projection_fp16.onnx", "flow_speaker_projection_fp16.onnx", 31710L),
+            new Asset("flow_pre_lookahead_fp16.onnx", "flow_pre_lookahead_fp16.onnx", 1160571L),
+            new Asset("flow.decoder.estimator.fp16.onnx", "flow.decoder.estimator.fp16.onnx", 664306890L),
+            new Asset("hift_f0_predictor_fp32.onnx", "hift_f0_predictor_fp32.onnx", 13264386L),
+            new Asset("hift_source_generator_fp32.onnx", "hift_source_generator_fp32.onnx", 259217882L),
+            new Asset("hift_decoder_fp32.onnx", "hift_decoder_fp32.onnx", 70163545L),
+            new Asset("vocab.json", "vocab.json", 3535130L),
+            new Asset("merges.txt", "merges.txt", 1537044L),
+            new Asset("speech_tokenizer_v3.onnx", "speech_tokenizer_v3.onnx", 969451503L),
+            new Asset("campplus.onnx", "campplus.onnx", 28303423L),
+            new Asset("prompts/en_female_nova_greeting.wav", "en_female_nova_greeting.wav", 312044L),
+            new Asset("prompts/en_male_onyx_greeting.wav", "en_male_onyx_greeting.wav", 328244L),
     };
 
     private LiveDraftVoices() {
     }
 
-    public static List<Voice> all() {
-        ArrayList<Voice> voices = new ArrayList<>(VOICES.length);
-        Collections.addAll(voices, VOICES);
-        return voices;
+    public static List<Engine> engines() {
+        ArrayList<Engine> engines = new ArrayList<>(2);
+        engines.add(engine(ENGINE_KOKORO));
+        engines.add(engine(ENGINE_COSYVOICE));
+        return engines;
     }
 
-    public static Voice byCode(String language) {
-        String code = normalize(language);
-        for (Voice voice : VOICES) {
-            if (voice.code.equals(code)) {
-                return voice;
-            }
+    public static Engine engine(String id) {
+        if (ENGINE_COSYVOICE.equals(id)) {
+            return new Engine(ENGINE_COSYVOICE, COSY_LANGUAGES, COSY_VOICES, cosyBytes());
         }
-        return null;
+        return new Engine(ENGINE_KOKORO, KOKORO_LANGUAGES, KOKORO_VOICES, KOKORO_BYTES);
+    }
+
+    public static String selected(Context context) {
+        String saved = prefs(context).getString(PREF_MODEL, ENGINE_KOKORO);
+        if (ENGINE_COSYVOICE.equals(saved)) {
+            return ENGINE_COSYVOICE;
+        }
+        return ENGINE_KOKORO;
+    }
+
+    public static void setSelected(Context context, String engine) {
+        String id = ENGINE_COSYVOICE.equals(engine) ? ENGINE_COSYVOICE : ENGINE_KOKORO;
+        prefs(context).edit().putString(PREF_MODEL, id).apply();
     }
 
     public static String normalize(String language) {
@@ -88,19 +112,116 @@ public final class LiveDraftVoices {
         if (split > 0) {
             code = code.substring(0, split);
         }
-        if ("nb".equals(code) || "nn".equals(code)) {
-            return "no";
+        if ("cmn".equals(code)) {
+            return "zh";
         }
         return code;
     }
 
-    public static boolean isReady(Context context, String language) {
-        Voice voice = byCode(language);
-        if (voice == null) {
-            return false;
+    public static boolean supports(String engine, String language) {
+        String code = normalize(language);
+        String[] languages = ENGINE_COSYVOICE.equals(engine) ? COSY_LANGUAGES : KOKORO_LANGUAGES;
+        for (String candidate : languages) {
+            if (candidate.equals(code)) {
+                return true;
+            }
         }
-        File dir = voiceDir(context, voice.code);
-        return findFile(dir, ".onnx") != null && findNamed(dir, "tokens.txt") != null;
+        return false;
+    }
+
+    public static boolean isReady(Context context, String engine) {
+        if (ENGINE_COSYVOICE.equals(engine)) {
+            File dir = modelDir(context, ENGINE_COSYVOICE);
+            for (Asset asset : COSY_FILES) {
+                if (findNamed(dir, asset.localName) == null) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        File dir = modelDir(context, ENGINE_KOKORO);
+        boolean model = findNamed(dir, "model.int8.onnx") != null || findNamed(dir, "model.onnx") != null;
+        return model && findNamed(dir, "voices.bin") != null && findNamed(dir, "tokens.txt") != null;
+    }
+
+    /** Selected engine when it is on disk and knows the language. CosyVoice falls back to Kokoro for Chinese and English. */
+    public static String engineFor(Context context, String language) {
+        String selected = selected(context);
+        if (isReady(context, selected) && supports(selected, language)) {
+            return selected;
+        }
+        if (ENGINE_COSYVOICE.equals(selected) && isReady(context, ENGINE_KOKORO) && supports(ENGINE_KOKORO, language)) {
+            return ENGINE_KOKORO;
+        }
+        return null;
+    }
+
+    public static boolean canSpeak(Context context, String language) {
+        return engineFor(context, language) != null;
+    }
+
+    public static int voiceId(Context context, String engine, String language) {
+        String code = normalize(language);
+        int saved = prefs(context).getInt(voiceKey(engine, code), -1);
+        if (saved >= 0 && voiceSupports(engine, saved, code)) {
+            return saved;
+        }
+        Speaker[] voices = ENGINE_COSYVOICE.equals(engine) ? COSY_VOICES : KOKORO_VOICES;
+        for (Speaker speaker : voices) {
+            if (speaker.language.isEmpty() || speaker.language.equals(code)) {
+                return speaker.id;
+            }
+        }
+        return voices.length == 0 ? 0 : voices[0].id;
+    }
+
+    public static void setVoice(Context context, String engine, int voiceId) {
+        Speaker speaker = speaker(engine, voiceId);
+        if (speaker == null) {
+            return;
+        }
+        SharedPreferences.Editor editor = prefs(context).edit();
+        if (speaker.language.isEmpty()) {
+            String[] languages = ENGINE_COSYVOICE.equals(engine) ? COSY_LANGUAGES : KOKORO_LANGUAGES;
+            for (String language : languages) {
+                editor.putInt(voiceKey(engine, language), voiceId);
+            }
+        } else {
+            editor.putInt(voiceKey(engine, speaker.language), voiceId);
+        }
+        editor.apply();
+    }
+
+    public static Speaker speaker(String engine, int voiceId) {
+        Speaker[] voices = ENGINE_COSYVOICE.equals(engine) ? COSY_VOICES : KOKORO_VOICES;
+        for (Speaker speaker : voices) {
+            if (speaker.id == voiceId) {
+                return speaker;
+            }
+        }
+        return null;
+    }
+
+    public static List<Speaker> voices(String engine) {
+        Speaker[] voices = ENGINE_COSYVOICE.equals(engine) ? COSY_VOICES : KOKORO_VOICES;
+        ArrayList<Speaker> copy = new ArrayList<>(voices.length);
+        Collections.addAll(copy, voices);
+        return copy;
+    }
+
+    public static List<String> readyLanguages(Context context) {
+        ArrayList<String> languages = new ArrayList<>();
+        if (isReady(context, ENGINE_KOKORO)) {
+            Collections.addAll(languages, KOKORO_LANGUAGES);
+        }
+        if (isReady(context, ENGINE_COSYVOICE)) {
+            for (String language : COSY_LANGUAGES) {
+                if (!languages.contains(language)) {
+                    languages.add(language);
+                }
+            }
+        }
+        return languages;
     }
 
     public static boolean isLiveDraftDownload(DownloadGroupInfo group) {
@@ -108,75 +229,32 @@ public final class LiveDraftVoices {
             return false;
         }
         String name = group.downloadsInfo[0].getName();
-        return name != null && name.startsWith("vits-") && name.endsWith(".tar.bz2");
+        return KOKORO_ARCHIVE.equals(name) || "text_embedding_fp32.onnx".equals(name);
     }
 
     public static boolean isReadyGroup(Context context, DownloadGroupInfo group) {
         if (!isLiveDraftDownload(group)) {
             return false;
         }
-        for (Voice voice : VOICES) {
-            if (voice.archive.equals(group.downloadsInfo[0].getName())) {
-                return isReady(context, voice.code);
-            }
+        String name = group.downloadsInfo[0].getName();
+        if (KOKORO_ARCHIVE.equals(name)) {
+            return isReady(context, ENGINE_KOKORO);
         }
-        return false;
+        return isReady(context, ENGINE_COSYVOICE);
     }
 
-    public static Set<String> wanted(Context context) {
-        SharedPreferences preferences = context.getSharedPreferences("default", Context.MODE_PRIVATE);
-        Set<String> saved = preferences.getStringSet(PREF_WANTED, Collections.<String>emptySet());
-        return new HashSet<>(saved);
-    }
-
-    public static void setWanted(Context context, String language, boolean want) {
-        String code = normalize(language);
-        if (code.isEmpty()) {
-            return;
-        }
-        Set<String> next = wanted(context);
-        if (want) {
-            next.add(code);
-        } else {
-            next.remove(code);
-        }
-        context.getSharedPreferences("default", Context.MODE_PRIVATE).edit().putStringSet(PREF_WANTED, next).apply();
-    }
-
+    /** Kokoro is part of the first-launch download. Later launches do not start it on their own. */
     public static ArrayList<DownloadGroupInfo> wantedDownloads(Context context) {
         ArrayList<DownloadGroupInfo> groups = new ArrayList<>();
-        Set<String> selected = wanted(context);
-        for (Voice voice : VOICES) {
-            if (selected.contains(voice.code)) {
-                groups.add(voice.downloadInfo(context));
-            }
+        if (context.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("firstStart", true)) {
+            groups.add(engine(selected(context)).downloadInfo(context));
         }
         return groups;
     }
 
-    public static File voiceDir(Context context, String language) {
-        return new File(context.getFilesDir(), "LiveDraft/" + normalize(language));
-    }
-
-    public static File findFile(File dir, String suffix) {
-        if (dir == null || !dir.isDirectory()) {
-            return null;
-        }
-        File[] children = dir.listFiles();
-        if (children == null) {
-            return null;
-        }
-        for (File child : children) {
-            if (child.isDirectory()) {
-                File nested = findFile(child, suffix);
-                if (nested != null) {
-                    return nested;
-                }
-            } else if (child.getName().endsWith(suffix) && child.length() > 0) {
-                return child;
-            }
-        }
-        return null;
+    public static File modelDir(Context context, String engine) {
+        String folder = ENGINE_COSYVOICE.equals(engine) ? ENGINE_COSYVOICE : ENGINE_KOKORO;
+        return new File(context.getFilesDir(), "LiveDraft/" + folder);
     }
 
     public static File findNamed(File dir, String name) {
@@ -200,14 +278,59 @@ public final class LiveDraftVoices {
         return null;
     }
 
-    public static final class Voice {
-        public final String code;
-        public final String archive;
+    public static File findDirectory(File dir, String name) {
+        if (dir == null || !dir.isDirectory()) {
+            return null;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) {
+            return null;
+        }
+        for (File child : children) {
+            if (child.isDirectory()) {
+                if (child.getName().equals(name)) {
+                    return child;
+                }
+                File nested = findDirectory(child, name);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean voiceSupports(String engine, int voiceId, String language) {
+        Speaker speaker = speaker(engine, voiceId);
+        return speaker != null && (speaker.language.isEmpty() || speaker.language.equals(language));
+    }
+
+    private static String voiceKey(String engine, String language) {
+        return "liveDraftVoice." + engine + "." + language;
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences("default", Context.MODE_PRIVATE);
+    }
+
+    private static long cosyBytes() {
+        long total = 0L;
+        for (Asset asset : COSY_FILES) {
+            total += asset.bytes;
+        }
+        return total;
+    }
+
+    public static final class Engine {
+        public final String id;
+        public final String[] languages;
+        public final Speaker[] voices;
         public final long bytes;
 
-        private Voice(String code, String archive, long bytes) {
-            this.code = code;
-            this.archive = archive;
+        private Engine(String id, String[] languages, Speaker[] voices, long bytes) {
+            this.id = id;
+            this.languages = languages;
+            this.voices = voices;
             this.bytes = bytes;
         }
 
@@ -215,20 +338,64 @@ public final class LiveDraftVoices {
             return (int) Math.max(1L, bytes / (1024L * 1024L));
         }
 
-        public String displayName(Locale locale) {
-            String name = new Locale(code).getDisplayLanguage(locale);
-            if (name == null || name.isEmpty() || name.equalsIgnoreCase(code)) {
-                return code;
+        public DownloadGroupInfo downloadInfo(Context context) {
+            String folder = modelDir(context, id).getAbsolutePath() + "/";
+            if (ENGINE_KOKORO.equals(id)) {
+                long kb = Math.max(1L, (KOKORO_BYTES + 1023L) / 1024L);
+                return new DownloadGroupInfo(new DownloadInfo[]{
+                        new DownloadInfo(KOKORO_ARCHIVE, KOKORO_BASE + KOKORO_ARCHIVE, folder, kb, false, true)
+                });
             }
-            return name;
+            DownloadInfo[] infos = new DownloadInfo[COSY_FILES.length];
+            for (int i = 0; i < COSY_FILES.length; i++) {
+                Asset asset = COSY_FILES[i];
+                long kb = Math.max(1L, (asset.bytes + 1023L) / 1024L);
+                infos[i] = new DownloadInfo(asset.localName, COSY_BASE + asset.remotePath, folder, kb, false, false);
+            }
+            return new DownloadGroupInfo(infos);
+        }
+    }
+
+    public static final class Speaker {
+        public final int id;
+        public final String language;
+        public final String name;
+        public final String promptWav;
+        public final String promptText;
+
+        private Speaker(int id, String language, String name) {
+            this(id, language, name, "", "");
         }
 
-        public DownloadGroupInfo downloadInfo(Context context) {
-            String folder = voiceDir(context, code).getAbsolutePath() + "/";
-            long kb = Math.max(1L, (bytes + 1023L) / 1024L);
-            return new DownloadGroupInfo(new DownloadInfo[]{
-                    new DownloadInfo(archive, BASE + archive, folder, kb, false, true)
-            });
+        private Speaker(int id, String language, String name, String promptWav, String promptText) {
+            this.id = id;
+            this.language = language;
+            this.name = name;
+            this.promptWav = promptWav;
+            this.promptText = promptText;
+        }
+
+        public String label(Locale locale) {
+            if (language == null || language.isEmpty()) {
+                return name;
+            }
+            String spoken = new Locale(language).getDisplayLanguage(locale == null ? Locale.getDefault() : locale);
+            if (spoken == null || spoken.isEmpty()) {
+                return name;
+            }
+            return name + " · " + spoken;
+        }
+    }
+
+    private static final class Asset {
+        private final String remotePath;
+        private final String localName;
+        private final long bytes;
+
+        private Asset(String remotePath, String localName, long bytes) {
+            this.remotePath = remotePath;
+            this.localName = localName;
+            this.bytes = bytes;
         }
     }
 }

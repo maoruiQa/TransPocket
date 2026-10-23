@@ -592,7 +592,9 @@ public class WalkieTalkieService extends VoiceTranslationService {
         }
         if (speakChunk) {
             GuiMessage spoken = new GuiMessage(new Message("", WalkieTalkieService.this, chunk), outputLanguage, outputLanguage, resultID, isMine, true);
-            speak(spoken, outputLanguage);
+            speakPiece(spoken, outputLanguage, isFinal);
+        } else if (isFinal) {
+            speakPiece(new GuiMessage(new Message("", WalkieTalkieService.this, ""), outputLanguage, outputLanguage, resultID, isMine, true), outputLanguage, true);
         }
         if (closeIfIdle && !isTtsBusy()) {
             finishWithoutSpeech();

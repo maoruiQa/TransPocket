@@ -238,8 +238,12 @@
     <string name="error_missing_qwen35">Download Qwen3.5 0.8B before selecting it.</string>
     <string name="asr_model">Speech recognition</string>
     <string name="title_live_draft">Live Draft</string>
-    <string name="description_live_draft">Optional. Choose a language to download an on-device voice. When that language\'s Live Draft model is on the phone, RTranslator speaks it instead of the system text-to-speech engine.</string>
-    <string name="description_live_draft_voice">About %1$d MB. Replaces the system voice for this language after the download finishes.</string>
+    <string name="description_live_draft">Optional. Kokoro is the default on-device voice. Fun-CosyVoice 3 is the other choice. After the model is on the phone, supported languages are spoken with it instead of the system text-to-speech engine. Audio starts while the sentence is still being generated.</string>
+    <string name="title_live_draft_kokoro">Kokoro</string>
+    <string name="title_live_draft_cosyvoice">Fun-CosyVoice 3</string>
+    <string name="description_live_draft_kokoro">About %1$d MB. Chinese and English. This is the default Live Draft model.</string>
+    <string name="description_live_draft_cosyvoice">About %1$d MB. Chinese, English, Japanese, Korean, German, Spanish, French, Italian, Russian, and Cantonese. If playback reaches the end of the audio before the next piece is ready, it pauses and continues without skipping words.</string>
+    <string name="title_live_draft_voice">Voice</string>
     <string name="title_asr_whisper">Whisper Small</string>
     <string name="description_asr_whisper">OpenAI Whisper Small, the speech recognizer already used by the app. Partial int8, about 290 MB.</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>

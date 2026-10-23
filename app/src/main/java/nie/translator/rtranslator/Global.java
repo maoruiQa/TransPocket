@@ -365,17 +365,14 @@ public class Global extends Application implements DefaultLifecycleObserver {
         }
     }
 
-    /** System TTS languages plus any Live Draft voice that is already on disk. */
+    /** System TTS languages plus languages the downloaded Live Draft engine can speak. */
     private ArrayList<CustomLocale> withLiveDraftLanguages(ArrayList<CustomLocale> base) {
         ArrayList<CustomLocale> merged = new ArrayList<>();
         if (base != null) {
             merged.addAll(base);
         }
-        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
-            if (!LiveDraftVoices.isReady(this, voice.code)) {
-                continue;
-            }
-            CustomLocale locale = new CustomLocale(voice.code);
+        for (String code : LiveDraftVoices.readyLanguages(this)) {
+            CustomLocale locale = new CustomLocale(code);
             if (!CustomLocale.containsLanguage(merged, locale)) {
                 merged.add(locale);
             }

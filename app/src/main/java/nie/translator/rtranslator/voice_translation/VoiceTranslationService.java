@@ -285,6 +285,14 @@ public abstract class VoiceTranslationService extends GeneralService {
         }
     }
 
+    public synchronized void speakPiece(GuiMessage message, CustomLocale language, boolean finished) {
+        synchronized (mLock) {
+            if (ttsEngine != null && ttsEngine.isActive()) {
+                ttsEngine.speakPiece(message, language, finished);
+            }
+        }
+    }
+
     protected boolean shouldDeactivateMicDuringTTS() {
         return true;
     }

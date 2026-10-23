@@ -216,8 +216,12 @@
     <string name="error_missing_qwen35">請先下載 Qwen3.5 0.8B，再選擇它。</string>
     <string name="asr_model">語音辨識</string>
     <string name="title_live_draft">Live Draft</string>
-    <string name="description_live_draft">可選。勾選一種語言就會下載對應的本地語音。手機上已有這種語言的 Live Draft 模型時，朗讀會用它，不再用系統文字轉語音。</string>
-    <string name="description_live_draft_voice">大約 %1$d MB。下載完成後，這種語言用 Live Draft 朗讀。</string>
+    <string name="description_live_draft">可選。預設使用 Kokoro，也可以改用 Fun-CosyVoice 3。模型下載到手機後，它支援的語言會用它朗讀，不再用系統文字轉語音。聲音會在句子還在生成時就開始播放。</string>
+    <string name="title_live_draft_kokoro">Kokoro</string>
+    <string name="title_live_draft_cosyvoice">Fun-CosyVoice 3</string>
+    <string name="description_live_draft_kokoro">大約 %1$d MB。中文和英文。這是預設的 Live Draft 模型。</string>
+    <string name="description_live_draft_cosyvoice">大約 %1$d MB。中文、英文、日文、韓文、德文、西班牙文、法文、意大利文、俄文和粵語。播放追上還沒生成的聲音時會停一下再繼續，不會把字跳過。</string>
+    <string name="title_live_draft_voice">聲音</string>
     <string name="title_asr_whisper">Whisper Small</string>
     <string name="description_asr_whisper">應用目前使用的 OpenAI Whisper Small，部分 int8，大約 290 MB。</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>

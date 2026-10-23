@@ -13,12 +13,15 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -36,8 +39,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.LoadingActivity;
@@ -48,6 +51,7 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.LiveDraftSpeaker;
 import nie.translator.rtranslator.tools.LiveDraftVoices;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ResourceManagerView;
@@ -324,8 +328,8 @@ public class ModelManagerFragment extends Fragment {
         new Thread(() -> {
             ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
             HashMap<String, Boolean> ready = new HashMap<>();
-            for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
-                ready.put(voice.code, LiveDraftVoices.isReady(host, voice.code));
+            for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
+                ready.put(engine.id, LiveDraftVoices.isReady(host, engine.id));
             }
             host.runOnUiThread(() -> {
                 if (generation != managerLoadGeneration || !isAdded()) {
@@ -996,46 +1000,101 @@ public class ModelManagerFragment extends Fragment {
             return;
         }
         liveDraftList.removeAllViews();
-        Set<String> wanted = LiveDraftVoices.wanted(activity);
-        Locale locale = Locale.getDefault();
-        for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
-            DownloadGroupInfo download = voice.downloadInfo(activity);
+        String selected = LiveDraftVoices.selected(activity);
+        RadioGroup group = new RadioGroup(activity);
+        group.setOrientation(RadioGroup.VERTICAL);
+        Spinner voices = new Spinner(activity);
+        for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
+            DownloadGroupInfo download = engine.downloadInfo(activity);
             LinearLayout row = new LinearLayout(activity);
             row.setOrientation(LinearLayout.HORIZONTAL);
+            RadioButton radio = new RadioButton(activity);
+            radio.setId(View.generateViewId());
+            radio.setTag(engine.id);
+            radio.setChecked(engine.id.equals(selected));
+            radio.setContentDescription(engineTitle(engine.id));
+            row.addView(radio, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
             ResourceManagerView view = new ResourceManagerView(activity);
-            view.setTitle(voice.displayName(locale));
-            view.setDescription(getString(R.string.description_live_draft_voice, voice.sizeMb()));
-            view.setModelSize(voice.sizeMb());
+            view.setTitle(engineTitle(engine.id));
+            view.setDescription(getString(engineDescription(engine.id), engine.sizeMb()));
+            view.setModelSize(engine.sizeMb());
             LinearLayout.LayoutParams viewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
             viewParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
             row.addView(view, viewParams);
-            CheckBox box = new CheckBox(activity);
-            box.setContentDescription(voice.displayName(locale));
-            LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            boxParams.topMargin = Tools.convertDpToPixels(activity, 16);
-            boxParams.setMarginEnd(Tools.convertDpToPixels(activity, 16));
-            row.addView(box, boxParams);
-            liveDraftList.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            group.addView(row, new RadioGroup.LayoutParams(RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT));
             ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
-            if (ready != null && Boolean.TRUE.equals(ready.get(voice.code))) {
+            if (ready != null && Boolean.TRUE.equals(ready.get(engine.id))) {
                 manager.setState(ResourceManagerView.State.DOWNLOADED, false);
             }
-            resourceManagers.put("liveDraft-" + voice.code, manager);
-            box.setChecked(wanted.contains(voice.code));
-            box.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-                @Override
-                public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                    LiveDraftVoices.setWanted(activity, voice.code, isChecked);
-                    if (isChecked && !LiveDraftVoices.isReady(activity, voice.code)) {
-                        manager.setState(ResourceManagerView.State.DOWNLOADING);
-                        downloadManager.startDownload(download);
-                    } else if (!isChecked && !LiveDraftVoices.isReady(activity, voice.code)) {
-                        downloadManager.cancelDownload(download);
-                        manager.setState(ResourceManagerView.State.EMPTY);
-                    }
-                }
-            });
+            resourceManagers.put("liveDraft-" + engine.id, manager);
         }
+        liveDraftList.addView(group, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        TextView voiceLabel = new TextView(activity);
+        voiceLabel.setText(R.string.title_live_draft_voice);
+        int pad = Tools.convertDpToPixels(activity, 16);
+        voiceLabel.setPadding(pad, pad, pad, 0);
+        liveDraftList.addView(voiceLabel);
+        LinearLayout.LayoutParams voiceParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        voiceParams.setMarginStart(pad);
+        voiceParams.setMarginEnd(pad);
+        liveDraftList.addView(voices, voiceParams);
+        fillVoiceSpinner(voices, selected);
+        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
+                RadioButton button = radioGroup.findViewById(checkedId);
+                if (button == null || !(button.getTag() instanceof String)) {
+                    return;
+                }
+                String engine = (String) button.getTag();
+                LiveDraftVoices.setSelected(activity, engine);
+                LiveDraftSpeaker.release();
+                fillVoiceSpinner(voices, engine);
+            }
+        });
+    }
+
+    private void fillVoiceSpinner(Spinner spinner, String engine) {
+        List<LiveDraftVoices.Speaker> speakers = LiveDraftVoices.voices(engine);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item);
+        String uiLanguage = LiveDraftVoices.normalize(Locale.getDefault().getLanguage());
+        int saved = LiveDraftVoices.voiceId(activity, engine, uiLanguage);
+        int selectedIndex = 0;
+        for (int i = 0; i < speakers.size(); i++) {
+            adapter.add(speakers.get(i).label(Locale.getDefault()));
+            if (speakers.get(i).id == saved) {
+                selectedIndex = i;
+            }
+        }
+        spinner.setOnItemSelectedListener(null);
+        spinner.setAdapter(adapter);
+        spinner.setSelection(selectedIndex);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position >= 0 && position < speakers.size()) {
+                    LiveDraftVoices.setVoice(activity, engine, speakers.get(position).id);
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+    }
+
+    private int engineDescription(String engine) {
+        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
+            return R.string.description_live_draft_cosyvoice;
+        }
+        return R.string.description_live_draft_kokoro;
+    }
+
+    private String engineTitle(String engine) {
+        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
+            return getString(R.string.title_live_draft_cosyvoice);
+        }
+        return getString(R.string.title_live_draft_kokoro);
     }
 
     private void startRTranslator(){
