@@ -6,8 +6,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.os.Binder;
+import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -39,6 +42,9 @@ public class DownloaderService extends Service {
     private final java.util.Map<Integer, Integer> lastChildProgresses = new java.util.HashMap<>();
     private final java.util.Map<Integer, Long> lastChildUpdateTimes = new java.util.HashMap<>();
     public static boolean running = false;
+    private boolean foregroundStarted = false;
+    private boolean foregroundTimeoutHandled = false;
+    private PowerManager.WakeLock downloadWakeLock;
     private int nextNotificationId = 2000;  //this will be incremented and used as a unique id for every downloader in this service instance, it will be used as unique id for the notifications
 
     public class LocalBinder extends Binder {
@@ -106,22 +112,15 @@ public class DownloaderService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i("download", "download service started");
+        // Promote before any preference work. startForegroundService() gives this only a few seconds,
+        // and a dataSync service without a type is rejected on Android 14+.
+        if (!ensureForeground()) {
+            running = false;
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
         if(!running) {
             running = true;
-            // Initialize the notification system
-            notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            summaryBuilder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setGroup(GROUP_KEY_DOWNLOADS)
-                    .setGroupSummary(true)
-                    .setOnlyAlertOnce(true)
-                    .setOngoing(true)
-                    .setPriority(NotificationCompat.PRIORITY_HIGH);
-
-            summaryBuilder.setContentTitle("Preparing downloads...")
-                    .setProgress(100, 0, true); // Indeterminate before first update
-
-            startForeground(SUMMARY_ID, summaryBuilder.build());
 
             //start or resume the downloads from the preferences (if they are not paused)
             SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
@@ -163,9 +162,73 @@ public class DownloaderService extends Service {
                     }
                 }
             }
+            refreshWakeLock();
         }
 
-        return super.onStartCommand(intent, flags, startId);
+        return START_STICKY;
+    }
+
+    /**
+     * @return false when the system refuses another dataSync foreground service (the 6-hour
+     * background quota on Android 15+). The saved running index is left in place so the next
+     * time the user opens the app the quota resets and the transfer resumes.
+     */
+    private boolean ensureForeground() {
+        if (foregroundStarted) {
+            return true;
+        }
+        notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        summaryBuilder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setGroup(GROUP_KEY_DOWNLOADS)
+                .setGroupSummary(true)
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        summaryBuilder.setContentTitle("Preparing downloads...")
+                .setProgress(100, 0, true);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(SUMMARY_ID, summaryBuilder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(SUMMARY_ID, summaryBuilder.build());
+            }
+            foregroundStarted = true;
+            return true;
+        } catch (RuntimeException e) {
+            Log.e("download", "startForeground failed", e);
+            return false;
+        }
+    }
+
+    @Override
+    public void onTimeout(int startId) {
+        handleForegroundTimeout();
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        handleForegroundTimeout();
+    }
+
+    /** Android 15+ drops a background dataSync service after its quota. Stop immediately or the process is crashed. */
+    private void handleForegroundTimeout() {
+        if (foregroundTimeoutHandled) {
+            return;
+        }
+        foregroundTimeoutHandled = true;
+        for (Downloader downloader : new ArrayList<>(downloaders)) {
+            updateDownloadGroupInfoPreference(downloader.getDownloadGroupInfo());
+        }
+        releaseDownloadWakeLock();
+        foregroundStarted = false;
+        running = false;
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE);
+        } catch (RuntimeException e) {
+            Log.w("download", "stopForeground failed", e);
+        }
+        stopSelf();
     }
 
     @Override
@@ -193,15 +256,34 @@ public class DownloaderService extends Service {
         }
     }
 
+    public boolean hasActiveDownload() {
+        for (Downloader downloader : downloaders) {
+            DownloadGroupInfo info = downloader.getDownloadGroupInfo();
+            if (info != null && !info.isAllDownloadCompleted() && info.getRunningDownloadIndex() != -1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void startDownload(DownloadGroupInfo download) {
         int index = downloaders.indexOf(download);
         if(index == -1) {
             final Downloader newDownloader = new Downloader(download, this, nextNotificationId++, downloaderCallback);
             downloaders.add(newDownloader);
             index = downloaders.size()-1;
-            addDownloadGroupInfoPreference(download);
+            addDownloadGroupInfoPreference(newDownloader.getDownloadGroupInfo());
         }
-        downloaders.get(index).startDownloads();
+        Downloader downloader = downloaders.get(index);
+        downloader.startDownloads();
+        // onAllCompleted() may have removed this downloader before we get back here.
+        // runningDownloadIndex is assigned inside startDownloads(). Writing the preference earlier
+        // stored -1, so DownloadManager treated the transfer as paused and stopped this service.
+        int updated = downloaders.indexOf(downloader);
+        if (updated != -1) {
+            updateDownloadGroupInfoPreference(downloaders.get(updated).getDownloadGroupInfo());
+        }
+        refreshWakeLock();
     }
 
     public void pauseAllDownloads(){
@@ -217,6 +299,7 @@ public class DownloaderService extends Service {
             DownloadInfo runningDownload = downloadGroupInfo.getRunningDownload();
             downloaders.get(index).pauseDownloads();
             updateDownloadProgress(downloadGroupInfo, runningDownload.name, downloadGroupInfo.getCurrentProgress(), true, runningDownload.isUnzipping(), runningDownload.isTestingIntegrity());
+            refreshWakeLock();
         }
     }
 
@@ -370,6 +453,7 @@ public class DownloaderService extends Service {
             int safeId = downloaders.get(index).getId();
             downloaders.remove(index);
             deleteDownloadNotification(safeId);
+            refreshWakeLock();
             checkAndStopService();
         }
     }
@@ -403,17 +487,50 @@ public class DownloaderService extends Service {
 
     @Override
     public void onDestroy() {
+        releaseDownloadWakeLock();
         super.onDestroy();
         running = false;
+        foregroundStarted = false;
         downloaders.clear();
         clients.clear();
         PRDownloader.shutDown();
     }
 
+    /** A foreground service does not keep the CPU on. Without this, model transfers stall once the screen turns off. */
+    private void refreshWakeLock() {
+        if (hasActiveDownload()) {
+            acquireDownloadWakeLock();
+        } else {
+            releaseDownloadWakeLock();
+        }
+    }
+
+    private void acquireDownloadWakeLock() {
+        if (downloadWakeLock != null && downloadWakeLock.isHeld()) {
+            return;
+        }
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager == null) {
+            return;
+        }
+        downloadWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "rtranslator:modelDownload");
+        downloadWakeLock.setReferenceCounted(false);
+        downloadWakeLock.acquire();
+    }
+
+    private void releaseDownloadWakeLock() {
+        if (downloadWakeLock != null && downloadWakeLock.isHeld()) {
+            downloadWakeLock.release();
+        }
+        downloadWakeLock = null;
+    }
+
 
     private void checkAndStopService() {
         if (areAllDownloadsFinished()) {
-            stopForeground(true);
+            releaseDownloadWakeLock();
+            foregroundStarted = false;
+            stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
         }
     }

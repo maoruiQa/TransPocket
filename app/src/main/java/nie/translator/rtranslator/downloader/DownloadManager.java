@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -30,6 +31,7 @@ public class DownloadManager implements ServiceConnection {
     private final Downloader.ClientCallback serviceCallback;
     private ArrayList<DownloadGroupInfo> downloadsToStart = new ArrayList<>();
     private boolean shouldStartAllDownloads = false;
+    private boolean serviceBound = false;
     private Handler mainHandler;
 
 
@@ -71,22 +73,25 @@ public class DownloadManager implements ServiceConnection {
      * This method will start the download service (if there are downloads to resume) and resume all the unfinished downloads
      */
     public boolean subscribeAndResumeDownload(@Nullable Callback callback) {
-        if(this.callback == null) {
-            this.callback = callback;
-            boolean shouldStartService = areDownloadsRunning(true);
-            if(shouldStartService) {
-                startAndBindService();
-                return true;
-            }
-        }
-        return false;
+        return subscribeAndResumeDownload(callback, null);
     }
 
     /** Same as {@link #subscribeAndResumeDownload(Callback)} but uses a status list that was already parsed. */
     public boolean subscribeAndResumeDownload(@Nullable Callback callback, @Nullable ArrayList<DownloadGroupInfo> savedStatus) {
         if(this.callback == null) {
             this.callback = callback;
-            if(hasActiveDownload(savedStatus, true)) {
+            if (downloaderService != null) {
+                downloaderService.registerClient(serviceCallback);
+                mainHandler.post(() -> {
+                    if (this.callback != null) this.callback.onServiceConnected();
+                });
+                return true;
+            }
+            boolean shouldStartService = savedStatus != null
+                    ? hasActiveDownload(savedStatus, true)
+                    : areDownloadsRunning(true);
+            // A start requested before the previous screen stopped still has to be delivered.
+            if(shouldStartService || serviceBound || !downloadsToStart.isEmpty() || shouldStartAllDownloads) {
                 startAndBindService();
                 return true;
             }
@@ -96,16 +101,21 @@ public class DownloadManager implements ServiceConnection {
 
     public void unsubscribe() {
         if(callback != null) {
+            boolean pendingStart = !downloadsToStart.isEmpty() || shouldStartAllDownloads;
+            // Preferences are the fallback for the moment before onServiceConnected. The live
+            // service wins once it is bound: a transfer whose running index has not been saved yet
+            // must not be stopped when the screen goes to the background.
+            boolean keepService = pendingStart || areDownloadsRunning(false);
             if (downloaderService != null) {
                 downloaderService.unregisterClient(serviceCallback);
+                keepService = keepService || downloaderService.hasActiveDownload();
             }
-            boolean shouldStopService = !areDownloadsRunning(false);
-            if(shouldStopService) {
+            if(!keepService) {
                 stopAndUnbindService();
-            }else{
-                //we just unbind from the service
-                context.unbindService(this);
-                downloaderService = null;
+            } else if (!pendingStart && serviceBound) {
+                // Stay bound while a start is still queued, otherwise onServiceConnected never runs
+                // and the service only sees the old paused status.
+                unbindOnly();
             }
             this.callback = null;
         }
@@ -113,14 +123,19 @@ public class DownloadManager implements ServiceConnection {
 
     public void startDownload(DownloadGroupInfo downloadGroup){
         DownloadGroupInfo downloadGroupCopy = downloadGroup.clone();
-        if(downloaderService == null && !downloadsToStart.contains(downloadGroup)){
-            downloadsToStart.add(downloadGroupCopy);
-            if(!DownloaderService.running){
-                startAndBindService();
-            }
-        }else if(downloaderService != null) {
+        // Persist the running file before the service exists. Leaving the screen used to stop the
+        // service, because the saved status still had runningDownloadIndex == -1 until the first
+        // file reached 100%.
+        markNextFileRunning(downloadGroupCopy);
+        if(downloaderService != null) {
             downloaderService.startDownload(downloadGroupCopy);
+            return;
         }
+        persistRunningDownload(downloadGroupCopy);
+        if(!downloadsToStart.contains(downloadGroupCopy)){
+            downloadsToStart.add(downloadGroupCopy);
+        }
+        startAndBindService();
     }
 
     public boolean pauseDownload(DownloadGroupInfo downloadGroup){
@@ -149,15 +164,15 @@ public class DownloadManager implements ServiceConnection {
     }
 
     public boolean startAllDownloads() {
-        if(downloaderService == null && !shouldStartAllDownloads){
-            shouldStartAllDownloads = true;
-            if(!DownloaderService.running){
-                startAndBindService();
-            }
-        } else if(downloaderService != null) {
+        if(downloaderService != null) {
             downloaderService.startAllDownloads();
             return true;
         }
+        if(!shouldStartAllDownloads){
+            shouldStartAllDownloads = true;
+            markIncompleteDownloadsRunning();
+        }
+        startAndBindService();
         return false;
     }
 
@@ -224,22 +239,72 @@ public class DownloadManager implements ServiceConnection {
     }
 
     private void startAndBindService(){
-        // start the service
         final Intent intent = new Intent(context, DownloaderService.class);
-        context.startService(intent);
-        //we bind to the service
-        boolean result = context.bindService(new Intent(context, DownloaderService.class), this, BIND_ABOVE_CLIENT);
-        Log.d("bind download", result ? "success" : "failed");
+        try {
+            // startService() from the background is rejected, and a dataSync service must be
+            // promoted with startForeground() within a few seconds of this call.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (RuntimeException e) {
+            Log.e("download", "could not start download service", e);
+            return;
+        }
+        if (!serviceBound) {
+            try {
+                serviceBound = context.bindService(intent, this, Context.BIND_AUTO_CREATE | BIND_ABOVE_CLIENT);
+                Log.d("bind download", serviceBound ? "success" : "failed");
+            } catch (RuntimeException e) {
+                serviceBound = false;
+                Log.e("download", "could not bind download service", e);
+            }
+        }
+    }
+
+    private void unbindOnly() {
+        if (!serviceBound) {
+            downloaderService = null;
+            return;
+        }
+        try {
+            context.unbindService(this);
+        } catch (RuntimeException e) {
+            Log.w("download", "unbind failed", e);
+        }
+        serviceBound = false;
+        downloaderService = null;
     }
 
     private void stopAndUnbindService(){
-        if (downloaderService != null) {
-            //we unbind from the service
-            context.unbindService(this);
-            downloaderService = null;
-            // stop the service
-            final Intent intent = new Intent(context, DownloaderService.class);
-            context.stopService(intent);
+        unbindOnly();
+        context.stopService(new Intent(context, DownloaderService.class));
+    }
+
+    /** Remember that this group is in progress so a later process start resumes it instead of treating it as paused. */
+    private void persistRunningDownload(DownloadGroupInfo downloadGroup) {
+        DownloaderTools.addDownloadGroupInfoPreference(context, downloadGroup);
+        DownloaderTools.updateDownloadGroupInfoPreference(context, downloadGroup);
+    }
+
+    private static void markNextFileRunning(DownloadGroupInfo group) {
+        if (group.isAllDownloadCompleted() || group.getRunningDownloadIndex() != -1) {
+            return;
+        }
+        int first = DownloaderTools.findFirstIncompletedDownload(group);
+        if (first < group.downloadsInfo.length) {
+            group.setRunningDownloadIndex(first);
+        }
+    }
+
+    private void markIncompleteDownloadsRunning() {
+        for (DownloadGroupInfo group : getSavedDownloadStatus()) {
+            if (group.isAllDownloadCompleted()) {
+                continue;
+            }
+            markNextFileRunning(group);
+            DownloaderTools.updateDownloadGroupInfoPreference(context, group);
         }
     }
 
@@ -279,6 +344,7 @@ public class DownloadManager implements ServiceConnection {
     @Override
     public void onServiceDisconnected(ComponentName componentName) {
         this.downloaderService = null;
+        this.serviceBound = false;
     }
 
     public static abstract class Callback extends Downloader.ClientCallback {
