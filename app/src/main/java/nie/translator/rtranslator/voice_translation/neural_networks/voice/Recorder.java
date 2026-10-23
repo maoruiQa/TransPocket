@@ -407,6 +407,18 @@ public class Recorder {
     }
 
     private boolean detectHeadphones() {
+        return headphonesConnected(audioManager);
+    }
+
+    /** Same headset check echo cancellation uses. Wired, USB, and Bluetooth outputs count. */
+    public static boolean headphonesConnected(@Nullable Context context) {
+        if (context == null) {
+            return false;
+        }
+        return headphonesConnected((AudioManager) context.getSystemService(Context.AUDIO_SERVICE));
+    }
+
+    static boolean headphonesConnected(@Nullable AudioManager audioManager) {
         if (audioManager == null) {
             return false;
         }

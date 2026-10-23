@@ -253,6 +253,12 @@
     <string name="preference_description_beam_size">Imposta la beam size dell\'algoritmo di beam search, per migliorare la qualità della traduzione a discapito delle performance (solo per la traduzione testuale)</string>
     <string name="preference_description_models_manager">Scegli il modello che vuoi usare per la traduzione e gestisci le altre opzioni di traduzione</string>
 
+    <string name="preference_title_simultaneous_auto_speak">Lettura automatica</string>
+    <string name="preference_description_simultaneous_auto_speak">Si applica ogni volta che si avvia l\'interpretazione simultanea. Il pulsante in quella schermata vale solo per quella volta. Ora: %1$s</string>
+    <string name="preference_simultaneous_auto_speak_on">Sempre attiva</string>
+    <string name="preference_simultaneous_auto_speak_off">Sempre disattivata</string>
+    <string name="preference_simultaneous_auto_speak_auto">In base al dispositivo di riproduzione</string>
+
     <string name="conversation_mode" >Modalità Conversazione</string>
     <string name="conversation_mode_running" >La modalità conversazione è in esecuzione...</string>
     <string name="walkietalkie_mode" >Modalità WalkieTalkie</string>

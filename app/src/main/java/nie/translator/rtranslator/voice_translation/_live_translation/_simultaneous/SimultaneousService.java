@@ -73,8 +73,10 @@ public class SimultaneousService extends VoiceTranslationService {
         super.onCreate();
         isRunning = true;
         global = (Global) getApplication();
+        // The setting picks the state for this session. The toolbar button overrides it and is not saved.
         SharedPreferences sharedPreferences = getSharedPreferences("default", Context.MODE_PRIVATE);
-        isAudioMute = !sharedPreferences.getBoolean("simultaneousAutoTTS", true);
+        String autoSpeak = sharedPreferences.getString(SimultaneousAutoSpeak.KEY, SimultaneousAutoSpeak.AUTO);
+        isAudioMute = SimultaneousAutoSpeak.isMuted(autoSpeak, Recorder.headphonesConnected(this));
         sourceLanguage = global.getSimultaneousSourceLanguage(true);
         targetLanguage = global.getSimultaneousTargetLanguage(true);
         translator = global.getTranslator();
@@ -127,16 +129,10 @@ public class SimultaneousService extends VoiceTranslationService {
                     switch (command) {
                         case START_SOUND: {
                             isAudioMute = false;
-                            SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
-                            editor.putBoolean("simultaneousAutoTTS", true);
-                            editor.apply();
                             break;
                         }
                         case STOP_SOUND: {
                             isAudioMute = true;
-                            SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
-                            editor.putBoolean("simultaneousAutoTTS", false);
-                            editor.apply();
                             if (ttsEngine != null) {
                                 ttsEngine.stop();
                             }

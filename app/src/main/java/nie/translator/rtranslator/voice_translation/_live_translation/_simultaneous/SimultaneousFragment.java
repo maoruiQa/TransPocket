@@ -16,6 +16,7 @@
 
 package nie.translator.rtranslator.voice_translation._live_translation._simultaneous;
 
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
@@ -54,6 +55,7 @@ import nie.translator.rtranslator.tools.services_communication.ServiceCommunicat
 import nie.translator.rtranslator.voice_translation.VoiceTranslationActivity;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationFragment;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
+import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recorder;
 
 public class SimultaneousFragment extends VoiceTranslationFragment {
     private ConstraintLayout container;
@@ -172,6 +174,10 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
         });
         microphone.setOnClickListenerForDeactivatedForMissingMicPermission(micMissingClickListener);
         microphone.setOnClickListenerForDeactivated(deactivatedClickListener);
+        if (!SimultaneousService.isRunning) {
+            String autoSpeak = global.getSharedPreferences("default", Context.MODE_PRIVATE).getString(SimultaneousAutoSpeak.KEY, SimultaneousAutoSpeak.AUTO);
+            sound.setMute(SimultaneousAutoSpeak.isMuted(autoSpeak, Recorder.headphonesConnected(activity)));
+        }
     }
 
     @Override

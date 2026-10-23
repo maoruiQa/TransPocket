@@ -175,6 +175,8 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         // link tts settings initialization
         SeekBarPreference ttsRatePreference = (SeekBarPreference) findPreference("ttsSpeechRateSetting");
         ttsRatePreference.initialize(activity, SeekBarPreference.TTS_RATE_MODE);
+        SimultaneousAutoSpeakPreference simultaneousAutoSpeakPreference = (SimultaneousAutoSpeakPreference) findPreference("simultaneousAutoSpeak");
+        simultaneousAutoSpeakPreference.setFragment(this);
 
         Preference ttsPreference = findPreference("tts");
         ttsPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {

@@ -237,6 +237,12 @@
     <string name="preference_description_beam_size">Встановіть розмір променя алгоритму пошуку променя, щоб покращити якість перекладу за рахунок швидкості (лише для перекладу тексту)</string>
     <string name="preference_description_models_manager">Виберіть модель, яку ви хочете використовувати для перекладу, і керуйте іншими параметрами перекладу</string>
 
+    <string name="preference_title_simultaneous_auto_speak">Автоматичне озвучення</string>
+    <string name="preference_description_simultaneous_auto_speak">Застосовується щоразу на початку синхронного перекладу. Кнопка на цьому екрані діє лише цього разу. Зараз: %1$s</string>
+    <string name="preference_simultaneous_auto_speak_on">Щоразу увімкнено</string>
+    <string name="preference_simultaneous_auto_speak_off">Щоразу вимкнено</string>
+    <string name="preference_simultaneous_auto_speak_auto">За пристроєм відтворення</string>
+
     <string name="conversation_mode" >Розмова</string>
     <string name="conversation_mode_running" >Режим Розмови працює...</string>
     <string name="walkietalkie_mode" >WalkieTalkie</string>

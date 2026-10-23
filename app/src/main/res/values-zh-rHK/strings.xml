@@ -251,6 +251,11 @@
     <string name="preference_description_tts_rate">譯文朗讀的速度。</string>
     <string name="preference_title_echo_cancellation">回聲消除</string>
     <string name="preference_description_echo_cancellation">同聲傳譯時抑制外放回聲。偵測到耳機後會自動關閉。</string>
+    <string name="preference_title_simultaneous_auto_speak">自動發音</string>
+    <string name="preference_description_simultaneous_auto_speak">每次進入同聲傳譯時是否自動朗讀譯文。介面上的按鈕只影響這一次。目前：%1$s</string>
+    <string name="preference_simultaneous_auto_speak_on">每次預設開</string>
+    <string name="preference_simultaneous_auto_speak_off">每次預設關</string>
+    <string name="preference_simultaneous_auto_speak_auto">根據播放裝置</string>
     <string name="preference_title_speech_timeout">語音超時結束</string>
     <string name="preference_title_prev_voice_duration">語音預期持續時間</string>
     <string name="preference_title_beam_size">定向搜尋（測試版）</string>

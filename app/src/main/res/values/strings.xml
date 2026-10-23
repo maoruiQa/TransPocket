@@ -274,6 +274,11 @@
     <string name="preference_description_tts_rate">How fast translations are read aloud.</string>
     <string name="preference_title_echo_cancellation">Echo cancellation</string>
     <string name="preference_description_echo_cancellation">Suppress speaker echo during simultaneous interpretation. Turns off automatically while headphones are connected.</string>
+    <string name="preference_title_simultaneous_auto_speak">Automatic reading</string>
+    <string name="preference_description_simultaneous_auto_speak">Applied each time simultaneous interpretation starts. The button on that screen changes only the current session. Current: %1$s</string>
+    <string name="preference_simultaneous_auto_speak_on">On every time</string>
+    <string name="preference_simultaneous_auto_speak_off">Off every time</string>
+    <string name="preference_simultaneous_auto_speak_auto">Follow the playback device</string>
     <string name="preference_title_speech_timeout">End of voice timeout</string>
     <string name="preference_title_prev_voice_duration">Voice anticipation duration</string>
     <string name="preference_title_beam_size">Beam Search (beta)</string>
