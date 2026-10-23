@@ -55,6 +55,10 @@ public class Tokenizer {
     }
 
     public TokenizerResult tokenize(String text, String srcLanguage, String tgtLanguage, @Nullable Translator.HyLanguageInfo srcLangInfo, @Nullable Translator.HyLanguageInfo tgtLangInfo, boolean excludePrompt) {
+        return tokenize(text, srcLanguage, tgtLanguage, srcLangInfo, tgtLangInfo, excludePrompt, null);
+    }
+
+    public TokenizerResult tokenize(String text, String srcLanguage, String tgtLanguage, @Nullable Translator.HyLanguageInfo srcLangInfo, @Nullable Translator.HyLanguageInfo tgtLangInfo, boolean excludePrompt, @Nullable String contextSource) {
         if(mode != HY_MT) {
             //for madlad we add <2tgtLanguage> at the beginning of the text (srcLanguage is not specified)
             if (mode == MADLAD || mode == MADLAD_FIXED) {
@@ -153,7 +157,13 @@ public class Tokenizer {
                 tgtLangZhName = tgtLangInfo.zhName;
             }
             String prompt;
-            if(srcLanguage.equals("zh")) {
+            if (contextSource != null && !contextSource.isEmpty()) {
+                if (srcLanguage.equals("zh")) {
+                    prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>前文：" + contextSource + "\n将下面这一句翻译为" + tgtLangZhName + "，只输出这一句的翻译，不要翻译前文，不要额外解释：\n\n" + text + "<｜hy_Assistant｜>";
+                } else {
+                    prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>Previous sentence: " + contextSource + "\nTranslate only the following sentence into " + tgtLangEnName + ". Do not translate the previous sentence and do not add an explanation.\n\n" + text + "<｜hy_Assistant｜>";
+                }
+            } else if(srcLanguage.equals("zh")) {
                 prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>将以下文本翻译为"+tgtLangZhName+"，注意只需要输出翻译后的结果，不要额外解释：\n\n"+text+"<｜hy_Assistant｜>";
             } else {
                 prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>Translate the following segment into "+tgtLangEnName+", without additional explanation.\n\n"+text+"<｜hy_Assistant｜>";

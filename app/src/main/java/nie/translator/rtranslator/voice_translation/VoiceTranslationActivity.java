@@ -61,6 +61,9 @@ import nie.translator.rtranslator.tools.CustomServiceConnection;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.peers.GuiPeer;
 import nie.translator.rtranslator.tools.services_communication.ServiceCommunicatorListener;
+import nie.translator.rtranslator.voice_translation._live_translation.LiveTranslationFragment;
+import nie.translator.rtranslator.voice_translation._live_translation._simultaneous.SimultaneousFragment;
+import nie.translator.rtranslator.voice_translation._live_translation._simultaneous.SimultaneousService;
 import nie.translator.rtranslator.voice_translation._conversation_mode.PairingFragment;
 import nie.translator.rtranslator.voice_translation._conversation_mode._conversation.ConversationFragment;
 import nie.translator.rtranslator.voice_translation._conversation_mode._conversation.ConversationService;
@@ -80,6 +83,8 @@ public class VoiceTranslationActivity extends GeneralActivity {
     public static final int CONVERSATION_FRAGMENT = 1;
     public static final int WALKIE_TALKIE_FRAGMENT = 2;
     public static final int TRANSLATION_FRAGMENT = 3;
+    public static final int LIVE_TRANSLATION_FRAGMENT = 4;
+    public static final int SIMULTANEOUS_FRAGMENT = 5;
     public static final int DEFAULT_FRAGMENT = TRANSLATION_FRAGMENT;
     //objects
     private Global global;
@@ -87,9 +92,11 @@ public class VoiceTranslationActivity extends GeneralActivity {
     private int currentFragment = -1;
     private boolean startingPairing = false;   //used to start Pairing Mode after bluetooth permissions are granted
     private boolean startingWalkieTalkie = false;   //used to start WalkieTalkie Mode after bluetooth permissions are granted
+    private boolean startingSimultaneous = false;
     private ArrayList<Callback> clientsCallbacks = new ArrayList<>();
     private ArrayList<CustomServiceConnection> conversationServiceConnections = new ArrayList<>();
     private ArrayList<CustomServiceConnection> walkieTalkieServiceConnections = new ArrayList<>();
+    private ArrayList<CustomServiceConnection> simultaneousServiceConnections = new ArrayList<>();
     private Handler mainHandler;  // handler that can be used to post to the main thread
     @Nullable
     private Notification currentNotification = null;
@@ -162,7 +169,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
             SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
             fragment = sharedPreferences.getInt("fragment", DEFAULT_FRAGMENT);
         }
-        setFragment(fragment, fragment == WALKIE_TALKIE_FRAGMENT || fragment == PAIRING_FRAGMENT);
+        setFragment(fragment, fragment == WALKIE_TALKIE_FRAGMENT || fragment == PAIRING_FRAGMENT || fragment == SIMULTANEOUS_FRAGMENT);
         if(getResources() != null) {
             config = getResources().getConfiguration();
         }
@@ -178,6 +185,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
                 // possible stop of the Conversation and WalkieTalkie Service
                 stopConversationService();
                 stopWalkieTalkieService();
+                stopSimultaneousService();
                 // possible setting of the fragment
                 if (getCurrentFragmentId() != PAIRING_FRAGMENT) {
                     if (Tools.hasPermissions(this, Global.REQUIRED_PERMISSIONS_PAIRING) || !requestPermission) {
@@ -207,6 +215,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
             case CONVERSATION_FRAGMENT: {
                 // possible stop of the WalkieTalkie Service
                 stopWalkieTalkieService();
+                stopSimultaneousService();
                 // possible setting of the fragment
                 if (getCurrentFragmentId() != CONVERSATION_FRAGMENT && global.getBluetoothCommunicator() != null) {
                     ConversationFragment conversationFragment = new ConversationFragment();
@@ -232,6 +241,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
             case WALKIE_TALKIE_FRAGMENT: {
                 // possible stop of the Conversation Service
                 stopConversationService();
+                stopSimultaneousService();
                 // possible destroy of BluetoothCommunicator
                 global.destroyBluetoothCommunicator(null);
                 // possible setting of the fragment
@@ -258,6 +268,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
                 // possible stop of the Conversation and WalkieTalkie Service
                 stopConversationService();
                 stopWalkieTalkieService();
+                stopSimultaneousService();
                 // possible destroy of BluetoothCommunicator
                 global.destroyBluetoothCommunicator(null);
                 // possible setting of the fragment
@@ -272,6 +283,44 @@ public class VoiceTranslationActivity extends GeneralActivity {
                     currentFragment = TRANSLATION_FRAGMENT;
                     saveFragment();
                     //fragment=paringFragment;
+                }
+                break;
+            }
+            case LIVE_TRANSLATION_FRAGMENT: {
+                stopConversationService();
+                stopWalkieTalkieService();
+                stopSimultaneousService();
+                global.destroyBluetoothCommunicator(null);
+                if (getCurrentFragmentId() != LIVE_TRANSLATION_FRAGMENT) {
+                    LiveTranslationFragment liveTranslationFragment = new LiveTranslationFragment();
+                    FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+                    transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+                    transaction.replace(R.id.fragment_container, liveTranslationFragment);
+                    transaction.commit();
+                    currentFragment = LIVE_TRANSLATION_FRAGMENT;
+                    saveFragment();
+                }
+                break;
+            }
+            case SIMULTANEOUS_FRAGMENT: {
+                stopConversationService();
+                stopWalkieTalkieService();
+                global.destroyBluetoothCommunicator(null);
+                if (getCurrentFragmentId() != SIMULTANEOUS_FRAGMENT) {
+                    if (Tools.hasPermissions(this, Global.REQUIRED_PERMISSIONS_VOICE) || !requestPermission) {
+                        SimultaneousFragment simultaneousFragment = new SimultaneousFragment();
+                        Bundle bundle = new Bundle();
+                        bundle.putBoolean("firstStart", true);
+                        simultaneousFragment.setArguments(bundle);
+                        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+                        transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+                        transaction.replace(R.id.fragment_container, simultaneousFragment);
+                        transaction.commit();
+                        currentFragment = SIMULTANEOUS_FRAGMENT;
+                        saveFragment();
+                    } else {
+                        showPermissionDialog(SIMULTANEOUS_FRAGMENT);
+                    }
                 }
                 break;
             }
@@ -309,6 +358,12 @@ public class VoiceTranslationActivity extends GeneralActivity {
                 }
                 if (currentFragment.getClass().equals(TranslationFragment.class)) {
                     return TRANSLATION_FRAGMENT;
+                }
+                if (currentFragment.getClass().equals(LiveTranslationFragment.class)) {
+                    return LIVE_TRANSLATION_FRAGMENT;
+                }
+                if (currentFragment.getClass().equals(SimultaneousFragment.class)) {
+                    return SIMULTANEOUS_FRAGMENT;
                 }
             }
         }
@@ -415,7 +470,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
             @Override
             public void onDismiss(DialogInterface dialog) {
                 if(currentFragment == -1){
-                    setFragment(DEFAULT_FRAGMENT);
+                    setFragment(mode == SIMULTANEOUS_FRAGMENT ? LIVE_TRANSLATION_FRAGMENT : DEFAULT_FRAGMENT);
                 }
             }
         });
@@ -439,6 +494,8 @@ public class VoiceTranslationActivity extends GeneralActivity {
             text.setText(getString(R.string.description_permission_walkietalkie));
         } else if(mode == CONVERSATION_FRAGMENT){
             text.setText(getString(R.string.description_permission_conversation));
+        } else if(mode == SIMULTANEOUS_FRAGMENT){
+            text.setText(getString(R.string.description_permission_simultaneous));
         }
 
         continueButton.setOnClickListener(new View.OnClickListener() {
@@ -453,6 +510,9 @@ public class VoiceTranslationActivity extends GeneralActivity {
                     requestPermissions(Global.REQUIRED_PERMISSIONS_VOICE, Global.REQUEST_CODE_PERMISSIONS_WALKIETALKIE);
                 }else if(mode == CONVERSATION_FRAGMENT){
                     requestPermissions(Global.REQUIRED_PERMISSIONS_VOICE, Global.REQUEST_CODE_PERMISSIONS_CONVERSATION);
+                }else if(mode == SIMULTANEOUS_FRAGMENT){
+                    startingSimultaneous = true;
+                    requestPermissions(Global.REQUIRED_PERMISSIONS_VOICE, Global.REQUEST_CODE_PERMISSIONS_SIMULTANEOUS);
                 }
             }
         });
@@ -481,7 +541,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (requestCode != Global.REQUEST_CODE_PERMISSIONS_PAIRING && requestCode != Global.REQUEST_CODE_PERMISSIONS_CONVERSATION && requestCode != Global.REQUEST_CODE_PERMISSIONS_WALKIETALKIE) {
+        if (requestCode != Global.REQUEST_CODE_PERMISSIONS_PAIRING && requestCode != Global.REQUEST_CODE_PERMISSIONS_CONVERSATION && requestCode != Global.REQUEST_CODE_PERMISSIONS_WALKIETALKIE && requestCode != Global.REQUEST_CODE_PERMISSIONS_SIMULTANEOUS) {
             return;
         }
 
@@ -549,6 +609,26 @@ public class VoiceTranslationActivity extends GeneralActivity {
             // give the service the new mode (this will not restart the service, it will only upgrade its permissions)
             startConversationService(currentNotification, null);
         }
+
+        if(requestCode == Global.REQUEST_CODE_PERMISSIONS_SIMULTANEOUS){
+            for (int grantResult : grantResults) {
+                if (grantResult == PackageManager.PERMISSION_DENIED) {
+                    if(fragment instanceof VoiceTranslationFragment) ((VoiceTranslationFragment) fragment).onMicPermissionResult(false);
+                    Toast.makeText(global, R.string.error_missing_mic_permissions, Toast.LENGTH_LONG).show();
+                    startingSimultaneous = false;
+                    if(currentFragment == -1){
+                        setFragment(LIVE_TRANSLATION_FRAGMENT);
+                    }
+                    return;
+                }else{
+                    if(fragment instanceof VoiceTranslationFragment) ((VoiceTranslationFragment) fragment).onMicPermissionResult(true);
+                }
+            }
+            if(startingSimultaneous) {
+                startingSimultaneous = false;
+                setFragment(SIMULTANEOUS_FRAGMENT);
+            }
+        }
     }
 
     @Override
@@ -579,7 +659,11 @@ public class VoiceTranslationActivity extends GeneralActivity {
             } else if (fragment instanceof WalkieTalkieFragment) {
                 setFragment(DEFAULT_FRAGMENT);
             } else if (fragment instanceof PairingFragment) {
+                setFragment(LIVE_TRANSLATION_FRAGMENT);
+            } else if (fragment instanceof LiveTranslationFragment) {
                 setFragment(DEFAULT_FRAGMENT);
+            } else if (fragment instanceof SimultaneousFragment) {
+                setFragment(LIVE_TRANSLATION_FRAGMENT);
             }else{
                 super.onBackPressed();
             }
@@ -631,6 +715,18 @@ public class VoiceTranslationActivity extends GeneralActivity {
         if(responseListener != null) responseListener.onSuccess();
     }
 
+    public void startSimultaneousService(Notification notification, final Global.ResponseListener responseListener) {
+        if(notification == null) notification = buildNotification(SIMULTANEOUS_FRAGMENT);
+        final Intent intent = new Intent(this, SimultaneousService.class);
+        intent.putExtra("sourceLanguage", global.getSimultaneousSourceLanguage(false));
+        intent.putExtra("targetLanguage", global.getSimultaneousTargetLanguage(false));
+        if(NotificationManagerCompat.from(VoiceTranslationActivity.this).areNotificationsEnabled()) {
+            intent.putExtra("notification", notification);
+        }
+        startService(intent);
+        if(responseListener != null) responseListener.onSuccess();
+    }
+
     public synchronized void connectToConversationService(final VoiceTranslationService.VoiceTranslationServiceCallback callback, final ServiceCommunicatorListener responseListener) {
         // possible start of ConversationService
         startConversationService(buildNotification(CONVERSATION_FRAGMENT), new Global.ResponseListener() {
@@ -660,6 +756,24 @@ public class VoiceTranslationActivity extends GeneralActivity {
                 walkieTalkieServiceConnection.addCallbacks(callback, responseListener);
                 walkieTalkieServiceConnections.add(walkieTalkieServiceConnection);
                 bindService(new Intent(VoiceTranslationActivity.this, WalkieTalkieService.class), walkieTalkieServiceConnection, BIND_ABOVE_CLIENT);
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                responseListener.onFailure(reasons, value);
+            }
+        });
+    }
+
+    public synchronized void connectToSimultaneousService(final VoiceTranslationService.VoiceTranslationServiceCallback callback, final ServiceCommunicatorListener responseListener) {
+        startSimultaneousService(buildNotification(SIMULTANEOUS_FRAGMENT), new Global.ResponseListener() {
+            @Override
+            public void onSuccess() {
+                CustomServiceConnection simultaneousServiceConnection = new CustomServiceConnection(new SimultaneousService.SimultaneousServiceCommunicator(connectionId));
+                connectionId++;
+                simultaneousServiceConnection.addCallbacks(callback, responseListener);
+                simultaneousServiceConnections.add(simultaneousServiceConnection);
+                bindService(new Intent(VoiceTranslationActivity.this, SimultaneousService.class), simultaneousServiceConnection, BIND_ABOVE_CLIENT);
             }
 
             @Override
@@ -711,6 +825,27 @@ public class VoiceTranslationActivity extends GeneralActivity {
         stopService(new Intent(this, WalkieTalkieService.class));
     }
 
+    public void stopSimultaneousService() {
+        currentNotification = null;
+        stopService(new Intent(this, SimultaneousService.class));
+    }
+
+    public void disconnectFromSimultaneousService(SimultaneousService.SimultaneousServiceCommunicator simultaneousServiceCommunicator) {
+        int index = -1;
+        boolean found = false;
+        for (int i = 0; i < simultaneousServiceConnections.size() && !found; i++) {
+            if (simultaneousServiceConnections.get(i).getServiceCommunicator().equals(simultaneousServiceCommunicator)) {
+                index = i;
+                found = true;
+            }
+        }
+        if (index != -1) {
+            CustomServiceConnection serviceConnection = simultaneousServiceConnections.remove(index);
+            unbindService(serviceConnection);
+            serviceConnection.onServiceDisconnected();
+        }
+    }
+
     //notification
     private Notification buildNotification(int clickAction) {
         String channelID = "service_background_notification";
@@ -724,6 +859,14 @@ public class VoiceTranslationActivity extends GeneralActivity {
         if (clickAction == CONVERSATION_FRAGMENT) {
             builder.setContentTitle(getString(R.string.title_fragment_conversation))
                     .setContentText(getString(R.string.conversation_mode_running))
+                    .setContentIntent(resultPendingIntent)
+                    .setSmallIcon(R.drawable.mic_icon)
+                    .setOngoing(true)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setChannelId(channelID);
+        } else if (clickAction == SIMULTANEOUS_FRAGMENT) {
+            builder.setContentTitle(getString(R.string.title_fragment_simultaneous))
+                    .setContentText(getString(R.string.simultaneous_mode_running))
                     .setContentIntent(resultPendingIntent)
                     .setSmallIcon(R.drawable.mic_icon)
                     .setOngoing(true)

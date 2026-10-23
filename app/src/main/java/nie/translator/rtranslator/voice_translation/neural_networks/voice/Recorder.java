@@ -20,6 +20,7 @@ import static android.media.AudioManager.GET_DEVICES_INPUTS;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -28,6 +29,8 @@ import android.media.AudioManager;
 import android.media.AudioPlaybackConfiguration;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -77,6 +80,10 @@ public class Recorder {
     public static final int DEFAULT_PREV_VOICE_DURATION = 1300;
     public static final int MIN_PREV_VOICE_DURATION = 100;
     private static final int MAX_SPEECH_LENGTH_MILLIS = 29 * 1000; //original: 30 * 1000
+    /** Pause that closes one simultaneous-interpretation clause without ending the session. */
+    private static final int CLAUSE_GAP_MILLIS = 420;
+    private static final int MIN_CLAUSE_MILLIS = 700;
+    private static final int MAX_CLAUSE_MILLIS = 7000;
     private final Callback mCallback;
     private int sampleRate;
     @Nullable
@@ -117,6 +124,30 @@ public class Recorder {
     private volatile boolean running;
     private volatile boolean destroyed;
     private boolean pendingStart;
+    private volatile boolean clauseSegmentation;
+    @Nullable
+    private SileroClauseVad clauseVad;
+    @Nullable
+    private ClauseVadSegmenter clauseSegmenter;
+    private final short[] clauseFrame = new short[ClauseVadSegmenter.FRAME_SAMPLES];
+    private int clauseFrameFill;
+    private boolean clauseVadFailureLogged;
+    private volatile boolean ttsPlaying;
+    private volatile boolean echoControlActive;
+    private boolean echoListenerRegistered;
+    @Nullable
+    private AcousticEchoCanceler echoCanceler;
+    @Nullable
+    private NoiseSuppressor noiseSuppressor;
+    private final Object echoLock = new Object();
+    private final SharedPreferences.OnSharedPreferenceChangeListener echoPreferenceListener = new SharedPreferences.OnSharedPreferenceChangeListener() {
+        @Override
+        public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+            if ("echoCancellation".equals(key)) {
+                refreshEchoState();
+            }
+        }
+    };
 
 
     public Recorder(Global global, boolean useBluetoothHeadset, @NonNull Callback callback, @Nullable ConversationService.BluetoothHeadsetCallback bluetoothHeadsetCallback, VadSilero vad) {
@@ -215,6 +246,7 @@ public class Recorder {
                             }
                         }
                     }
+                    refreshEchoState();
                 }
 
                 @Override
@@ -233,6 +265,7 @@ public class Recorder {
                             bluetoothHeadsetCallback.onScoAudioDisconnected();
                         }
                     }
+                    refreshEchoState();
                 }
             };
             audioManager.registerAudioDeviceCallback(audioDeviceCallback, null);
@@ -320,6 +353,127 @@ public class Recorder {
         return connectedBleHeadset != null;
     }
 
+    /**
+     * Simultaneous interpretation cuts speech into clauses and keeps the capture
+     * session open, so a finished clause can be translated while the next one is recorded.
+     */
+    public void setClauseSegmentation(boolean enabled) {
+        clauseSegmentation = enabled;
+        if (enabled) {
+            registerEchoListener();
+        }
+        refreshEchoState();
+    }
+
+    /**
+     * When set, simultaneous interpretation cuts clauses from this model's
+     * frame probabilities instead of the fixed pause. Null keeps the pause.
+     * Call before {@link #start()}. The audio thread is the only caller of the model.
+     */
+    public void setClauseVad(@Nullable SileroClauseVad vad) {
+        clauseVad = vad;
+        if (vad != null && clauseSegmenter == null) {
+            clauseSegmenter = new ClauseVadSegmenter();
+        }
+    }
+
+    public boolean usesClauseVad() {
+        return clauseVad != null;
+    }
+
+    /** True while this app's TTS is speaking, so speaker echo can be gated. */
+    public void setTtsPlaying(boolean playing) {
+        ttsPlaying = playing;
+    }
+
+    private void registerEchoListener() {
+        if (echoListenerRegistered) {
+            return;
+        }
+        global.getSharedPreferences("default", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(echoPreferenceListener);
+        echoListenerRegistered = true;
+    }
+
+    private void refreshEchoState() {
+        synchronized (echoLock) {
+            boolean preferenceOn = global.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("echoCancellation", true);
+            echoControlActive = clauseSegmentation && preferenceOn && !detectHeadphones();
+            if (echoControlActive) {
+                attachEchoEffects();
+            } else {
+                releaseEchoEffects();
+            }
+        }
+    }
+
+    private boolean detectHeadphones() {
+        if (audioManager == null) {
+            return false;
+        }
+        if (hasHeadphone(audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))) {
+            return true;
+        }
+        return hasHeadphone(audioManager.getDevices(GET_DEVICES_INPUTS));
+    }
+
+    private static boolean hasHeadphone(AudioDeviceInfo[] devices) {
+        if (devices == null) {
+            return false;
+        }
+        for (AudioDeviceInfo device : devices) {
+            if (device == null) {
+                continue;
+            }
+            switch (device.getType()) {
+                case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+                case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
+                case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+                case AudioDeviceInfo.TYPE_USB_HEADSET:
+                case AudioDeviceInfo.TYPE_HEARING_AID:
+                case AudioDeviceInfo.TYPE_BLE_HEADSET:
+                    return true;
+                default:
+                    break;
+            }
+        }
+        return false;
+    }
+
+    private void attachEchoEffects() {
+        if (mAudioRecord == null || echoCanceler != null || noiseSuppressor != null) {
+            return;
+        }
+        int sessionId = mAudioRecord.getAudioSessionId();
+        if (AcousticEchoCanceler.isAvailable()) {
+            AcousticEchoCanceler canceler = AcousticEchoCanceler.create(sessionId);
+            if (canceler != null) {
+                canceler.setEnabled(true);
+                echoCanceler = canceler;
+            }
+        }
+        if (NoiseSuppressor.isAvailable()) {
+            NoiseSuppressor suppressor = NoiseSuppressor.create(sessionId);
+            if (suppressor != null) {
+                suppressor.setEnabled(true);
+                noiseSuppressor = suppressor;
+            }
+        }
+    }
+
+    private void releaseEchoEffects() {
+        if (echoCanceler != null) {
+            echoCanceler.setEnabled(false);
+            echoCanceler.release();
+            echoCanceler = null;
+        }
+        if (noiseSuppressor != null) {
+            noiseSuppressor.setEnabled(false);
+            noiseSuppressor.release();
+            noiseSuppressor = null;
+        }
+    }
+
     public void startRecording() {
         start();
     }
@@ -363,6 +517,14 @@ public class Recorder {
                         connectedBleHeadset = null;
                     }
                 }
+            }
+            if (echoListenerRegistered) {
+                global.getSharedPreferences("default", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(echoPreferenceListener);
+                echoListenerRegistered = false;
+            }
+            releaseEchoEffects();
+            if (mThread == null) {
+                closeClauseVad();
             }
             if (mThread == null && mAudioRecord != null) mAudioRecord.release();
             commands.clear();
@@ -522,7 +684,9 @@ public class Recorder {
                         notifyVolumeLevel(mBuffer, oldTailIndex, tailIndex);
                         //we do the rest of voice processing
                         final long now = System.currentTimeMillis();
-                        if (isHearingVoice(mBufferShort, oldTailIndex, tailIndex)) {
+                        if (clauseSegmentation && clauseVad != null) {
+                            processClauseVad(oldTailIndex, tailIndex);
+                        } else if (isHearingVoice(mBufferShort, oldTailIndex, tailIndex)) {
                             if (mLastVoiceHeardMillis == Long.MAX_VALUE) {    // use Long's maximum limit to indicate that we have no voice (the mic is not listening)
                                 mVoiceStartedMillis = now;
                                 isRecording = true;
@@ -538,11 +702,17 @@ public class Recorder {
                                 }
                             }
                             mLastVoiceHeardMillis = now;
-                            if (now - (mVoiceStartedMillis - global.getPrevVoiceDuration()) > MAX_SPEECH_LENGTH_MILLIS) {  //if we are listening voice for more than MAX_SPEECH_LENGTH_MILLIS
+                            if (clauseSegmentation && now - mVoiceStartedMillis >= MAX_CLAUSE_MILLIS) {
+                                emitClauseAndContinue(true);
+                            } else if (now - (mVoiceStartedMillis - global.getPrevVoiceDuration()) > MAX_SPEECH_LENGTH_MILLIS) {  //if we are listening voice for more than MAX_SPEECH_LENGTH_MILLIS
                                 executeEnd();
                             }
                         } else if (mLastVoiceHeardMillis != Long.MAX_VALUE) {   // use Long's maximum limit to indicate that we have no voice (the mic is not listening)
-                            if ((now - mLastVoiceHeardMillis > global.getSpeechTimeout()) || shouldVirtualMuteMic()) {  //if we had not heard voice for global.getSpeechTimeout() ms or the mic is virtually muted
+                            long silence = now - mLastVoiceHeardMillis;
+                            long voiced = mLastVoiceHeardMillis - mVoiceStartedMillis;
+                            if (clauseSegmentation && silence >= CLAUSE_GAP_MILLIS && silence < global.getSpeechTimeout() && voiced >= MIN_CLAUSE_MILLIS) {
+                                emitClauseAndContinue(false);
+                            } else if (silence > global.getSpeechTimeout() || shouldVirtualMuteMic()) {  //if we had not heard voice for global.getSpeechTimeout() ms or the mic is virtually muted
                                 executeEnd();
                             }
                         }
@@ -567,8 +737,15 @@ public class Recorder {
         headIndex = 0;
         tailIndex = 0;
         startVoiceIndex = 0;
+        clauseFrameFill = 0;
         //vadChunkFill = 0;
         mLastVoiceHeardMillis = Long.MAX_VALUE;
+        if (clauseSegmenter != null) {
+            clauseSegmenter.reset();
+        }
+        if (clauseVad != null) {
+            clauseVad.resetState();
+        }
     }
 
     /** Runs on the dying audio thread, after ProcessVoice has released everything. */
@@ -578,6 +755,7 @@ public class Recorder {
             mThread = null;
             running = false;
             if (destroyed) {
+                closeClauseVad();
                 if (mAudioRecord != null) mAudioRecord.release();
             } else if (pendingStart) {
                 executeStart();
@@ -609,6 +787,175 @@ public class Recorder {
         mCallback.onVoice(data, voiceLength);
         isRecording = false;
         mCallback.onVoiceEnd();
+    }
+
+    /** Audio thread only. Hands the current clause to recognition and keeps listening. */
+    private void emitClauseAndContinue(boolean stillVoiced) {
+        emitClauseAndContinueAt(tailIndex, stillVoiced);
+    }
+
+    /** Audio thread only. {@code endIndex} is the first sample that belongs to the next clause. */
+    private void emitClauseAndContinueAt(int endIndex, boolean stillVoiced) {
+        if (mLastVoiceHeardMillis == Long.MAX_VALUE) {
+            return;
+        }
+        float[] data = copyRange(startVoiceIndex, endIndex);
+        if (data == null) {
+            return;
+        }
+        startVoiceIndex = endIndex;
+        mVoiceStartedMillis = System.currentTimeMillis();
+        if (stillVoiced) {
+            mLastVoiceHeardMillis = mVoiceStartedMillis;
+        } else {
+            mLastVoiceHeardMillis = Long.MAX_VALUE;
+        }
+        mCallback.onVoice(data, data.length);
+    }
+
+    /** Audio thread only. Scores complete Silero frames from the samples just read. */
+    private void processClauseVad(int begin, int end) {
+        if (clauseVad == null || clauseSegmenter == null) {
+            return;
+        }
+        if (shouldVirtualMuteMic()) {
+            ClauseVadSegmenter.FrameDecision forced = clauseSegmenter.forceEnd();
+            if (forced.endSession) {
+                applyClauseDecision(forced, end);
+            }
+            return;
+        }
+        int threshold = currentAmplitudeThreshold();
+        int cursor = begin;
+        while (cursor != end && clauseVad != null) {
+            clauseFrame[clauseFrameFill] = mBufferShort[cursor];
+            clauseFrameFill++;
+            cursor = cursor + 1 == mBufferShort.length ? 0 : cursor + 1;
+            if (clauseFrameFill < ClauseVadSegmenter.FRAME_SAMPLES) {
+                continue;
+            }
+            clauseFrameFill = 0;
+            float probability;
+            try {
+                probability = clauseVad.probability(clauseFrame);
+            } catch (Exception e) {
+                disableClauseVad(e);
+                return;
+            }
+            boolean amplitude = countAbove(clauseFrame, threshold) >= 15;
+            ClauseVadSegmenter.FrameDecision decision = clauseSegmenter.onFrame(probability, amplitude, global.getSpeechTimeout());
+            applyClauseDecision(decision, cursor);
+        }
+    }
+
+    /** Audio thread only. */
+    private void applyClauseDecision(ClauseVadSegmenter.FrameDecision decision, int endIndex) {
+        if (decision.speechStarted) {
+            noteClauseSpeech(rewindSamples(endIndex, ClauseVadSegmenter.ONSET_FRAMES * ClauseVadSegmenter.FRAME_SAMPLES));
+        } else if (decision.speech) {
+            mLastVoiceHeardMillis = System.currentTimeMillis();
+        }
+        if (decision.emitClause) {
+            emitClauseAndContinueAt(endIndex, decision.stillVoiced);
+        }
+        if (decision.endSession) {
+            if (decision.emitOnEnd) {
+                emitClauseAndContinueAt(endIndex, false);
+            }
+            endClauseSession();
+            if (clauseVad != null) {
+                clauseVad.resetState();
+            }
+        }
+    }
+
+    /** Audio thread only. */
+    private void noteClauseSpeech(int startIndex) {
+        if (mLastVoiceHeardMillis == Long.MAX_VALUE) {
+            startVoiceIndex = startIndex;
+            mVoiceStartedMillis = System.currentTimeMillis();
+            isRecording = true;
+            mCallback.onVoiceStart();
+        }
+        mLastVoiceHeardMillis = System.currentTimeMillis();
+    }
+
+    /** Audio thread only. */
+    private void endClauseSession() {
+        mLastVoiceHeardMillis = Long.MAX_VALUE;
+        boolean wasRecording = isRecording;
+        isRecording = false;
+        if (wasRecording) {
+            mCallback.onVoiceEnd();
+        }
+    }
+
+    private void disableClauseVad(Exception error) {
+        if (!clauseVadFailureLogged) {
+            clauseVadFailureLogged = true;
+            Log.w(TAG, "clause VAD failed, using pause and punctuation", error);
+        }
+        closeClauseVad();
+        if (clauseSegmenter != null) {
+            clauseSegmenter.reset();
+        }
+        clauseFrameFill = 0;
+    }
+
+    private void closeClauseVad() {
+        SileroClauseVad vad = clauseVad;
+        clauseVad = null;
+        if (vad != null) {
+            vad.close();
+        }
+    }
+
+    private int rewindSamples(int end, int samples) {
+        int available = getMBufferRangeSize(headIndex, end);
+        if (samples > available) {
+            samples = available;
+        }
+        if (end >= samples) {
+            return end - samples;
+        }
+        return mBuffer.length - (samples - end);
+    }
+
+    @Nullable
+    private float[] copyRange(int begin, int end) {
+        int voiceLength = getMBufferRangeSize(begin, end);
+        if (voiceLength <= 0) {
+            return null;
+        }
+        float[] data = new float[voiceLength];
+        int index = begin;
+        for (int i = 0; i < voiceLength; i++) {
+            data[i] = mBuffer[index];
+            index = (index + 1 == mBuffer.length) ? 0 : index + 1;
+        }
+        return data;
+    }
+
+    private int currentAmplitudeThreshold() {
+        int amplitudeThreshold = global.getAmplitudeThreshold();
+        if (echoControlActive && ttsPlaying) {
+            long raised = (long) amplitudeThreshold * 2L;
+            if (raised > MAX_AMPLITUDE_THRESHOLD) {
+                raised = MAX_AMPLITUDE_THRESHOLD;
+            }
+            amplitudeThreshold = (int) raised;
+        }
+        return amplitudeThreshold;
+    }
+
+    private static int countAbove(short[] frame, int threshold) {
+        int count = 0;
+        for (short sample : frame) {
+            if (Math.abs(sample) > threshold) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Audio thread only — public callers reach this through {@link #dismiss()}. */
@@ -667,6 +1014,7 @@ public class Recorder {
         if(!isManualMode) {
             // We iterate circularly the buffer from the begin index to the end index, dividing the data into chunks with the correct length for the VAD.
             // We also check if the volume level surpasses the threshold
+            int amplitudeThreshold = currentAmplitudeThreshold();
             int numberOfThreshold = 15;
             int count = begin;
             ArrayList<short[]> chunks = new ArrayList<>();
@@ -680,7 +1028,6 @@ public class Recorder {
                 }
                 chunks.get(chunks.size()-1)[chunkCount] = buffer[count];
                 chunkCount++;
-                int amplitudeThreshold = global.getAmplitudeThreshold();
                 // check the volume level
                 int s = Math.abs(buffer[count]);
                 if (s > amplitudeThreshold) {

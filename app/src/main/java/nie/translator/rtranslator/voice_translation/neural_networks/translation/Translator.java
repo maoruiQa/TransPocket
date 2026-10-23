@@ -31,6 +31,7 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import java.io.File;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -59,6 +60,7 @@ import nie.translator.rtranslator.databases.tatoeba.LinksData;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.FileTools;
+import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.tools.TextTools;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
@@ -78,6 +80,7 @@ public class Translator extends NeuralNetworkApi {
     public static final int MADLAD_CACHE = 5;
     public static final int MOZILLA = 7;
     public static final int HY_MT = 8;
+    public static final int TRANSLATEGEMMA = 11;
     private int mode = -1;
     private Tokenizer tokenizer;
     private OrtEnvironment onnxEnv;
@@ -135,8 +138,14 @@ public class Translator extends NeuralNetworkApi {
 
                         /** INITIALIZATION **/
                         // translation onnx model initialization
-                        if (mode != MOZILLA) {
+                        if (mode != MOZILLA && mode != TRANSLATEGEMMA) {
                             onnxTranslationModelInitialization();
+                        }
+                        if (mode == TRANSLATEGEMMA) {
+                            File gemmaFile = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
+                            if (!gemmaFile.isFile()) {
+                                throw new IOException("TranslateGemma file is missing");
+                            }
                         }
                     }
 
@@ -308,9 +317,13 @@ public class Translator extends NeuralNetworkApi {
     }
 
     public void translate(final String textToTranslate, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, final TranslateListener responseListener) {
+        translate(textToTranslate, null, null, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
+    }
+
+    public void translate(final String textToTranslate, @Nullable final String contextSource, @Nullable final String contextTranslation, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, final TranslateListener responseListener) {
         final Thread t = new Thread("textTranslation") {
             public void run() {
-                performTextTranslation(textToTranslate, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
+                performTextTranslation(textToTranslate, contextSource, contextTranslation, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
             }
         };
         t.start();
@@ -598,6 +611,24 @@ public class Translator extends NeuralNetworkApi {
         }).start();
     }
 
+    public void unloadSimultaneousLanguageResources(@Nullable GeneralListener listener){
+        new Thread(() -> {
+            synchronized (langResourcesLock) {
+                try {
+                    languageResourcesManager.unloadSimultaneousLanguageResources();
+                    mainHandler.post(() -> {
+                        if(listener != null) listener.onSuccess();
+                    });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    mainHandler.post(() -> {
+                        if(listener != null) listener.onFailure(new int[]{0}, 0);
+                    });
+                }
+            }
+        }).start();
+    }
+
     public void unloadAllLangResourcesForConversation(@Nullable GeneralListener listener){
         new Thread(() -> {
             synchronized (langResourcesLock) {
@@ -647,6 +678,10 @@ public class Translator extends NeuralNetworkApi {
     }
 
     private void performTextTranslation(final String textToTranslate, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, @Nullable final TranslateListener responseListener) {
+        performTextTranslation(textToTranslate, null, null, inputLanguage, outputLanguage, beamSize, saveResults, rtranslatorMode, responseListener);
+    }
+
+    private void performTextTranslation(final String textToTranslate, @Nullable final String contextSource, @Nullable final String contextTranslation, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, @Nullable final TranslateListener responseListener) {
         try {
             long initTime = System.currentTimeMillis();
             String finalResult = null;
@@ -659,7 +694,7 @@ public class Translator extends NeuralNetworkApi {
             String[] synonyms = null;
 
             int performMode = mode;
-            if(global.isUseMozillaForVoiceTranslation() && (rtranslatorMode == Global.RTranslatorMode.CONVERSATION_MODE || rtranslatorMode == Global.RTranslatorMode.WALKIE_TALKIE_MODE)){
+            if(global.isUseMozillaForVoiceTranslation() && (rtranslatorMode == Global.RTranslatorMode.CONVERSATION_MODE || rtranslatorMode == Global.RTranslatorMode.WALKIE_TALKIE_MODE || rtranslatorMode == Global.RTranslatorMode.SIMULTANEOUS_MODE)){
                 performMode = MOZILLA;
             }
 
@@ -687,6 +722,29 @@ public class Translator extends NeuralNetworkApi {
                     }
                     return;
                 }
+            }
+
+            if (rtranslatorMode == Global.RTranslatorMode.SIMULTANEOUS_MODE) {
+                translateSimultaneousClause(textToTranslate, contextSource, contextTranslation, inputLanguage, outputLanguage, beamSize, performMode, initTime, responseListener);
+                return;
+            }
+
+            if (performMode == TRANSLATEGEMMA) {
+                try {
+                    String translated = TranslateGemmaTranslator.translate(global, textToTranslate, inputLanguage, outputLanguage);
+                    final String resultText = translated;
+                    if (responseListener != null) {
+                        mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, resultText, null, incrementCurrentResultID(), true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+                    }
+                } catch (Exception gemmaError) {
+                    android.util.Log.e("translation_error", "TranslateGemma failed", gemmaError);
+                    if (responseListener != null) {
+                        mainHandler.post(() -> responseListener.onFailure(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0));
+                    } else {
+                        mainHandler.post(() -> notifyError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0));
+                    }
+                }
+                return;
             }
 
             //translation execution
@@ -829,6 +887,36 @@ public class Translator extends NeuralNetworkApi {
         }
     }
 
+    private void translateSimultaneousClause(String textToTranslate, @Nullable String contextSource, @Nullable String contextTranslation, CustomLocale inputLanguage, CustomLocale outputLanguage, int beamSize, int performMode, long initTime, @Nullable TranslateListener responseListener) throws Exception {
+        String modelText = textToTranslate;
+        boolean prependContext = contextSource != null && !contextSource.isEmpty() && performMode != HY_MT;
+        if (prependContext) {
+            modelText = contextSource.trim() + "\n" + textToTranslate;
+        }
+        String hyContext = performMode == HY_MT ? contextSource : null;
+        String finalResult;
+        if (performMode == TRANSLATEGEMMA) {
+            finalResult = TranslateGemmaTranslator.translate(global, modelText, inputLanguage, outputLanguage);
+        } else if (performMode == MOZILLA) {
+            synchronized (langResourcesLock) {
+                finalResult = BergamotTranslator.translateMultiple(new String[]{modelText}, inputLanguage, outputLanguage)[0];
+            }
+        } else {
+            finalResult = performNNTextTranslation(modelText, new String[]{""}, inputLanguage, outputLanguage, beamSize, false, responseListener, hyContext, contextTranslation);
+        }
+        finalResult = SimultaneousText.stripContextTranslation(contextTranslation, finalResult);
+        android.util.Log.i("performance", "TRANSLATION DONE IN: " + (System.currentTimeMillis() - initTime) + "ms");
+        final long currentResultIDCopy = currentResultID;
+        String resultText = finalResult == null ? "" : finalResult;
+        if (responseListener != null) {
+            mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, resultText, null, currentResultIDCopy, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+        } else {
+            String published = resultText;
+            mainHandler.post(() -> notifyResult(textToTranslate, published, null, currentResultIDCopy, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+        }
+        currentResultID++;
+    }
+
     @Nullable
     private String performTatoebaTranslation(String text, CustomLocale inputLanguage, CustomLocale outputLanguage){
         synchronized (langResourcesLock) {
@@ -880,12 +968,16 @@ public class Translator extends NeuralNetworkApi {
     }
 
     private String performNNTextTranslation(final String textToTranslate, String[] joinedStringOutput, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, @Nullable final TranslateListener responseListener) throws Exception {
+        return performNNTextTranslation(textToTranslate, joinedStringOutput, inputLanguage, outputLanguage, beamSize, saveResults, responseListener, null, null);
+    }
+
+    private String performNNTextTranslation(final String textToTranslate, String[] joinedStringOutput, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, @Nullable final TranslateListener responseListener, @Nullable final String hyContext, @Nullable final String contextTranslation) throws Exception {
         android.util.Log.i("translator", "Translating using ONNX models...");
         //tokenization
         long time = System.currentTimeMillis();
         TokenizerResult input = null;
         String correctedSubText = correctText(textToTranslate, inputLanguage.getLocale());  //input text pre process
-        input = tokenize(correctedSubText, inputLanguage, outputLanguage);
+        input = hyContext == null ? tokenize(correctedSubText, inputLanguage, outputLanguage) : tokenizeWithContext(correctedSubText, inputLanguage, outputLanguage, hyContext);
         android.util.Log.i("performance", "Tokenization done in: " + (System.currentTimeMillis() - time) + "ms");
         //encoder execution
         time = System.currentTimeMillis();
@@ -907,11 +999,12 @@ public class Translator extends NeuralNetworkApi {
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
                 //we return the partial results
+                String clauseText = SimultaneousText.stripContextTranslation(contextTranslation, translatedText);
                 String outputText;
                 if (joinedStringOutput[0].equals("")) {
-                    outputText = joinedStringOutput[0] + translatedText;
+                    outputText = joinedStringOutput[0] + clauseText;
                 } else {
-                    outputText = joinedStringOutput[0] + " " + translatedText;
+                    outputText = joinedStringOutput[0] + " " + clauseText;
                 }
                 if (saveResults) {
                     lastOutputText = new GuiMessage(new Message(global, outputText), inputLanguage, outputLanguage, currentResultID, false, false);
@@ -942,10 +1035,14 @@ public class Translator extends NeuralNetworkApi {
         }
         if(encoderResult != null) encoderResult.close();
         if(completeOutputArray != null) {
-            return tokenizer.decode(completeOutputArray);
+            return SimultaneousText.stripContextTranslation(contextTranslation, tokenizer.decode(completeOutputArray));
         }else{
             return "";
         }
+    }
+
+    private TokenizerResult tokenizeWithContext(String text, final CustomLocale inputLanguage, final CustomLocale outputLanguage, @Nullable String hyContext) {
+        return tokenizer.tokenize(text, inputLanguage.getCode(), outputLanguage.getCode(), getHyLanguageInfo(inputLanguage.getCode()), getHyLanguageInfo(outputLanguage.getCode()), false, hyContext);
     }
 
     @Nullable
@@ -1810,7 +1907,7 @@ public class Translator extends NeuralNetworkApi {
                 } else {
                     document = documentBuilder.parse(context.getResources().openRawResource(R.raw.nllb_supported_languages_all));
                 }
-            }else if (mode == HY_MT) {
+            }else if (mode == HY_MT || mode == TRANSLATEGEMMA) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.hy_mt_supported_languages));
             }else if (mode == MOZILLA) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.mozilla_supported_languages));

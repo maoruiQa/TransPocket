@@ -136,6 +136,9 @@ public class LanguageResourcesManager {
         // initial load (if called by the constructor), or change of resources / load due to the new languages and parameters
         setLanguageResources(firstTextLanguage, secondTextLanguage, Global.RTranslatorMode.TEXT_TRANSLATION_MODE);
         setLanguageResources(firstLanguage, secondLanguage, Global.RTranslatorMode.WALKIE_TALKIE_MODE);
+        if(languageResourcesIndicator.simultaneousResources[0] != null && languageResourcesIndicator.simultaneousResources[1] != null){
+            setLanguageResources(languageResourcesIndicator.simultaneousResources[0], languageResourcesIndicator.simultaneousResources[1], Global.RTranslatorMode.SIMULTANEOUS_MODE);
+        }
         if(isTgtLangResourcesForConversationLoaded() && language != null){
             // if language was already loaded for conversation mode we update it, if not, we do not load it (it will be loaded later from the external)
             setTgtLangResourcesForConversation(language);
@@ -184,6 +187,9 @@ public class LanguageResourcesManager {
                 break;
             case WALKIE_TALKIE_MODE:
                 currentModeResources = languageResourcesIndicator.walkieTalkieResources;
+                break;
+            case SIMULTANEOUS_MODE:
+                currentModeResources = languageResourcesIndicator.simultaneousResources;
                 break;
             case CONVERSATION_MODE:
                 // cannot use this method for conversation mode
@@ -382,6 +388,24 @@ public class LanguageResourcesManager {
         languageResourcesIndicator.conversationSrcResources = new HashMap<>();
     }
 
+    public void unloadSimultaneousLanguageResources(){
+        CustomLocale[] resources = languageResourcesIndicator.simultaneousResources;
+        if(resources[0] != null && resources[1] != null &&
+                !languageResourcesIndicator.isResourcePairContainedInOtherModes(resources[0], resources[1], Global.RTranslatorMode.SIMULTANEOUS_MODE)){
+            tatoebaLinks.remove(resources[0].getISO3Language() + "-" + resources[1].getISO3Language());
+        }
+        for(CustomLocale resource : resources){
+            if(resource != null && !languageResourcesIndicator.isResourceContainedInOtherModes(resource, Global.RTranslatorMode.SIMULTANEOUS_MODE)){
+                BergamotTranslator.unloadModelFromCache(resource);
+                DictionaryTranslator.unloadDictionary(resource);
+            }
+        }
+        languageResourcesIndicator.simultaneousResources = new CustomLocale[2];
+        languageResourcesIndicator.setResourceTypeLoadStatus(Global.RTranslatorMode.SIMULTANEOUS_MODE, LanguageResourcesIndicator.ResourceType.MOZILLA, false);
+        languageResourcesIndicator.setResourceTypeLoadStatus(Global.RTranslatorMode.SIMULTANEOUS_MODE, LanguageResourcesIndicator.ResourceType.TATOEBA, false);
+        languageResourcesIndicator.setResourceTypeLoadStatus(Global.RTranslatorMode.SIMULTANEOUS_MODE, LanguageResourcesIndicator.ResourceType.TRANSLATION_DICTIONARY, false);
+    }
+
     /**
      * This method is called to update a Peer associated with CONVERSATION_MODE
      * @param oldPeer
@@ -575,6 +599,6 @@ public class LanguageResourcesManager {
     }
 
     private boolean isMozillaEnabled(Global.RTranslatorMode rtranslatorMode){
-        return useMozillaForTranslation || ((rtranslatorMode == Global.RTranslatorMode.WALKIE_TALKIE_MODE || rtranslatorMode == Global.RTranslatorMode.CONVERSATION_MODE) && useMozillaForVoiceTranslation);
+        return useMozillaForTranslation || ((rtranslatorMode == Global.RTranslatorMode.WALKIE_TALKIE_MODE || rtranslatorMode == Global.RTranslatorMode.CONVERSATION_MODE || rtranslatorMode == Global.RTranslatorMode.SIMULTANEOUS_MODE) && useMozillaForVoiceTranslation);
     }
 }

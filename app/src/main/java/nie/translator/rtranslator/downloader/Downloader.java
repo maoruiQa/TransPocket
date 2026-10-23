@@ -47,6 +47,37 @@ public class Downloader {
     private Thread unzipThread = null;
     @Nullable
     private Thread testIntegrityThread = null;
+    /** Latest byte count from PRDownloader. The listener only stores this; the UI is updated by {@link #progressPump}. */
+    private volatile long latestBytes;
+    private long publishedBytes = -1;
+    private boolean progressPumpScheduled;
+    private static final int PROGRESS_UI_INTERVAL_MS = 200;
+    private final Runnable progressPump = new Runnable() {
+        @Override
+        public void run() {
+            if (!downloadsStarted || downloadGroupInfo.isAllDownloadCompleted() || downloadGroupInfo.getRunningDownloadIndex() == -1) {
+                progressPumpScheduled = false;
+                return;
+            }
+            long bytes = latestBytes;
+            if (bytes != publishedBytes) {
+                publishedBytes = bytes;
+                int runningDownloadIndex = downloadGroupInfo.getRunningDownloadIndex();
+                if (runningDownloadIndex != -1 && downloadGroupInfo.getRunningDownload() != null && !downloadGroupInfo.getRunningDownload().isDownloadCompleted()) {
+                    int percentageTotalProgress = calculateTotalProgress(lastDownloadSuccessIndex, bytes / 1000);
+                    int percentageProgress = calculateProgress(runningDownloadIndex, bytes / 1000);
+                    downloadGroupInfo.setCurrentProgress(percentageTotalProgress);
+                    downloadGroupInfo.downloadsInfo[runningDownloadIndex].setCurrentProgress(percentageProgress);
+                    callback.onProgress(downloadGroupInfo, downloadGroupInfo.downloadsInfo[runningDownloadIndex], percentageTotalProgress, percentageProgress, false, false);
+                }
+            }
+            if (downloadsStarted && !downloadGroupInfo.isAllDownloadCompleted() && downloadGroupInfo.getRunningDownloadIndex() != -1) {
+                mainHandler.postDelayed(this, PROGRESS_UI_INTERVAL_MS);
+            } else {
+                progressPumpScheduled = false;
+            }
+        }
+    };
 
     public Downloader(DownloadGroupInfo downloadGroupInfo, Context context, int id, ClientCallback callback) {
         this.downloadGroupInfo = downloadGroupInfo;
@@ -107,6 +138,7 @@ public class Downloader {
             }
             downloadGroupInfo.setRunningDownloadIndex(-1);
             downloadsStarted = false;
+            stopProgressPump();
         }
     }
 
@@ -128,6 +160,7 @@ public class Downloader {
             }
         }
         downloadGroupInfo.setRunningDownloadIndex(-1);
+        stopProgressPump();
         // we delete the already downloaded files of this group of download
         DownloaderTools.deleteDownloadedFiles(downloadGroupInfo);
     }
@@ -160,13 +193,17 @@ public class Downloader {
         if(downloadId != -1){
             if(status == Status.PAUSED){
                 PRDownloader.resume(downloadId);  //resume if the download was paused during this lifetime of the app
+                ensureProgressPump();
                 return;
             }else if (status == Status.RUNNING || status == Status.QUEUED) {
                 // A download is already in progress.
                 // Return early so we DO NOT start a duplicate download task.
+                ensureProgressPump();
                 return;
             }
         }
+        latestBytes = 0;
+        publishedBytes = -1;
         //start the download from scratch or resume it after the app has been restarted
         downloadId = PRDownloader.download(downloadGroupInfo.downloadsInfo[index].getUrl(), downloadGroupInfo.downloadsInfo[index].getDestinationPath(), downloadGroupInfo.downloadsInfo[index].getName())
                 .build()
@@ -191,17 +228,8 @@ public class Downloader {
                 .setOnProgressListener(new OnProgressListener() {
                     @Override
                     public void onProgress(Progress progress) {
-                        //here we return a value between 0 and 100 that represents the total progress made so far with the download
-                        int runningDownloadIndex = downloadGroupInfo.getRunningDownloadIndex();
-                        if(runningDownloadIndex != -1 && !downloadGroupInfo.getRunningDownload().isDownloadCompleted()) {
-                            int percentageTotalProgress = calculateTotalProgress(lastDownloadSuccessIndex, progress.currentBytes/1000);
-                            int percentageProgress = calculateProgress(runningDownloadIndex, progress.currentBytes / 1000);
-                            downloadGroupInfo.setCurrentProgress(percentageTotalProgress);
-                            if (runningDownloadIndex >= 0) {
-                                downloadGroupInfo.downloadsInfo[runningDownloadIndex].setCurrentProgress(percentageProgress);
-                                callback.onProgress(downloadGroupInfo, downloadGroupInfo.downloadsInfo[runningDownloadIndex], percentageTotalProgress, percentageProgress, false, false);
-                            }
-                        }
+                        // PRDownloader posts one callback per read. Only keep the byte count here.
+                        latestBytes = progress.currentBytes;
                     }
                 })
                 .start(new OnDownloadListener() {
@@ -236,11 +264,25 @@ public class Downloader {
                             downloadGroupInfo.downloadsInfo[runningDownloadIndex].setCurrentError(GENERAL_ERROR);
                             downloadGroupInfo.setRunningDownloadIndex(-1);
                             downloadsStarted = false;
+                            stopProgressPump();
                             callback.onError(downloadGroupInfo, download, GENERAL_ERROR);
                         }
                     }
                 });
         downloadGroupInfo.downloadsInfo[index].setDownloadId(downloadId);
+        ensureProgressPump();
+    }
+
+    private void ensureProgressPump() {
+        if (!progressPumpScheduled) {
+            progressPumpScheduled = true;
+            mainHandler.postDelayed(progressPump, PROGRESS_UI_INTERVAL_MS);
+        }
+    }
+
+    private void stopProgressPump() {
+        progressPumpScheduled = false;
+        mainHandler.removeCallbacks(progressPump);
     }
 
     private void unzipRunningDownloadAndTestIntegrity(int percentageTotalProgress){

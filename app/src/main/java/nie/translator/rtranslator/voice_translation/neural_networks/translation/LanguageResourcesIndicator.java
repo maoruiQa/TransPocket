@@ -19,12 +19,14 @@ public class LanguageResourcesIndicator {
     }
     public CustomLocale[] textTranslationResources = new CustomLocale[2];
     public CustomLocale[] walkieTalkieResources = new CustomLocale[2];
+    public CustomLocale[] simultaneousResources = new CustomLocale[2];
     @Nullable
     public CustomLocale conversationTgtResource = null;  //the target model of conversation translation is always our language for every peer
     public HashMap<String, CustomLocale> conversationSrcResources = new HashMap<>();   // key: peer uniqueName, value: srcLanguage
     private ArrayList<ResourceType> textTranslationResourcesLoaded = new ArrayList<>(3);
     private ArrayList<ResourceType> walkieTalkieResourcesLoaded = new ArrayList<>(3);
     private ArrayList<ResourceType> conversationResourcesLoaded = new ArrayList<>(3);
+    private ArrayList<ResourceType> simultaneousResourcesLoaded = new ArrayList<>(3);
 
     public ArrayList<CustomLocale> getAllUniqueResources(){
         ArrayList<CustomLocale> resources = new ArrayList<>();
@@ -34,6 +36,11 @@ public class LanguageResourcesIndicator {
             }
         }
         for (CustomLocale resource: walkieTalkieResources) {
+            if(resource != null && !resources.contains(resource)){
+                resources.add(resource);
+            }
+        }
+        for (CustomLocale resource: simultaneousResources) {
             if(resource != null && !resources.contains(resource)){
                 resources.add(resource);
             }
@@ -59,6 +66,12 @@ public class LanguageResourcesIndicator {
         }
         if(walkieTalkieResources[0] != null && walkieTalkieResources[1] != null){
             String pairCode = walkieTalkieResources[0].getISO3Language()+"-"+walkieTalkieResources[1].getISO3Language();
+            if(!pairs.contains(pairCode)){
+                pairs.add(pairCode);
+            }
+        }
+        if(simultaneousResources[0] != null && simultaneousResources[1] != null){
+            String pairCode = simultaneousResources[0].getISO3Language()+"-"+simultaneousResources[1].getISO3Language();
             if(!pairs.contains(pairCode)){
                 pairs.add(pairCode);
             }
@@ -108,6 +121,9 @@ public class LanguageResourcesIndicator {
         if(currentMode != Global.RTranslatorMode.WALKIE_TALKIE_MODE && Arrays.asList(walkieTalkieResources).contains(lang)){
             return true;
         }
+        if(currentMode != Global.RTranslatorMode.SIMULTANEOUS_MODE && Arrays.asList(simultaneousResources).contains(lang)){
+            return true;
+        }
         if(currentMode != Global.RTranslatorMode.CONVERSATION_MODE){
             if(conversationSrcResources.containsValue(lang)){
                 return true;
@@ -152,6 +168,15 @@ public class LanguageResourcesIndicator {
                 }
             }
         }
+        if(currentMode != Global.RTranslatorMode.SIMULTANEOUS_MODE){
+            if(simultaneousResources[0] != null && simultaneousResources[1] != null) {
+                String pairCode = srcLang.getISO3Language() + "-" + tgtLang.getISO3Language();
+                String pairCodeResource = simultaneousResources[0].getISO3Language() + "-" + simultaneousResources[1].getISO3Language();
+                if(pairCode.equals(pairCodeResource)) {
+                    return true;
+                }
+            }
+        }
         if(currentMode != Global.RTranslatorMode.CONVERSATION_MODE){
             for (CustomLocale srcResource : conversationSrcResources.values()) {
                 if (srcResource != null && conversationTgtResource != null) {
@@ -183,7 +208,7 @@ public class LanguageResourcesIndicator {
     }
 
     public boolean isResourceTypeLoaded(ResourceType resourceType){
-        return textTranslationResourcesLoaded.contains(resourceType) || walkieTalkieResourcesLoaded.contains(resourceType) || conversationResourcesLoaded.contains(resourceType);
+        return textTranslationResourcesLoaded.contains(resourceType) || walkieTalkieResourcesLoaded.contains(resourceType) || conversationResourcesLoaded.contains(resourceType) || simultaneousResourcesLoaded.contains(resourceType);
     }
 
     public void setResourceTypeLoadStatus(Global.RTranslatorMode rtranslatorMode, ResourceType resourceType, boolean loaded){
@@ -209,6 +234,13 @@ public class LanguageResourcesIndicator {
                     conversationResourcesLoaded.add(resourceType);
                 }
                 break;
+            case SIMULTANEOUS_MODE:
+                if(simultaneousResourcesLoaded.contains(resourceType) && !loaded){
+                    simultaneousResourcesLoaded.remove(resourceType);
+                }else if(!simultaneousResourcesLoaded.contains(resourceType) && loaded){
+                    simultaneousResourcesLoaded.add(resourceType);
+                }
+                break;
         }
     }
 
@@ -230,10 +262,16 @@ public class LanguageResourcesIndicator {
         }else if(!conversationResourcesLoaded.contains(resourceType) && loaded){
             conversationResourcesLoaded.add(resourceType);
         }
+
+        if(simultaneousResourcesLoaded.contains(resourceType) && !loaded){
+            simultaneousResourcesLoaded.remove(resourceType);
+        }else if(!simultaneousResourcesLoaded.contains(resourceType) && loaded){
+            simultaneousResourcesLoaded.add(resourceType);
+        }
     }
 
     public boolean areAllResourceTypeUnloaded(){
-        return textTranslationResourcesLoaded.isEmpty() && walkieTalkieResourcesLoaded.isEmpty() && conversationResourcesLoaded.isEmpty();
+        return textTranslationResourcesLoaded.isEmpty() && walkieTalkieResourcesLoaded.isEmpty() && conversationResourcesLoaded.isEmpty() && simultaneousResourcesLoaded.isEmpty();
     }
 
     public void updatePeer(Peer oldPeer, Peer newPeer){
@@ -246,6 +284,7 @@ public class LanguageResourcesIndicator {
     public void reset(){
         textTranslationResources = new CustomLocale[2];
         walkieTalkieResources = new CustomLocale[2];
+        simultaneousResources = new CustomLocale[2];
         conversationSrcResources = new HashMap<>();
         conversationTgtResource = null;
     }

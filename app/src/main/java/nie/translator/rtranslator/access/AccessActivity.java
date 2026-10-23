@@ -72,14 +72,12 @@ public class AccessActivity extends GeneralActivity {
         } else {
             final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
             String savedUserName = sharedPreferences.getString("name", "");
-            if(savedUserName.length()>0){  //means that the user has already inserted the info in UserDataFragment, so we can start directly the DownloadFragment or the ModelManagerFragment
+            if(savedUserName.length()>0){  //means that the user has already inserted the info in UserDataFragment
                 DownloadManager downloadManager = new DownloadManager(this);
-                ArrayList<DownloadGroupInfo> savedDownloadStatus = downloadManager.getSavedDownloadStatus();
-                int index = savedDownloadStatus.indexOf(global.getInitialDownloadInfo());
-                if(index != -1 && savedDownloadStatus.get(index).isAllDownloadCompleted()){  //means that the initial download is already completed, so we can start directly the ModelManagerFragment
-                    startFragment(MODEL_MANAGER, null);
-                }else{   //means that the initial download is not completed, so we must start the DownloadFragment
+                if (hasUnfinishedSetupDownload(global, downloadManager)) {
                     startFragment(DOWNLOAD_FRAGMENT, null);
+                } else {
+                    startFragment(MODEL_MANAGER, null);
                 }
             }else{
                 startFragment(NOTICE_FRAGMENT, null);
@@ -196,7 +194,11 @@ public class AccessActivity extends GeneralActivity {
             return;
         }
         if(fragment instanceof DownloadFragment){
-            startFragment(USER_DATA_FRAGMENT,null);
+            startFragment(MODEL_MANAGER, null);
+            return;
+        }
+        if(fragment instanceof ModelManagerFragment){
+            startFragment(USER_DATA_FRAGMENT, null);
             return;
         }
         if(fragment instanceof MozillaManagerFragment){
@@ -205,6 +207,40 @@ public class AccessActivity extends GeneralActivity {
         }
         finishAndRemoveTask(); //todo: test if this closes the app when we are in the model manager fragment
         //super.onBackPressed();
+    }
+
+    private boolean hasUnfinishedSetupDownload(Global global, DownloadManager downloadManager) {
+        DownloadGroupInfo[] groups = new DownloadGroupInfo[]{
+                global.getWhisperDownloadInfo(),
+                global.getInitialDownloadInfo(),
+                global.getHyMtDownloadInfo(),
+                global.getMadladDownloadInfo(),
+                global.getTranslateGemmaDownloadInfo(),
+                global.getQwen3Asr06DownloadInfo(),
+                global.getQwen3Asr17DownloadInfo(),
+                global.getWhisperTurboDownloadInfo(),
+                global.getTatoebaDownloadInfo(),
+                global.getDictionaryDownloadInfo(),
+                global.getSileroVadDownloadInfo()
+        };
+        ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
+        for (DownloadGroupInfo group : groups) {
+            int index = saved.indexOf(group);
+            if (index != -1 && !saved.get(index).isAllDownloadCompleted() && saved.get(index).getCurrentProgress() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void enterApp() {
+        Global global = (Global) getApplication();
+        global.setFirstStart(false);
+        Intent intent = new Intent(this, nie.translator.rtranslator.LoadingActivity.class);
+        intent.putExtra("activity", "download");
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+        finish();
     }
 
     private void checkAndRequireAllFilesPermission() {

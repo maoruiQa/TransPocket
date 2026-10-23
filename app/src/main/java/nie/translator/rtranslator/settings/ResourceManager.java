@@ -64,7 +64,32 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
         public void onDeletePressed() {
             DownloadGroupInfo hyMtDownloadInfo = ((Global) activity.getApplication()).getHyMtDownloadInfo();
             DownloadGroupInfo madladDownloadInfo = ((Global) activity.getApplication()).getMadladDownloadInfo();
-            if(isMozillaDownload(downloadInfo) || downloadInfo.equals(hyMtDownloadInfo) || downloadInfo.equals(madladDownloadInfo)) {
+            DownloadGroupInfo gemmaDownloadInfo = ((Global) activity.getApplication()).getTranslateGemmaDownloadInfo();
+            Global app = (Global) activity.getApplication();
+            DownloadGroupInfo whisperDownloadInfo = app.getWhisperDownloadInfo();
+            DownloadGroupInfo whisperTurboDownloadInfo = app.getWhisperTurboDownloadInfo();
+            DownloadGroupInfo qwen06DownloadInfo = app.getQwen3Asr06DownloadInfo();
+            DownloadGroupInfo qwen17DownloadInfo = app.getQwen3Asr17DownloadInfo();
+            if (downloadInfo.equals(whisperDownloadInfo) || downloadInfo.equals(whisperTurboDownloadInfo) || downloadInfo.equals(qwen06DownloadInfo) || downloadInfo.equals(qwen17DownloadInfo)) {
+                int asrAvailable = 0;
+                if (downloadManager.checkDownloadCompleted(whisperDownloadInfo) || app.groupFilesPresent(whisperDownloadInfo)) {
+                    asrAvailable++;
+                }
+                if (downloadManager.checkDownloadCompleted(whisperTurboDownloadInfo) || app.groupFilesPresent(whisperTurboDownloadInfo)) {
+                    asrAvailable++;
+                }
+                if (downloadManager.checkDownloadCompleted(qwen06DownloadInfo) || app.groupFilesPresent(qwen06DownloadInfo)) {
+                    asrAvailable++;
+                }
+                if (downloadManager.checkDownloadCompleted(qwen17DownloadInfo) || app.groupFilesPresent(qwen17DownloadInfo)) {
+                    asrAvailable++;
+                }
+                if (asrAvailable <= 1) {
+                    showCannotDeleteDialog();
+                    return;
+                }
+            }
+            if(isMozillaDownload(downloadInfo) || downloadInfo.equals(hyMtDownloadInfo) || downloadInfo.equals(madladDownloadInfo) || downloadInfo.equals(gemmaDownloadInfo)) {
                 //this is to prevent the user from deleting all the translation models
                 int numberOfModelsAvailable = 0;
                 for (DownloadGroupInfo downloadGroupInfo : downloadManager.getSavedDownloadStatus()) {
@@ -79,6 +104,9 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
                     numberOfModelsAvailable++;
                 }
                 if (downloadManager.checkDownloadCompleted(madladDownloadInfo)) {
+                    numberOfModelsAvailable++;
+                }
+                if (downloadManager.checkDownloadCompleted(gemmaDownloadInfo)) {
                     numberOfModelsAvailable++;
                 }
                 if (numberOfModelsAvailable <= 1) {

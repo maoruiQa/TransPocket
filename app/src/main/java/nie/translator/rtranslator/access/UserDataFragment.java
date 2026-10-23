@@ -148,7 +148,7 @@ public class UserDataFragment extends Fragment {
                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     activity.startActivity(intent);
                     activity.finish();*/
-                    activity.startFragment(AccessActivity.DOWNLOAD_FRAGMENT, null);
+                    activity.startFragment(AccessActivity.MODEL_MANAGER, null);
                 }
             }
         });

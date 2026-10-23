@@ -307,8 +307,11 @@ public class DownloaderService extends Service {
             // Re-calculate average and update the Summary Notification
             updateSummaryNotification();
 
-            // update the state of this download in the preferences (with the new progress)
-            updateDownloadGroupInfoPreference(downloaders.get(index).getDownloadGroupInfo());
+            // Byte progress used to rewrite the whole download list on every tick. Persist it only when the
+            // transfer pauses or finishes; PRDownloader keeps the partial file itself.
+            if (paused || progress >= 100) {
+                updateDownloadGroupInfoPreference(downloaders.get(index).getDownloadGroupInfo());
+            }
         }
     }
 

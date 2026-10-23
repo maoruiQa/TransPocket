@@ -131,7 +131,8 @@ public abstract class VoiceTranslationService extends GeneralService {
             void onUtteranceStarting(GuiMessage message, boolean first) {
                 //if (ttsEngine != null && shouldDeactivateMicDuringTTS() && ttsEngine.isEmpty() && !ttsEngine.isPaused()) {
                 notifyTTSStarted(String.valueOf(message.getMessageID()));
-                if(first) {
+                onTtsPlaybackStarted(first);
+                if(first && shouldDeactivateMicDuringTTS()) {
                     if (isMicAutomatic) stopVoiceRecorder();
                     notifyMicDeactivated();   // we notify the client
                 }
@@ -142,11 +143,17 @@ public abstract class VoiceTranslationService extends GeneralService {
                 if(message != null) {
                     notifyTTSDone(String.valueOf(message.getMessageID()));
                 }
-                if(last) {
+                onTtsPlaybackFinished(last);
+                if(last && shouldReactivateMicAfterTts()) {
                     // start the task because this thread is not allowed to start the Recorder
                     mainHandler.postDelayed(new Runnable() {
                         @Override
                         public void run() {
+                            // A newer chunk or a new sentence may have started during the delay.
+                            if (!shouldReactivateMicAfterTts() || isTtsBusy()) {
+                                return;
+                            }
+                            onMicReactivatedAfterTts();
                             if (shouldDeactivateMicDuringTTS()) {
                                 if (!isMicMute) {
                                     startVoiceRecorder();
@@ -280,6 +287,27 @@ public abstract class VoiceTranslationService extends GeneralService {
 
     protected boolean shouldDeactivateMicDuringTTS() {
         return true;
+    }
+
+    /**
+     * An early TTS chunk can finish while the translator is still producing
+     * the rest of the sentence. Subclasses keep the microphone off in that gap.
+     */
+    protected boolean shouldReactivateMicAfterTts() {
+        return shouldDeactivateMicDuringTTS();
+    }
+
+    protected boolean isTtsBusy() {
+        return ttsEngine != null && (ttsEngine.getExecutingMessage() != null || !ttsEngine.isEmpty());
+    }
+
+    protected void onMicReactivatedAfterTts() {
+    }
+
+    protected void onTtsPlaybackStarted(boolean first) {
+    }
+
+    protected void onTtsPlaybackFinished(boolean last) {
     }
 
     protected boolean isBluetoothHeadsetConnected() {

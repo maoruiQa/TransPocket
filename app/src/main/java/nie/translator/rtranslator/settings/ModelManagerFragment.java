@@ -56,14 +56,21 @@ public class ModelManagerFragment extends Fragment {
         MOZILLA_FOR_VOICE,
         WHISPER_RAM_REDUCTION,
         TATOEBA,
-        TRANSLATION_DICT
+        TRANSLATION_DICT,
+        ASR_MODEL,
+        VAD_SEGMENTATION
     }
     private static int WHISPER_RAM_CONSUMPTION_MB = 900;
     private static int WHISPER_RAM_CONSUMPTION_REDUCED_MB = 500;
+    private static int QWEN06_RAM_CONSUMPTION_MB = 2200;
+    private static int QWEN17_RAM_CONSUMPTION_MB = 4200;
+    private static int WHISPER_TURBO_RAM_CONSUMPTION_MB = 2600;
     private static int MOZILLA_RAM_CONSUMPTION_MB = 100;  //todo: measure it better
     private static int HY_RAM_CONSUMPTION_MB = 1900;
     private static int MADLAD_RAM_CONSUMPTION_MB = 1800;
+    private static int GEMMA_RAM_CONSUMPTION_MB = 3600;
     private static int TATOEBA_RAM_CONSUMPTION_MB = 5;    //todo: measure it better
+    private static int VAD_RAM_CONSUMPTION_MB = 20;
     private static int DICT_RAM_CONSUMPTION_MB = 140;
     private Activity activity;
     private Global global;
@@ -75,19 +82,40 @@ public class ModelManagerFragment extends Fragment {
     private RadioButton radioMozilla;
     private RadioButton radioHy;
     private RadioButton radioMadlad;
+    private RadioButton radioGemma;
+    private RadioGroupPlus asrRadioGroup;
+    private RadioButton radioWhisper;
+    private RadioButton radioWhisperTurbo;
+    private RadioButton radioQwen06;
+    private RadioButton radioQwen17;
     private ResourceManagerView hyManagerView;
     private ResourceManagerView madladManagerView;
+    private ResourceManagerView gemmaManagerView;
+    private ResourceManagerView whisperManagerView;
+    private ResourceManagerView whisperTurboManagerView;
+    private ResourceManagerView qwen06ManagerView;
+    private ResourceManagerView qwen17ManagerView;
     private ResourceManagerView tatoebaManagerView;
+    private ResourceManagerView vadManagerView;
     private Button applyButton;
     private SegmentProgressBar barRam;
     private SwitchMaterial switchMozillaForVoiceModes;
     private SwitchMaterial switchWhisperReducedRam;
     private SwitchMaterial switchTatoeba;
+    private SwitchMaterial switchVadSegmentation;
     private SwitchMaterial switchTranslationDict;
     private TextView textRamUsage;
     private TextView textRamUsage2;
+    private TextView recommendationText;
     private ImageView arrowMozilla;
     private boolean guiStateRestored = false;
+    private int baselineTranslationRadioId = View.NO_ID;
+    private int baselineAsrRadioId = View.NO_ID;
+    private boolean baselineMozillaForVoice;
+    private boolean baselineWhisperReducedRam;
+    private boolean baselineTatoeba;
+    private boolean baselineVadSegmentation;
+    private boolean baselineTranslationDict;
 
 
     @Override
@@ -107,17 +135,31 @@ public class ModelManagerFragment extends Fragment {
         radioMozilla = view.findViewById(R.id.radioMozilla);
         radioHy = view.findViewById(R.id.radioHY);
         radioMadlad = view.findViewById(R.id.radioMadlad);
+        radioGemma = view.findViewById(R.id.radioGemma);
+        asrRadioGroup = view.findViewById(R.id.asr_radios);
+        radioWhisper = view.findViewById(R.id.radioWhisper);
+        radioWhisperTurbo = view.findViewById(R.id.radioWhisperTurbo);
+        radioQwen06 = view.findViewById(R.id.radioQwen06);
+        radioQwen17 = view.findViewById(R.id.radioQwen17);
+        whisperManagerView = view.findViewById(R.id.modelWhisper);
+        whisperTurboManagerView = view.findViewById(R.id.modelWhisperTurbo);
+        qwen06ManagerView = view.findViewById(R.id.modelQwen06);
+        qwen17ManagerView = view.findViewById(R.id.modelQwen17);
         hyManagerView = view.findViewById(R.id.modelHy);
         madladManagerView = view.findViewById(R.id.modelMadlad);
+        gemmaManagerView = view.findViewById(R.id.modelGemma);
         tatoebaManagerView = view.findViewById(R.id.resourceTatoeba);
+        vadManagerView = view.findViewById(R.id.modelVad);
         applyButton = view.findViewById(R.id.buttonApply);
         barRam = view.findViewById(R.id.barRam);
         switchMozillaForVoiceModes = view.findViewById(R.id.switchMozillaForVoiceModes);
         switchWhisperReducedRam = view.findViewById(R.id.switchWhisperReducedRam);
         switchTatoeba = view.findViewById(R.id.switchTatoeba);
+        switchVadSegmentation = view.findViewById(R.id.switchVadSegmentation);
         switchTranslationDict = view.findViewById(R.id.switchTranslationDict);
         textRamUsage = view.findViewById(R.id.textRamUsage);
         textRamUsage2 = view.findViewById(R.id.textRamUsage2);
+        recommendationText = view.findViewById(R.id.recommendationText);
         arrowMozilla = view.findViewById(R.id.arrowMozilla);
     }
 
@@ -131,7 +173,13 @@ public class ModelManagerFragment extends Fragment {
         downloadManager = new DownloadManager(global);
         resourceManagers.put("hyManager", new ResourceManager(activity, global.getHyMtDownloadInfo(), hyManagerView, downloadManager));
         resourceManagers.put("madladManager", new ResourceManager(activity, global.getMadladDownloadInfo(), madladManagerView, downloadManager));
+        resourceManagers.put("gemmaManager", new ResourceManager(activity, global.getTranslateGemmaDownloadInfo(), gemmaManagerView, downloadManager));
+        resourceManagers.put("whisperManager", new ResourceManager(activity, global.getWhisperDownloadInfo(), whisperManagerView, downloadManager));
+        resourceManagers.put("whisperTurboManager", new ResourceManager(activity, global.getWhisperTurboDownloadInfo(), whisperTurboManagerView, downloadManager));
+        resourceManagers.put("qwen06Manager", new ResourceManager(activity, global.getQwen3Asr06DownloadInfo(), qwen06ManagerView, downloadManager));
+        resourceManagers.put("qwen17Manager", new ResourceManager(activity, global.getQwen3Asr17DownloadInfo(), qwen17ManagerView, downloadManager));
         resourceManagers.put("tatoebaManager", new ResourceManager(activity, global.getTatoebaDownloadInfo(), tatoebaManagerView, downloadManager));
+        resourceManagers.put("vadManager", new ResourceManager(activity, global.getSileroVadDownloadInfo(), vadManagerView, downloadManager));
 
         // initialize GUI based on shared preferences
         restoreGuiPreferenceState();
@@ -189,6 +237,10 @@ public class ModelManagerFragment extends Fragment {
                 }
             }
         });
+        asrRadioGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            switchWhisperReducedRam.setEnabled(checkedId == R.id.radioWhisper);
+            updateRamUsageSpeechRecognition();
+        });
         radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
             if(checkedId == R.id.radioMozilla){  //eventual deactivation of switchMozillaForVoiceModes if Mozilla is the model selected
                 switchMozillaForVoiceModes.setChecked(false);
@@ -213,6 +265,12 @@ public class ModelManagerFragment extends Fragment {
             }
         });
         switchTatoeba.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(@NonNull CompoundButton buttonView, boolean isChecked) {
+                updateRamUsageTranslationEnhancements();
+            }
+        });
+        switchVadSegmentation.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(@NonNull CompoundButton buttonView, boolean isChecked) {
                 updateRamUsageTranslationEnhancements();
@@ -259,7 +317,17 @@ public class ModelManagerFragment extends Fragment {
     public void restoreGuiPreferenceState(){
         // model selection initialization
         SharedPreferences sharedPreferences = global.getSharedPreferences("default", Context.MODE_PRIVATE);
-        int mode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
+        ModelRecommendation recommendation = ModelRecommendation.forDevice(global);
+        String recommendationMessage = getString(recommendation.messageRes, recommendation.totalRamGb, recommendation.freeStorageGb);
+        if (recommendation.whisperReducedRam) {
+            recommendationMessage = recommendationMessage + getString(R.string.model_recommendation_whisper_reduced);
+        }
+        recommendationText.setText(recommendationMessage);
+        boolean userHasChosenModel = sharedPreferences.contains("selectedTranslationModel");
+        int mode = sharedPreferences.getInt("selectedTranslationModel", recommendation.translationModel);
+        if (!userHasChosenModel) {
+            mode = recommendation.translationModel;
+        }
         switch (mode) {
             case Translator.MOZILLA:
                 radioGroup.check(R.id.radioMozilla);
@@ -272,12 +340,31 @@ public class ModelManagerFragment extends Fragment {
             case Translator.HY_MT:
                 radioGroup.check(R.id.radioHY);
                 break;
+            case Translator.TRANSLATEGEMMA:
+                radioGroup.check(R.id.radioGemma);
+                break;
         }
         // switches initialization
-        switchMozillaForVoiceModes.setChecked(global.isUseMozillaForVoiceTranslation());
-        switchWhisperReducedRam.setChecked(global.isWhisperReducedRam());
-        switchTatoeba.setChecked(global.isUseTatoeba());
-        switchTranslationDict.setChecked(global.isUseTranslationDictionaries());
+        switchMozillaForVoiceModes.setChecked(sharedPreferences.contains("useMozillaForVoiceTranslation") ? global.isUseMozillaForVoiceTranslation() : recommendation.useMozillaForVoice);
+        switchWhisperReducedRam.setChecked(sharedPreferences.contains("whisperReducedRam") ? global.isWhisperReducedRam() : recommendation.whisperReducedRam);
+        switchTatoeba.setChecked(sharedPreferences.contains("useTatoeba") ? global.isUseTatoeba() : recommendation.useTatoeba);
+        switchVadSegmentation.setChecked(sharedPreferences.contains("simultaneousVadSegmentation") ? global.isSimultaneousVadSegmentation() : true);
+        switchTranslationDict.setChecked(sharedPreferences.contains("useTranslationDictionaries") ? global.isUseTranslationDictionaries() : recommendation.useDictionaries);
+        switch (global.getAsrModel()) {
+            case Global.ASR_QWEN3_17:
+                asrRadioGroup.check(R.id.radioQwen17);
+                break;
+            case Global.ASR_QWEN3_06:
+                asrRadioGroup.check(R.id.radioQwen06);
+                break;
+            case Global.ASR_WHISPER_TURBO:
+                asrRadioGroup.check(R.id.radioWhisperTurbo);
+                break;
+            default:
+                asrRadioGroup.check(R.id.radioWhisper);
+                break;
+        }
+        switchWhisperReducedRam.setEnabled(asrRadioGroup.getCheckedRadioButtonId() == R.id.radioWhisper);
         if(mode == Translator.MOZILLA){  //eventual deactivation of switchMozillaForVoiceModes if Mozilla is the model selected
             switchMozillaForVoiceModes.setChecked(false);
             switchMozillaForVoiceModes.setEnabled(false);
@@ -295,6 +382,18 @@ public class ModelManagerFragment extends Fragment {
         updateRamUsageTranslation();
         updateRamUsageTranslationEnhancements();
         updateTextRamUsage();
+        captureSettingsBaseline();
+    }
+
+    /** Snapshot of the controls after they are filled from preferences. Later edits are compared to this, not to values the screen itself rewrites on open. */
+    private void captureSettingsBaseline() {
+        baselineTranslationRadioId = radioGroup.getCheckedRadioButtonId();
+        baselineAsrRadioId = asrRadioGroup.getCheckedRadioButtonId();
+        baselineMozillaForVoice = switchMozillaForVoiceModes.isChecked();
+        baselineWhisperReducedRam = switchWhisperReducedRam.isChecked();
+        baselineTatoeba = switchTatoeba.isChecked();
+        baselineVadSegmentation = switchVadSegmentation.isChecked();
+        baselineTranslationDict = switchTranslationDict.isChecked();
     }
 
     private void restoreGuiDownloadState(ArrayList<DownloadGroupInfo> downloadStatus){
@@ -332,32 +431,16 @@ public class ModelManagerFragment extends Fragment {
     }
 
     public boolean checkSettingsChanged(){
-        // check translation models
-        int checkRadioId = radioGroup.getCheckedRadioButtonId();
-        if(checkRadioId == R.id.radioMozilla && global.getTranslationMode() != Translator.MOZILLA) {
-            return true;
-        } else if(checkRadioId == R.id.radioHY && global.getTranslationMode() != Translator.HY_MT) {
-            return true;
-        } else if(checkRadioId == R.id.radioMadlad && global.getTranslationMode() != Translator.MADLAD_CACHE) {
-            return true;
+        if (radioGroup == null || asrRadioGroup == null) {
+            return false;
         }
-        // check Mozilla for voice modes
-        if(global.isUseMozillaForVoiceTranslation() != switchMozillaForVoiceModes.isChecked()){
-            return true;
-        }
-        // check Whisper RAM reduction
-        if(global.isWhisperReducedRam() != switchWhisperReducedRam.isChecked()){
-            return true;
-        }
-        // check Tatoeba
-        if(global.isUseTatoeba() != switchTatoeba.isChecked()){
-            return true;
-        }
-        // check translation dictionaries
-        if(global.isUseTranslationDictionaries() != switchTranslationDict.isChecked()){
-            return true;
-        }
-        return false;
+        return radioGroup.getCheckedRadioButtonId() != baselineTranslationRadioId
+                || asrRadioGroup.getCheckedRadioButtonId() != baselineAsrRadioId
+                || switchMozillaForVoiceModes.isChecked() != baselineMozillaForVoice
+                || switchWhisperReducedRam.isChecked() != baselineWhisperReducedRam
+                || switchTatoeba.isChecked() != baselineTatoeba
+                || switchVadSegmentation.isChecked() != baselineVadSegmentation
+                || switchTranslationDict.isChecked() != baselineTranslationDict;
     }
 
     public void applySettings() {
@@ -392,6 +475,21 @@ public class ModelManagerFragment extends Fragment {
         applyTranslationStatus(new Translator.GeneralListener() {
             @Override
             public void onSuccess() {
+                applyAsrStatus(new Translator.GeneralListener() {
+                    @Override
+                    public void onSuccess() {
+                        applyWhisperAfterAsr();
+                    }
+
+                    @Override
+                    public void onFailure(int[] reasons, long value) {
+                        ApplySettingsStage stage = ApplySettingsStage.values()[reasons[0]];
+                        notifyApplyError(stage, reasons[1], value, editDialogLayout);
+                    }
+                });
+            }
+
+            private void applyWhisperAfterAsr() {
                 applyWhisperRamReduction(new Translator.GeneralListener() {
                     @Override
                     public void onSuccess() {
@@ -408,7 +506,11 @@ public class ModelManagerFragment extends Fragment {
                                 if (activity instanceof SettingsActivity) {
                                     ((SettingsActivity) activity).startFragment(SettingsActivity.SETTINGS_FRAGMENT, null);
                                 } else if (activity instanceof AccessActivity) {
-                                    startRTranslator();
+                                    if (needsDownloadBeforeEnter()) {
+                                        ((AccessActivity) activity).startFragment(AccessActivity.DOWNLOAD_FRAGMENT, null);
+                                    } else {
+                                        startRTranslator();
+                                    }
                                 }
                             }
                         });
@@ -429,8 +531,6 @@ public class ModelManagerFragment extends Fragment {
                 notifyApplyError(stage, error, value, editDialogLayout);
             }
         });
-        // N.B. We execute the apply method and its checks even if the settings are unchanged because the user could have deleted a resource enabled in the preferences
-        // (the global.setResource will ignore a non changed resource anyway, but this way the checks of the apply methods will be executed)
     }
 
     private void notifyApplyError(ApplySettingsStage stage, int error, long value, View dialogLayout){
@@ -460,12 +560,21 @@ public class ModelManagerFragment extends Fragment {
                             case Translator.MADLAD_CACHE:
                                 textView.setText(getString(R.string.error_missing_madlad));
                                 break;
+                            case Translator.TRANSLATEGEMMA:
+                                textView.setText(getString(R.string.error_missing_gemma));
+                                break;
                         }
                         break;
                     case MOZILLA_FOR_VOICE:
                         textView.setText(getString(R.string.error_missing_mozilla_voice));
                     case TATOEBA:
                         textView.setText(getString(R.string.error_missing_tatoeba));
+                        break;
+                    case ASR_MODEL:
+                        textView.setText(getString(R.string.error_missing_asr));
+                        break;
+                    case VAD_SEGMENTATION:
+                        textView.setText(getString(R.string.error_missing_vad));
                         break;
                     default:
                         textView.setText(getString(R.string.error_missing_general));
@@ -474,6 +583,10 @@ public class ModelManagerFragment extends Fragment {
                 break;
             }
             default: {
+                if (stage == ApplySettingsStage.ASR_MODEL && error == ErrorCodes.ERROR) {
+                    textView.setText(getString(R.string.error_asr_ram));
+                    break;
+                }
                 // general error dialog
                 Log.e("error", "Unknown error apply: "+error);
                 textView.setText(getString(R.string.error_apply_unknown));
@@ -495,15 +608,25 @@ public class ModelManagerFragment extends Fragment {
         } else if(checkRadioId == R.id.radioHY) {
             model = Translator.HY_MT;
             ResourceManager hyManager = resourceManagers.get("hyManager");
-            if(hyManager == null || !downloadManager.checkDownloadCompleted(hyManager.getDownloadInfo())){
+            boolean downloaded = hyManager != null && downloadManager.checkDownloadCompleted(hyManager.getDownloadInfo());
+            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
                 listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.HY_MT);
                 return;
             }
         } else if(checkRadioId == R.id.radioMadlad) {
             model = Translator.MADLAD_CACHE;
             ResourceManager madladManager = resourceManagers.get("madladManager");
-            if(madladManager == null || !downloadManager.checkDownloadCompleted(madladManager.getDownloadInfo())){
+            boolean downloaded = madladManager != null && downloadManager.checkDownloadCompleted(madladManager.getDownloadInfo());
+            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
                 listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.MADLAD_CACHE);
+                return;
+            }
+        } else if(checkRadioId == R.id.radioGemma) {
+            model = Translator.TRANSLATEGEMMA;
+            ResourceManager gemmaManager = resourceManagers.get("gemmaManager");
+            boolean downloaded = gemmaManager != null && downloadManager.checkDownloadCompleted(gemmaManager.getDownloadInfo());
+            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
+                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.TRANSLATEGEMMA);
                 return;
             }
         }
@@ -522,6 +645,16 @@ public class ModelManagerFragment extends Fragment {
                 listener.onFailure(new int[]{ApplySettingsStage.TATOEBA.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.HY_MT);
             }
         }
+        if (switchVadSegmentation.isChecked()) {
+            ResourceManager vadManager = resourceManagers.get("vadManager");
+            boolean downloaded = vadManager != null && downloadManager.checkDownloadCompleted(vadManager.getDownloadInfo());
+            // First launch has not downloaded anything yet. Save the switch and let DownloadFragment fetch the file.
+            if (!downloaded && !(activity instanceof AccessActivity)) {
+                listener.onFailure(new int[]{ApplySettingsStage.VAD_SEGMENTATION.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, 0);
+                return;
+            }
+        }
+        global.setSimultaneousVadSegmentation(switchVadSegmentation.isChecked());
         //apply translation status
         global.setTranslationStatus(model, switchMozillaForVoiceModes.isChecked(), switchTatoeba.isChecked(), switchTranslationDict.isChecked(), new Translator.GeneralListener() {
             @Override
@@ -536,15 +669,59 @@ public class ModelManagerFragment extends Fragment {
         });
     }
 
+    private int selectedAsrModel() {
+        int checked = asrRadioGroup.getCheckedRadioButtonId();
+        if (checked == R.id.radioQwen17) {
+            return Global.ASR_QWEN3_17;
+        }
+        if (checked == R.id.radioQwen06) {
+            return Global.ASR_QWEN3_06;
+        }
+        if (checked == R.id.radioWhisperTurbo) {
+            return Global.ASR_WHISPER_TURBO;
+        }
+        return Global.ASR_WHISPER;
+    }
+
+    private void applyAsrStatus(Translator.GeneralListener listener) {
+        int model = selectedAsrModel();
+        if (model == Global.ASR_QWEN3_17 && global.getTotalRamSize() < 7000) {
+            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
+            return;
+        }
+        if (model == Global.ASR_QWEN3_06 && global.getTotalRamSize() < 4500) {
+            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
+            return;
+        }
+        if (model == Global.ASR_WHISPER_TURBO && global.getTotalRamSize() < 6000) {
+            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
+            return;
+        }
+        DownloadGroupInfo download = global.getAsrDownloadInfo(model);
+        boolean present = global.groupFilesPresent(download) || downloadManager.checkDownloadCompleted(download);
+        if (!present && !(activity instanceof AccessActivity)) {
+            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, model);
+            return;
+        }
+        global.setAsrModel(model, present, listener);
+    }
+
     private void applyWhisperRamReduction(Translator.GeneralListener listener){
         global.setWhisperReducedRam(switchWhisperReducedRam.isChecked(), listener);
     }
 
 
     private void updateRamUsageSpeechRecognition() {
-        if(switchWhisperReducedRam.isChecked()) {
+        int checked = asrRadioGroup == null ? R.id.radioWhisper : asrRadioGroup.getCheckedRadioButtonId();
+        if (checked == R.id.radioQwen17) {
+            setRamUsageSpeechRecognition(QWEN17_RAM_CONSUMPTION_MB);
+        } else if (checked == R.id.radioQwen06) {
+            setRamUsageSpeechRecognition(QWEN06_RAM_CONSUMPTION_MB);
+        } else if (checked == R.id.radioWhisperTurbo) {
+            setRamUsageSpeechRecognition(WHISPER_TURBO_RAM_CONSUMPTION_MB);
+        } else if (switchWhisperReducedRam.isChecked()) {
             setRamUsageSpeechRecognition(WHISPER_RAM_CONSUMPTION_REDUCED_MB);
-        }else{
+        } else {
             setRamUsageSpeechRecognition(WHISPER_RAM_CONSUMPTION_MB);
         }
     }
@@ -565,6 +742,12 @@ public class ModelManagerFragment extends Fragment {
                 ramUsed += MOZILLA_RAM_CONSUMPTION_MB;
             }
             setRamUsageTranslation(ramUsed);
+        } else if(checkRadioId == R.id.radioGemma) {
+            int ramUsed = GEMMA_RAM_CONSUMPTION_MB;
+            if (switchMozillaForVoiceModes.isChecked()) {
+                ramUsed += MOZILLA_RAM_CONSUMPTION_MB;
+            }
+            setRamUsageTranslation(ramUsed);
         }
     }
 
@@ -572,6 +755,9 @@ public class ModelManagerFragment extends Fragment {
         int ramConsumptionTranslationEnhancements = 0;
         if(switchTatoeba.isChecked()){
             ramConsumptionTranslationEnhancements += TATOEBA_RAM_CONSUMPTION_MB;
+        }
+        if (switchVadSegmentation.isChecked()) {
+            ramConsumptionTranslationEnhancements += VAD_RAM_CONSUMPTION_MB;
         }
         if(switchTranslationDict.isChecked()){
             ramConsumptionTranslationEnhancements += DICT_RAM_CONSUMPTION_MB;
@@ -624,6 +810,33 @@ public class ModelManagerFragment extends Fragment {
         }else{
             textRamUsage.setTextColor(textRamUsage2.getTextColors().getDefaultColor());
         }
+    }
+
+    private boolean needsDownloadBeforeEnter() {
+        DownloadGroupInfo asrDownload = global.getAsrDownloadInfo(global.getAsrModel());
+        if (!global.groupFilesPresent(asrDownload) && !downloadManager.checkDownloadCompleted(asrDownload)) {
+            return true;
+        }
+        int mode = global.getTranslationMode();
+        if (mode == Translator.HY_MT && !downloadManager.checkDownloadCompleted(global.getHyMtDownloadInfo())) {
+            return true;
+        }
+        if (mode == Translator.MADLAD_CACHE && !downloadManager.checkDownloadCompleted(global.getMadladDownloadInfo())) {
+            return true;
+        }
+        if (mode == Translator.TRANSLATEGEMMA && !downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())) {
+            return true;
+        }
+        if (switchTatoeba.isChecked() && !downloadManager.checkDownloadCompleted(global.getTatoebaDownloadInfo())) {
+            return true;
+        }
+        if (switchVadSegmentation.isChecked() && !downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
+            return true;
+        }
+        if (switchTranslationDict.isChecked() && !downloadManager.checkDownloadCompleted(global.getDictionaryDownloadInfo())) {
+            return true;
+        }
+        return false;
     }
 
     private void startRTranslator(){

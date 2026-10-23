@@ -56,6 +56,7 @@
         android:label="@string/app_name"
         android:requestLegacyExternalStorage="true"
         android:largeHeap="true"
+        android:extractNativeLibs="false"
         android:supportsRtl="true"
         android:theme="@style/Theme.Speech"
         android:enableOnBackInvokedCallback="false"
@@ -106,6 +107,8 @@
         <service android:name="nie.translator.rtranslator.voice_translation._conversation_mode._conversation.ConversationService"
             android:foregroundServiceType="dataSync|microphone"/>
         <service android:name="nie.translator.rtranslator.voice_translation._walkie_talkie_mode._walkie_talkie.WalkieTalkieService"
+            android:foregroundServiceType="dataSync|microphone"/>
+        <service android:name="nie.translator.rtranslator.voice_translation._live_translation._simultaneous.SimultaneousService"
             android:foregroundServiceType="dataSync|microphone"/>
         <service android:name="nie.translator.rtranslator.GeneralService" />
         <service android:name=".downloader.DownloaderService"

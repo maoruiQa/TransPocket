@@ -41,6 +41,7 @@ public class SeekBarPreference extends Preference {
     public static final int SPEECH_TIMEOUT_MODE = 1;
     public static final int PREV_VOICE_DURATION_MODE = 2;
     public static final int BEAM_SIZE_MODE = 3;
+    public static final int TTS_RATE_MODE = 4;
     private int mode;
     private float defaultValue = 50;
     private Slider slider;
@@ -90,6 +91,9 @@ public class SeekBarPreference extends Preference {
                         break;
                     case BEAM_SIZE_MODE:
                         value.setText(String.format(Locale.US, "%d", (int) seekBarValue));
+                        break;
+                    case TTS_RATE_MODE:
+                        value.setText(String.format(Locale.US, "%.1f", seekBarValue / 10f));
                         break;
                 }
             }
@@ -160,6 +164,14 @@ public class SeekBarPreference extends Preference {
                     title.setText(R.string.preference_title_beam_size);
                     summary.setText(R.string.preference_description_beam_size);
                     break;
+                case TTS_RATE_MODE:
+                    defaultValue = 10;
+                    slider.setStepSize(1);
+                    slider.setValueFrom(5);
+                    slider.setValueTo(20);
+                    title.setText(R.string.preference_title_tts_rate);
+                    summary.setText(R.string.preference_description_tts_rate);
+                    break;
             }
 
             setSeekBarValue();
@@ -191,6 +203,10 @@ public class SeekBarPreference extends Preference {
                 slider.setValue(value);
             }
             break;
+            case TTS_RATE_MODE: {
+                slider.setValue(Math.round(global.getTtsSpeechRate() * 10f));
+            }
+            break;
         }
     }
 
@@ -209,6 +225,9 @@ public class SeekBarPreference extends Preference {
                     break;
                 case BEAM_SIZE_MODE:
                     global.setBeamSize(Integer.parseInt(value.getText().toString()));
+                    break;
+                case TTS_RATE_MODE:
+                    global.setTtsSpeechRate(Float.parseFloat(value.getText().toString()));
                     break;
             }
         }

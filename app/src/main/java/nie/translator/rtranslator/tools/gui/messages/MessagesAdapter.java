@@ -58,11 +58,16 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     private ArrayList<GuiMessage> messages = new ArrayList<>();
     private Callback callback;
     private long playingMessageID = -1;
-    private static boolean showOriginalTranscriptionMsg;
+    private final boolean showOriginalTranscriptionMsg;
 
     public MessagesAdapter(ArrayList<GuiMessage> messages, Application application, long playingMessageID, @NonNull Callback callback) {
+        this(messages, application, playingMessageID, callback, false);
+    }
+
+    public MessagesAdapter(ArrayList<GuiMessage> messages, Application application, long playingMessageID, @NonNull Callback callback, boolean alwaysShowOriginal) {
         this.callback = callback;
         this.playingMessageID = playingMessageID;
+        this.showOriginalTranscriptionMsg = alwaysShowOriginal || application.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("ShowOriginalTranscriptionMsgPreference", false);
         if (messages != null) {
             if (!messages.isEmpty()) {
                 callback.onFirstItemAdded();
@@ -70,7 +75,6 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             this.messages.addAll(messages);
             notifyItemRangeInserted(0, messages.size() - 1);
         }
-        showOriginalTranscriptionMsg = application.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("ShowOriginalTranscriptionMsgPreference", false);
     }
 
     @NonNull
@@ -78,11 +82,11 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         switch (viewType) {
             case MINE:
-                return new SendHolder(LayoutInflater.from(parent.getContext()), parent);
+                return new SendHolder(LayoutInflater.from(parent.getContext()), parent, showOriginalTranscriptionMsg);
             case NON_MINE:
-                return new ReceivedHolder(LayoutInflater.from(parent.getContext()), parent);
+                return new ReceivedHolder(LayoutInflater.from(parent.getContext()), parent, showOriginalTranscriptionMsg);
         }
-        return new SendHolder(LayoutInflater.from(parent.getContext()), parent);  // to not return null
+        return new SendHolder(LayoutInflater.from(parent.getContext()), parent, showOriginalTranscriptionMsg);  // to not return null
     }
 
     @Override
@@ -203,8 +207,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     private static class ReceivedHolder extends MessageHolder {
         TextView sender;
 
-        ReceivedHolder(LayoutInflater inflater, ViewGroup parent) {
-            super(inflater.inflate(R.layout.component_message_received, parent, false));
+        ReceivedHolder(LayoutInflater inflater, ViewGroup parent, boolean showOriginal) {
+            super(inflater.inflate(R.layout.component_message_received, parent, false), showOriginal);
             sender = itemView.findViewById(R.id.text_sender);
         }
 
@@ -222,8 +226,8 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     /** The layout for each item in the RecycleView list*/
     private static class SendHolder extends MessageHolder {
-        SendHolder(LayoutInflater inflater, ViewGroup parent) {
-            super(inflater.inflate(R.layout.component_message_send, parent, false));
+        SendHolder(LayoutInflater inflater, ViewGroup parent, boolean showOriginal) {
+            super(inflater.inflate(R.layout.component_message_send, parent, false), showOriginal);
         }
     }
 
@@ -234,13 +238,15 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         protected TextView text;
         protected ImageView ttsButton;
         protected CardView container;
+        private final boolean showOriginal;
 
         @SuppressLint("ClickableViewAccessibility")
-        public MessageHolder(@NonNull View itemView) {
+        public MessageHolder(@NonNull View itemView, boolean showOriginal) {
             super(itemView);
+            this.showOriginal = showOriginal;
             container = itemView.findViewById(R.id.cardContainer);
             originalTextToBeTranslated = itemView.findViewById(R.id.original_text_to_be_translated);
-            if (!showOriginalTranscriptionMsg) {
+            if (!showOriginal) {
                 originalTextToBeTranslated.setVisibility(View.GONE);
             }
             text = itemView.findViewById(R.id.text);
@@ -308,12 +314,13 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         }
 
         private void setText(String originalTextToBeTranslated, String text){
-            if(originalTextToBeTranslated != null && !originalTextToBeTranslated.isEmpty()){
+            if(showOriginal && originalTextToBeTranslated != null && !originalTextToBeTranslated.isEmpty()){
+                this.originalTextToBeTranslated.setVisibility(View.VISIBLE);
                 this.originalTextToBeTranslated.setText(originalTextToBeTranslated);
             }else{
                 this.originalTextToBeTranslated.setVisibility(View.GONE);
             }
-            this.text.setText(text);
+            this.text.setText(text == null ? "" : text);
         }
 
         public boolean isPlayingTTS() {

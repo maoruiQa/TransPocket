@@ -42,8 +42,7 @@ import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.DownloaderTools;
 
 public class DownloadFragment extends Fragment {
-    @Nullable
-    public static DownloadInfo[] DOWNLOAD_INFOS;
+    private ArrayList<DownloadGroupInfo> requiredGroups = new ArrayList<>();
     private static final long INTERVAL_TIME_FOR_GUI_UPDATES_MS = 100;  //500
     private AccessActivity activity;
     private Global global;
@@ -98,7 +97,7 @@ public class DownloadFragment extends Fragment {
         activity = (AccessActivity) requireActivity();
         global = (Global) activity.getApplication();
 
-        DOWNLOAD_INFOS = global.getInitialDownloadInfo().downloadsInfo;
+        requiredGroups = requiredGroups();
 
         mainHandler = new android.os.Handler(Looper.getMainLooper());
         downloader = new DownloadManager(global);
@@ -140,7 +139,9 @@ public class DownloadFragment extends Fragment {
 
             @Override
             public void onAllCompleted(DownloadGroupInfo downloadGroup) {
-                activity.startFragment(AccessActivity.MODEL_MANAGER, null);
+                if (allRequiredDownloadsComplete()) {
+                    activity.enterApp();
+                }
             }
 
             @Override
@@ -153,11 +154,13 @@ public class DownloadFragment extends Fragment {
             public void onProgress(DownloadGroupInfo downloadGroup, DownloadInfo download, int totalProgress, int progress, boolean unzipping, boolean testingIntegrity) {
                 //update of progress bar
                 int progressNormalized = totalProgress * progressBar.getMax() / 100;
-                progressBar.setProgress(progressNormalized, true);
+                progressBar.setProgress(progressNormalized, false);
                 //we update the progressNumbersText
                 double totalSize = 0;
-                for (DownloadInfo info : DOWNLOAD_INFOS) {
-                    totalSize = totalSize + info.getSize();
+                for (DownloadGroupInfo group : requiredGroups) {
+                    for (DownloadInfo info : group.downloadsInfo) {
+                        totalSize = totalSize + info.getSize();
+                    }
                 }
                 totalSize = totalSize/1000000;   //we convert from Kb to Gb
                 float downloadedGb = (float) (totalProgress*totalSize/100);    //progress : 100 = x : totalSize   (where x is downloadedGb)
@@ -183,11 +186,13 @@ public class DownloadFragment extends Fragment {
     @Override
     public void onStart() {
         super.onStart();
-        if(global != null && DOWNLOAD_INFOS != null) {
+        if(global != null && !requiredGroups.isEmpty()) {
             //if the internal or external free memory are low, we show a warning
             double requiredSize = 0;
-            for (DownloadInfo downloadInfo : DOWNLOAD_INFOS) {
-                requiredSize = requiredSize + downloadInfo.getSize();
+            for (DownloadGroupInfo group : requiredGroups) {
+                for (DownloadInfo downloadInfo : group.downloadsInfo) {
+                    requiredSize = requiredSize + downloadInfo.getSize();
+                }
             }
             requiredSize = requiredSize / 1000;   //we convert from Kb to Mb
             requiredSize = requiredSize + 800;   //we add a margin (because the transfer process requires more space)
@@ -200,10 +205,16 @@ public class DownloadFragment extends Fragment {
 
             ArrayList<DownloadGroupInfo> downloadStatus = downloader.getSavedDownloadStatus();
             // we eventually start the download if it is the first time
-            DownloadGroupInfo downloadGroupInfo = new DownloadGroupInfo(DOWNLOAD_INFOS);
-            if(downloadStatus == null || !downloadStatus.contains(downloadGroupInfo)){
-                downloader.startDownload(downloadGroupInfo);
-            }else if(!serviceStarted){
+            boolean startedAny = false;
+            for (DownloadGroupInfo group : requiredGroups) {
+                if (!groupSatisfied(group, downloadStatus)) {
+                    downloader.startDownload(group);
+                    startedAny = true;
+                }
+            }
+            if(!startedAny && allRequiredDownloadsComplete()){
+                activity.enterApp();
+            }else if(!serviceStarted && !startedAny){
                 // we change the GUI based on current saved download status
                 // normally we do this when the service starts, but if it won't start (paused download or other reasons)
                 // we restore the GUI state based on the saved download state instead.
@@ -216,7 +227,7 @@ public class DownloadFragment extends Fragment {
         // we change the GUI based on current download status
         if(downloadStatus != null){
             guiStateRestored = true;
-            int index = downloadStatus.indexOf(new DownloadGroupInfo(DOWNLOAD_INFOS));
+            int index = downloadStatus.indexOf(requiredGroups.get(0));
             if(index != -1) {
                 if (downloadStatus.get(index).isAllDownloadCompleted()) {
                     downloadManagerCallback.onAllCompleted(downloadStatus.get(index));
@@ -282,6 +293,59 @@ public class DownloadFragment extends Fragment {
 
     private void retryCurrentDownload(){
         startAllDownloads();
+    }
+
+    private ArrayList<DownloadGroupInfo> requiredGroups() {
+        ArrayList<DownloadGroupInfo> groups = new ArrayList<>();
+        groups.add(global.getAsrDownloadInfo(global.getAsrModel()));
+        int mode = global.getTranslationMode();
+        if (mode == nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator.HY_MT) {
+            groups.add(global.getHyMtDownloadInfo());
+        } else if (mode == nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator.MADLAD_CACHE) {
+            groups.add(global.getMadladDownloadInfo());
+        } else if (mode == nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator.TRANSLATEGEMMA) {
+            groups.add(global.getTranslateGemmaDownloadInfo());
+        }
+        if (global.isUseTatoeba()) {
+            groups.add(global.getTatoebaDownloadInfo());
+        }
+        if (global.isSimultaneousVadSegmentation()) {
+            groups.add(global.getSileroVadDownloadInfo());
+        }
+        if (global.isUseTranslationDictionaries()) {
+            groups.add(global.getDictionaryDownloadInfo());
+        }
+        return groups;
+    }
+
+    private boolean allRequiredDownloadsComplete() {
+        ArrayList<DownloadGroupInfo> saved = downloader.getSavedDownloadStatus();
+        for (DownloadGroupInfo group : requiredGroups) {
+            if (!groupSatisfied(group, saved)) {
+                return false;
+            }
+        }
+        return !requiredGroups.isEmpty();
+    }
+
+    private boolean groupSatisfied(DownloadGroupInfo group, ArrayList<DownloadGroupInfo> saved) {
+        if (global.groupFilesPresent(group)) {
+            return true;
+        }
+        DownloadGroupInfo savedGroup = matchingSaved(saved, group);
+        return savedGroup != null && savedGroup.isAllDownloadCompleted();
+    }
+
+    @Nullable
+    private DownloadGroupInfo matchingSaved(ArrayList<DownloadGroupInfo> saved, DownloadGroupInfo group) {
+        if (saved == null) {
+            return null;
+        }
+        int index = saved.indexOf(group);
+        if (index == -1) {
+            return null;
+        }
+        return saved.get(index);
     }
 
     private void startAllDownloads(){

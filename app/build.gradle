@@ -25,12 +25,11 @@ ext {
 
 android {
     namespace 'nie.translator.rtranslator'
-    //compileSdkVersion 33  //33
     ndkVersion "28.0.12674087"
+    compileSdk 37
     defaultConfig {
         applicationId "nie.translator.rtranslator"
-        targetSdkVersion 36   //32
-        compileSdk 36
+        targetSdkVersion 37
         versionName '3.0.0-beta2'
         versionCode 27
         minSdkVersion 28
@@ -70,6 +69,13 @@ android {
         buildConfig true
     }
 
+    packaging {
+        jniLibs {
+            // Keep native libraries inside the APK. Android 17 rejects System.load() of a writable copy.
+            useLegacyPackaging = false
+        }
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -94,10 +100,8 @@ android {
             signingConfig signingConfigs.debug
         }
     }
-    lintOptions {
+    lint {
         checkReleaseBuilds false
-        // Or, if you prefer, you can continue to check for errors in release builds,
-        // but continue the build even when errors are found:
         abortOnError false
     }
     configurations.all {

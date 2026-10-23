@@ -24,6 +24,7 @@ import android.util.Log;
 import org.w3c.dom.Document;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
+import java.io.File;
 import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
@@ -43,6 +44,8 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.extensions.OrtxPackage;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.AsrLanguageHint;
+import nie.translator.rtranslator.tools.AsrRepetition;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.nn.TensorUtils;
@@ -175,10 +178,44 @@ public class Recognizer extends NeuralNetworkApi {
     private OrtSession decoderSession;
     private OrtSession detokenizerSession;
     private OrtEnvironment onnxEnv;
+    private Qwen3AsrEngine qwenEngine;
+    private WhisperTurboEngine turboEngine;
 
 
     public Recognizer(Global global, final boolean returnResultOnlyAtTheEnd, final NeuralNetworkApi.InitListener initListener) {
         this.global = global;
+        if (global.getAsrModel() == Global.ASR_QWEN3_06 || global.getAsrModel() == Global.ASR_QWEN3_17) {
+            onnxEnv = OrtEnvironment.getEnvironment();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        qwenEngine = new Qwen3AsrEngine(new File(global.getAsrModelDirectory()));
+                        initListener.onInitializationFinished();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        initListener.onError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
+                    }
+                }
+            }).start();
+            return;
+        }
+        if (global.getAsrModel() == Global.ASR_WHISPER_TURBO) {
+            onnxEnv = OrtEnvironment.getEnvironment();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        turboEngine = new WhisperTurboEngine(new File(global.getWhisperTurboDirectory()));
+                        initListener.onInitializationFinished();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        initListener.onError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
+                    }
+                }
+            }).start();
+            return;
+        }
         //onnxEnv = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE);
         onnxEnv = OrtEnvironment.getEnvironment();
 
@@ -233,6 +270,9 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     public void initializeEncoderSession() throws OrtException {
+        if (qwenEngine != null || turboEngine != null || global.getAsrModel() != Global.ASR_WHISPER) {
+            return;
+        }
         // release of encoder session in case of a restart
         if(encoderSession != null){
             encoderSession.close();
@@ -260,46 +300,73 @@ public class Recognizer extends NeuralNetworkApi {
      * @param data The audio data.
      */
     public void recognize(final float[] data, int beamSize, final String languageCode) {
-        new Thread("recognizer"){
-            @Override
-            public void run() {
-                super.run();
-                synchronized (lock) {
-                    Log.e("recognizer","recognizingCalled");
-                    if (data != null) {
-                        dataToRecognize.addLast(new DataContainer(data, beamSize, languageCode));
-                        if (dataToRecognize.size() >= 1 && !recognizing) {
-                            recognize();
-                        }
-                    }
-                }
-            }
-        }.start();
+        enqueue(new DataContainer(data, beamSize, languageCode, false));
+    }
+
+    /**
+     * Recognizes one simultaneous-interpretation clause. Every clause stays in
+     * the queue, in order. The source language is a hint, not a forced token.
+     */
+    public void recognizeLatest(final float[] data, int beamSize, final String languageCode) {
+        enqueue(new DataContainer(data, beamSize, languageCode, true));
     }
 
     public void recognize(final float[] data, int beamSize, final String languageCode1, final String languageCode2) {
-        new Thread("recognizer"){
+        enqueue(new DataContainer(data, beamSize, languageCode1, languageCode2));
+    }
+
+    private void enqueue(final DataContainer container) {
+        if (container == null || container.data == null) {
+            return;
+        }
+        new Thread("recognizer") {
             @Override
             public void run() {
-                super.run();
+                boolean start = false;
                 synchronized (lock) {
-                    Log.e("recognizer","recognizingCalled");
-                    if (data != null) {
-                        dataToRecognize.addLast(new DataContainer(data, beamSize, languageCode1, languageCode2));
-                        if (dataToRecognize.size() >= 1 && !recognizing) {
-                            recognize();
-                        }
+                    dataToRecognize.addLast(container);
+                    if (!recognizing) {
+                        recognizing = true;
+                        start = true;
                     }
+                }
+                if (start) {
+                    drainQueue();
                 }
             }
         }.start();
     }
 
-    private void recognize() {
-        recognizing = true;
-        DataContainer data = dataToRecognize.pollFirst();
-        if (initSession != null && encoderSession != null && cacheInitSession != null && decoderSession != null && detokenizerSession != null) {
+    /** Runs outside {@link #lock}. The flag {@code recognizing} keeps a single worker. */
+    private void drainQueue() {
+        while (true) {
+            DataContainer data;
+            synchronized (lock) {
+                data = dataToRecognize.pollFirst();
+                if (data == null) {
+                    recognizing = false;
+                    return;
+                }
+            }
+            try {
+                transcribe(data);
+            } catch (Throwable t) {
+                Log.e("recognizer", "recognition failed", t);
+            }
+        }
+    }
+
+    private void transcribe(DataContainer data) {
+        if (data == null) {
+            return;
+        }
+        if (qwenEngine != null) {
             if (data != null) {
+                recognizeWithQwen(data);
+            }
+        } else if (turboEngine != null) {
+            recognizeWithTurbo(data);
+        } else if (initSession != null && encoderSession != null && cacheInitSession != null && decoderSession != null && detokenizerSession != null) {
                 //we convert data in an audioTensor and start the transcription
                 try {
                     FloatBuffer floatAudioDataBuffer = FloatBuffer.wrap(data.data);
@@ -390,6 +457,13 @@ public class Recognizer extends NeuralNetworkApi {
                     if(batchSize == 2){
                         languageID2 = getLanguageID(data.languageCode2);
                     }
+                    final int firstLanguageToken = START_TOKEN_ID + 1;
+                    final int lastLanguageToken = TRANSCRIBE_TOKEN_ID - 2;
+                    int hintedLanguage = languageID;
+                    if (hintedLanguage < firstLanguageToken || hintedLanguage > lastLanguageToken) {
+                        hintedLanguage = -1;
+                    }
+                    int chosenLanguage = hintedLanguage >= 0 ? hintedLanguage : firstLanguageToken;
                     int[] decoderInitialInputIDs = {START_TOKEN_ID, languageID, TRANSCRIBE_TOKEN_ID, NO_TIMESTAMPS_TOKEN_ID};
                     int[] decoderInitialInputIDs2 = {START_TOKEN_ID, languageID2, TRANSCRIBE_TOKEN_ID, NO_TIMESTAMPS_TOKEN_ID};
                     
@@ -397,8 +471,12 @@ public class Recognizer extends NeuralNetworkApi {
                         initialTime = System.currentTimeMillis();
                         time = System.currentTimeMillis();
                         if (j <= 4) {
+                            int token = decoderInitialInputIDs[j-1];
+                            if (data.softLanguage && batchSize == 1 && j == 2) {
+                                token = chosenLanguage;
+                            }
                             if(batchSize == 1) {
-                                inputIDsTensor = TensorUtils.convertIntArrayToTensor(onnxEnv, new int[]{decoderInitialInputIDs[j-1]});
+                                inputIDsTensor = TensorUtils.convertIntArrayToTensor(onnxEnv, new int[]{token});
                             }else{
                                 inputIDsTensor = TensorUtils.convertIntArrayToTensor(onnxEnv, new int[]{decoderInitialInputIDs[j-1], decoderInitialInputIDs2[j-1]}, new long[]{2,1});
                             }
@@ -426,16 +504,11 @@ public class Recognizer extends NeuralNetworkApi {
                             }
                         }
                         oldResult = result;
-                        android.util.Log.i("performance", "pre-execution of " + j + "th word done in: " + (System.currentTimeMillis() - time) + "ms");
-                        time = System.currentTimeMillis();
                         //execution of decoder (with cache)
                         result = decoderSession.run(decoderInput);
-                        android.util.Log.i("performance", "execution of " + j + "th word done in: " + (System.currentTimeMillis() - time) + "ms");
-                        time = System.currentTimeMillis();
 
                         if (oldResult != null) {
                             oldResult.close(); //serve a rilasciare la memoria occupata dal risultato (altrimenti di accumula e aumenta molto)
-                            android.util.Log.i("performance", "release RAM of " + j + "th word done in: " + (System.currentTimeMillis() - time) + "ms");
                         }
                         inputIDsTensor.close();
                         if(decoderPastTensor != null) decoderPastTensor.close();
@@ -446,6 +519,20 @@ public class Recognizer extends NeuralNetworkApi {
                         if(!finished1) {
                             max = Utils.getIndexOfLargest(outputValues);
                             completeOutput.add(max);
+                            if (data.softLanguage && batchSize == 1 && j == 1 && outputValues.length > lastLanguageToken) {
+                                float[] languageLogits = new float[lastLanguageToken - firstLanguageToken + 1];
+                                System.arraycopy(outputValues, firstLanguageToken, languageLogits, 0, languageLogits.length);
+                                int picked = AsrLanguageHint.choose(languageLogits, firstLanguageToken, hintedLanguage);
+                                if (picked >= firstLanguageToken && picked <= lastLanguageToken) {
+                                    if (hintedLanguage >= 0 && picked != hintedLanguage) {
+                                        Log.i("recognizer", "simultaneous language token " + hintedLanguage + " -> " + picked);
+                                    }
+                                    chosenLanguage = picked;
+                                }
+                            }
+                            if (batchSize == 1 && j > 4 && AsrRepetition.keepCount(completeOutput) < completeOutput.size()) {
+                                max = eos;
+                            }
                         }
                         if(batchSize == 2){
                             outputValues2 = value[1][0];
@@ -489,8 +576,6 @@ public class Recognizer extends NeuralNetworkApi {
                         if(max2 == eos){
                             finished2 = true;
                         }
-                        android.util.Log.i("performance", "post-execution of" + j + "th word done in: " + (System.currentTimeMillis() - time) + "ms");
-                        android.util.Log.i("performance", "Generation of" + j + "th word done in: " + (System.currentTimeMillis() - initialTime) + "ms");
 
                         j++;
                     }
@@ -504,9 +589,9 @@ public class Recognizer extends NeuralNetworkApi {
                     //execution of the detokenizer
                     Map detokenizerInputs = (Map) (new LinkedHashMap());
                     if(batchSize == 1) {
-                        String finalText = UNDEFINED_TEXT;
-                        if(!execution1HitMaxLength) {
-                            int[] sequences = completeOutput.stream().mapToInt(i -> i).toArray();
+                        String finalText = "";
+                        int[] sequences = keptTokens(completeOutput, eos);
+                        if(sequences.length > 0) {
                             detokenizerInputs.put("sequences", TensorUtils.createInt32Tensor(onnxEnv, sequences, new long[]{1, 1, sequences.length}));
                             OrtSession.Result detokenizerOutputs = this.detokenizerSession.run(detokenizerInputs);
                             Object finalTextResult = detokenizerOutputs.get(0).getValue();
@@ -555,16 +640,10 @@ public class Recognizer extends NeuralNetworkApi {
 
                     android.util.Log.i("performance", "SPEECH RECOGNITION DONE IN: " + (SystemClock.elapsedRealtime() - startTimeInMs) + "ms");
 
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    notifyError(new int[]{ErrorCodes.ERROR_EXECUTING_MODEL}, 0);
-                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                notifyError(new int[]{ErrorCodes.ERROR_EXECUTING_MODEL}, 0);
             }
-        }
-        if (!dataToRecognize.isEmpty()){
-            recognize();
-        }else {
-            recognizing = false;
         }
     }
 
@@ -619,21 +698,115 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     public void stop(){
-        dataToRecognize.clear();
+        synchronized (lock) {
+            dataToRecognize.clear();
+        }
     }
 
     public void destroy() {
-        //eventually if in the future I decide to load Whisper only for WalkieTalkie and Conversation then all the resources will be released here
+        if (qwenEngine != null) {
+            qwenEngine.close();
+            qwenEngine = null;
+        }
+        if (turboEngine != null) {
+            turboEngine.close();
+            turboEngine = null;
+        }
+    }
+
+    private void recognizeWithTurbo(DataContainer data) {
+        try {
+            boolean softLanguage = data.softLanguage && data.languageCode2 == null;
+            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2, softLanguage);
+            if (data.languageCode2 == null) {
+                notifyResult(correctText(transcripts.firstText), data.languageCode, transcripts.firstScore, true);
+            } else {
+                notifyMultiResult(correctText(transcripts.firstText), data.languageCode, transcripts.firstScore, correctText(transcripts.secondText), data.languageCode2, transcripts.secondScore);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            notifyError(new int[]{ErrorCodes.ERROR_EXECUTING_MODEL}, 0);
+        }
+    }
+
+    private void recognizeWithQwen(DataContainer data) {
+        try {
+            Qwen3AsrEngine.Transcript transcript = qwenEngine.transcribe(data.data);
+            String text = correctText(transcript.text);
+            if (data.languageCode2 == null) {
+                String language = data.languageCode != null ? data.languageCode : transcript.languageCode;
+                notifyResult(text, language, 1, true);
+            } else if (sameLanguage(data.languageCode2, transcript.languageCode) && !sameLanguage(data.languageCode, transcript.languageCode)) {
+                notifyMultiResult(UNDEFINED_TEXT, data.languageCode, 0, text, data.languageCode2, 1);
+            } else {
+                notifyMultiResult(text, data.languageCode, 1, UNDEFINED_TEXT, data.languageCode2, 0);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            notifyError(new int[]{ErrorCodes.ERROR_EXECUTING_MODEL}, 0);
+        }
+    }
+
+    private static boolean sameLanguage(String requested, String detected) {
+        if (requested == null || detected == null || requested.isEmpty() || detected.isEmpty()) {
+            return false;
+        }
+        String left = requested.toLowerCase(java.util.Locale.US);
+        String right = detected.toLowerCase(java.util.Locale.US);
+        int dash = left.indexOf('-');
+        if (dash > 0) {
+            left = left.substring(0, dash);
+        }
+        dash = right.indexOf('-');
+        if (dash > 0) {
+            right = right.substring(0, dash);
+        }
+        return left.equals(right);
     }
 
     public int getLanguageID(String language){
+        String code = AsrLanguageHint.baseCode(language);
         for (int i = 0; i < LANGUAGES.length; i++) {
-            if (LANGUAGES[i].equals(language)) {
+            if (LANGUAGES[i].equals(code)) {
                 return START_TOKEN_ID + i + 1;
             }
         }
         Log.e("error", "Error Converting Language code " + language + " to Whisper code");
         return -1;
+    }
+
+    /** Drops a trailing end token and a repeated tail. An empty result is left for the caller to skip. */
+    private static int[] keptTokens(ArrayList<Integer> tokens, int eos) {
+        int n = tokens.size();
+        if (n > 0 && tokens.get(n - 1) == eos) {
+            n--;
+        }
+        if (n <= 0) {
+            return new int[0];
+        }
+        int[] body = new int[n];
+        for (int i = 0; i < n; i++) {
+            body[i] = tokens.get(i);
+        }
+        int keep = AsrRepetition.keepCount(body);
+        if (keep <= 0 || !hasTextToken(body, keep, eos)) {
+            return new int[0];
+        }
+        if (keep == n) {
+            return body;
+        }
+        int[] trimmed = new int[keep];
+        System.arraycopy(body, 0, trimmed, 0, keep);
+        return trimmed;
+    }
+
+    private static boolean hasTextToken(int[] tokens, int count, int eos) {
+        for (int i = 0; i < count; i++) {
+            if (tokens[i] >= 0 && tokens[i] < eos) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void addCallback(final RecognizerListener callback) {
@@ -679,11 +852,13 @@ public class Recognizer extends NeuralNetworkApi {
         private String languageCode;
         private String languageCode2;
         private int beamSize;
+        private boolean softLanguage;
 
-        private DataContainer(float[] data, int beamSize, String languageCode){
+        private DataContainer(float[] data, int beamSize, String languageCode, boolean softLanguage){
             this.data = data;
             this.beamSize = beamSize;
             this.languageCode = languageCode;
+            this.softLanguage = softLanguage;
         }
 
         private DataContainer(float[] data, int beamSize, String languageCode, String languageCode2){

@@ -793,14 +793,14 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
             if (message != null) {
                 int messageIndex = mAdapter.getMessageIndex(message.getMessageID());
                 if(messageIndex != -1) {
-                    if((!mRecyclerView.isAnimating() && !mRecyclerView.getLayoutManager().isSmoothScrolling()) || message.isFinal()) {
-                        if(message.isFinal()){
-                            if(mRecyclerView.getItemAnimator() != null) {
-                                mRecyclerView.getItemAnimator().endAnimations();
-                            }
+                    boolean listBusy = mRecyclerView.isAnimating()
+                            || (mRecyclerView.getLayoutManager() != null && mRecyclerView.getLayoutManager().isSmoothScrolling());
+                    if(message.isFinal() || listBusy){
+                        if(mRecyclerView.getItemAnimator() != null) {
+                            mRecyclerView.getItemAnimator().endAnimations();
                         }
-                        mAdapter.setMessage(messageIndex, message);
                     }
+                    mAdapter.setMessage(messageIndex, message);
                 }else{
                     if(mRecyclerView.getItemAnimator() != null) {
                         mRecyclerView.getItemAnimator().endAnimations();

@@ -152,6 +152,8 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         // change microphone sensibility initialization
         SeekBarPreference micSensibilityPreference = (SeekBarPreference) findPreference("micSensibilitySetting");
         micSensibilityPreference.initialize(activity, SeekBarPreference.MIC_SENSIBILITY_MODE);
+        EchoCancellationPreference echoCancellationPreference = (EchoCancellationPreference) findPreference("echoCancellation");
+        echoCancellationPreference.setFragment(this);
 
         // language support option with low quality initialization
         supportLanguagesQualityPreference = (SupportLanguagesQuality) findPreference("languagesNNQualityLow");
@@ -171,6 +173,9 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         languagePreference.initializeLanguagesList();
 
         // link tts settings initialization
+        SeekBarPreference ttsRatePreference = (SeekBarPreference) findPreference("ttsSpeechRateSetting");
+        ttsRatePreference.initialize(activity, SeekBarPreference.TTS_RATE_MODE);
+
         Preference ttsPreference = findPreference("tts");
         ttsPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
             @Override

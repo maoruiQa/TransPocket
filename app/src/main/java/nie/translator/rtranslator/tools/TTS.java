@@ -33,6 +33,7 @@ import java.util.Set;
 public class TTS {
     //object
     private TextToSpeech tts;
+    private final Context appContext;
 
     //Attributes used for getting the supported languages
     private static Thread getSupportedLanguageThread;
@@ -42,6 +43,7 @@ public class TTS {
 
 
     public TTS(Context context, final InitListener listener) {
+        appContext = context.getApplicationContext();
         tts = new TextToSpeech(context, new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
@@ -94,6 +96,13 @@ public class TTS {
 
     public int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
         if (isActive()) {
+            float rate = appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+            if (rate < 0.5f) {
+                rate = 0.5f;
+            } else if (rate > 2f) {
+                rate = 2f;
+            }
+            tts.setSpeechRate(rate);
             return tts.speak(text, queueMode, params, utteranceId);
         }
         return TextToSpeech.ERROR;

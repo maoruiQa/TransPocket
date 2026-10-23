@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/primary_very_lite"
+    android:fitsSystemWindows="true"
+    android:accessibilityPaneTitle="@string/title_fragment_simultaneous">
+
+    <android.widget.Toolbar
+        android:id="@+id/toolbarSimultaneous"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:importantForAccessibility="noHideDescendants"
+        android:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+        android:theme="@style/Theme.Toolbar"
+        android:title=" "
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/exitButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:backgroundTint="@android:color/transparent"
+        android:contentDescription="@string/back"
+        android:src="@drawable/back_arrow_icon2"
+        android:tint="@color/primary_very_dark"
+        app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous" />
+
+    <nie.translator.rtranslator.tools.gui.AutoScrollTextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:ellipsize="end"
+        android:fontFamily="@font/nunito_sans_semibold"
+        android:maxLines="1"
+        android:text="@string/title_fragment_simultaneous"
+        android:textColor="@color/primary_very_dark"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
+        app:layout_constraintEnd_toStartOf="@+id/soundButton"
+        app:layout_constraintStart_toEndOf="@+id/exitButton"
+        app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous" />
+
+    <nie.translator.rtranslator.tools.gui.ButtonSound
+        android:id="@+id/soundButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:backgroundTint="@android:color/transparent"
+        android:contentDescription="@string/description_button_tts_manual"
+        android:tint="@color/primary_very_dark"
+        app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
+        app:layout_constraintEnd_toStartOf="@+id/settingsButton"
+        app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous"
+        app:srcCompat="@drawable/sound_manual_icon" />
+
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/settingsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:backgroundTint="@android:color/transparent"
+        android:contentDescription="@string/title_activity_settings"
+        android:tint="@color/primary_very_dark"
+        app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous"
+        app:srcCompat="@drawable/settings_icon" />
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/languageBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:layout_constraintTop_toBottomOf="@+id/toolbarSimultaneous">
+
+        <nie.translator.rtranslator.tools.gui.AutoScrollMaterialButton
+            android:id="@+id/first_lang_selector"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="16dp"
+            android:backgroundTint="@color/primary_very_dark"
+            android:fontFamily="@font/nunito_semibold"
+            android:outlineProvider="none"
+            android:paddingStart="8dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="12dp"
+            android:text="@string/loading"
+            android:textColor="@color/white"
+            android:theme="@style/Theme.MaterialComponents"
+            app:cornerRadius="24dp"
+            app:elevation="0dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/languageArrow"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="English" />
+
+        <ImageView
+            android:id="@+id/languageArrow"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:contentDescription="@null"
+            android:src="@drawable/right_arrow_icon"
+            app:layout_constraintBottom_toBottomOf="@+id/first_lang_selector"
+            app:layout_constraintEnd_toStartOf="@+id/second_lang_selector"
+            app:layout_constraintStart_toEndOf="@+id/first_lang_selector"
+            app:layout_constraintTop_toTopOf="@+id/first_lang_selector"
+            app:tint="@color/primary_very_dark" />
+
+        <nie.translator.rtranslator.tools.gui.AutoScrollMaterialButton
+            android:id="@+id/second_lang_selector"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="24dp"
+            android:backgroundTint="@color/primary_very_dark"
+            android:fontFamily="@font/nunito_semibold"
+            android:outlineProvider="none"
+            android:paddingStart="8dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="12dp"
+            android:text="@string/loading"
+            android:textColor="@color/white"
+            android:theme="@style/Theme.MaterialComponents"
+            app:cornerRadius="24dp"
+            app:elevation="0dp"
+            app:layout_constraintBottom_toBottomOf="@+id/first_lang_selector"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/languageArrow"
+            app:layout_constraintTop_toTopOf="@+id/first_lang_selector"
+            tools:text="Chinese" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        app:cardBackgroundColor="@color/accent_white"
+        app:cardElevation="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/languageBar">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <include
+                layout="@layout/fragment_voice_translation"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                app:layout_constraintBottom_toTopOf="@+id/micBar"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <androidx.cardview.widget.CardView
+                android:id="@+id/micBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardElevation="7dp"
+                app:layout_constraintBottom_toBottomOf="parent">
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="16dp">
+
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_horizontal">
+
+                        <nie.translator.rtranslator.tools.gui.ButtonMic
+                            android:id="@+id/buttonMic"
+                            android:layout_width="66dp"
+                            android:layout_height="66dp"
+                            android:background="@drawable/circle"
+                            android:backgroundTint="@color/primary"
+                            android:contentDescription="@string/description_start_automatic_recognition"
+                            android:src="@drawable/mic_icon"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:tint="@color/accent_white" />
+
+                        <View
+                            android:id="@+id/leftLine"
+                            android:layout_width="5dp"
+                            android:layout_height="19dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="@drawable/rounded_line"
+                            android:visibility="gone"
+                            app:layout_constraintBottom_toBottomOf="@+id/buttonMic"
+                            app:layout_constraintEnd_toStartOf="@+id/centerLine"
+                            app:layout_constraintTop_toTopOf="@+id/buttonMic" />
+
+                        <View
+                            android:id="@+id/centerLine"
+                            android:layout_width="5dp"
+                            android:layout_height="24dp"
+                            android:background="@drawable/rounded_line"
+                            android:visibility="gone"
+                            app:layout_constraintBottom_toBottomOf="@+id/buttonMic"
+                            app:layout_constraintEnd_toEndOf="@+id/buttonMic"
+                            app:layout_constraintStart_toStartOf="@+id/buttonMic"
+                            app:layout_constraintTop_toTopOf="@+id/buttonMic" />
+
+                        <View
+                            android:id="@+id/rightLine"
+                            android:layout_width="5dp"
+                            android:layout_height="12dp"
+                            android:layout_marginStart="4dp"
+                            android:background="@drawable/rounded_line"
+                            android:visibility="gone"
+                            app:layout_constraintBottom_toBottomOf="@+id/buttonMic"
+                            app:layout_constraintStart_toEndOf="@+id/centerLine"
+                            app:layout_constraintTop_toTopOf="@+id/buttonMic" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+                </FrameLayout>
+            </androidx.cardview.widget.CardView>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
+</androidx.constraintlayout.widget.ConstraintLayout>

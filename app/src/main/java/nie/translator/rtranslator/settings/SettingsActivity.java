@@ -138,7 +138,7 @@ public class SettingsActivity extends GeneralActivity {
                 if(((ModelManagerFragment) fragment).checkSettingsChanged()){
                     showConfirmApplyDialog();
                 }else {
-                    ((ModelManagerFragment) fragment).applySettings();
+                    startFragment(SETTINGS_FRAGMENT, null);
                 }
             }else if (fragment instanceof MozillaManagerFragment) {
                 startFragment(MODEL_MANAGER, null);
@@ -185,8 +185,7 @@ public class SettingsActivity extends GeneralActivity {
             @Override
             public void onClick(View v) {
                 dialog.dismiss();
-                ((ModelManagerFragment) fragment).restoreGuiPreferenceState();
-                ((ModelManagerFragment) fragment).applySettings();
+                startFragment(SETTINGS_FRAGMENT, null);
             }
         });
     }

@@ -281,6 +281,11 @@ public class LoadingActivity extends GeneralActivity {
                     return false;
                 }
                 break;
+            case Translator.TRANSLATEGEMMA:
+                if(!downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())){
+                    return false;
+                }
+                break;
         }
         // check of Mozilla for voice translation modes preference
         if(translationMode != Translator.MOZILLA && global.isUseMozillaForVoiceTranslation() && !checkMozillaModelsPresence(downloadManager)){
@@ -288,6 +293,9 @@ public class LoadingActivity extends GeneralActivity {
         }
         // check of Tatoeba preference
         if(global.isUseTatoeba() && !downloadManager.checkDownloadCompleted(global.getTatoebaDownloadInfo())){
+            return false;
+        }
+        if (global.isSimultaneousVadSegmentation() && !downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
             return false;
         }
         android.util.Log.i("performance", "checkIfResourcesPreferencesRespectDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");
@@ -320,12 +328,17 @@ public class LoadingActivity extends GeneralActivity {
         if(downloadManager.checkDownloadCompleted(global.getMadladDownloadInfo())){
             availableModels.add(Translator.MADLAD_CACHE);
         }
+        if(downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())){
+            availableModels.add(Translator.TRANSLATEGEMMA);
+        }
         if(!availableModels.contains(translationMode)){
             int newTranslationMode = -1;
             if(availableModels.contains(Translator.MOZILLA)){
                 newTranslationMode = Translator.MOZILLA;
             }else if(availableModels.contains(Translator.HY_MT)){
                 newTranslationMode = Translator.HY_MT;
+            }else if(availableModels.contains(Translator.TRANSLATEGEMMA)){
+                newTranslationMode = Translator.TRANSLATEGEMMA;
             }else if(availableModels.contains(Translator.MADLAD_CACHE)){
                 newTranslationMode = Translator.MADLAD_CACHE;
             }
@@ -349,6 +362,9 @@ public class LoadingActivity extends GeneralActivity {
             SharedPreferences.Editor editor = sharedPreferences.edit();
             editor.putBoolean("useTatoeba", false);
             editor.apply();
+        }
+        if (!downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
+            global.setSimultaneousVadSegmentation(false);
         }
         android.util.Log.i("performance", "adaptResourcesPreferencesToDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");
     }

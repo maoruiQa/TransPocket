@@ -32,6 +32,7 @@ import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
@@ -75,6 +76,14 @@ public class WalkieTalkieService extends VoiceTranslationService {
     private CustomLocale secondLanguage;
     private Translator.TranslateListener firstResultTranslateListener;
     private Translator.TranslateListener secondResultTranslateListener;
+    // Holds the microphone until the final TTS chunk of the current translation is queued.
+    // An earlier chunk can finish while the decoder is still generating.
+    private final Object speechLock = new Object();
+    private int speechGeneration = 0;
+    private String spokenPrefix = "";
+    private long spokenResultId = -1;
+    private boolean generationOpen = false;
+    private boolean finalSpeechQueued = false;
 
 
     @Override
@@ -145,9 +154,9 @@ public class WalkieTalkieService extends VoiceTranslationService {
                                         public void onDetectedText(final NeuralNetworkApiResult result) {
                                             // here the result returns with the same language as the text sent from the Fragment editText
                                             if (result.getLanguage().equalsLanguage(firstLanguage)) {
-                                                translator.translate(result.getText(), firstLanguage, secondLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.WALKIE_TALKIE_MODE, firstResultTranslateListener);
+                                                translate(result.getText(), firstLanguage, secondLanguage, TRANSLATOR_BEAM_SIZE, false, firstResultTranslateListener);
                                             } else {
-                                                translator.translate(result.getText(), secondLanguage, firstLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.WALKIE_TALKIE_MODE, secondResultTranslateListener);
+                                                translate(result.getText(), secondLanguage, firstLanguage, TRANSLATOR_BEAM_SIZE, false, secondResultTranslateListener);
                                             }
                                         }
 
@@ -320,34 +329,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
         firstResultTranslateListener = new Translator.TranslateListener() {
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
-                ((Global) getApplication()).getTTSLanguages(true, new Global.GetLocalesListListener() {
-                    @Override
-                    public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
-                        GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), inputLanguage, outputLanguage, resultID, true, isFinal);
-                        if(isFinal && CustomLocale.containsLanguage(ttsLanguages, outputLanguage) && !isAudioMute) { // check if the text can be spoken
-                            speak(message, outputLanguage);
-                        }
-                        WalkieTalkieService.super.notifyMessage(message);
-                        // we save every new message in the exchanged messages so that the fragment can restore them
-                        WalkieTalkieService.super.addOrUpdateMessage(message);
-                        //if the tts is not active we restart the mic here
-                        if(isFinal && (ttsEngine == null || !CustomLocale.containsLanguage(ttsLanguages, outputLanguage) || !ttsEngine.isActive() || isAudioMute)){
-                            startVoiceRecorder();
-                            notifyMicActivated();
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(int[] reasons, long value) {
-                        GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), inputLanguage, outputLanguage, resultID, true, isFinal);
-                        WalkieTalkieService.super.notifyMessage(message);
-                        // we save every new message in the exchanged messages so that the fragment can restore them
-                        WalkieTalkieService.super.addOrUpdateMessage(message);
-                        //we restart the mic here
-                        startVoiceRecorder();
-                        notifyMicActivated();
-                    }
-                });
+                deliverTranslation(textToTranslate, translatedText, resultID, true, isFinal, inputLanguage, outputLanguage);
             }
 
             @Override
@@ -363,34 +345,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
         secondResultTranslateListener = new Translator.TranslateListener() {
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
-                ((Global) getApplication()).getTTSLanguages(true, new Global.GetLocalesListListener() {
-                    @Override
-                    public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
-                        GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), inputLanguage, outputLanguage, resultID, false, isFinal);
-                        if(isFinal && CustomLocale.containsLanguage(ttsLanguages, outputLanguage) && !isAudioMute) { // check if the text can be spoken
-                            speak(message, outputLanguage);
-                        }
-                        WalkieTalkieService.super.notifyMessage(message);
-                        // we save every new message in the exchanged messages so that the fragment can restore them
-                        WalkieTalkieService.super.addOrUpdateMessage(message);
-                        //if the tts is not active we restart the mic here
-                        if(isFinal && (ttsEngine == null || !CustomLocale.containsLanguage(ttsLanguages, outputLanguage) || !ttsEngine.isActive() || isAudioMute)){
-                            startVoiceRecorder();
-                            notifyMicActivated();
-                        }
-                    }
-
-                    @Override
-                    public void onFailure(int[] reasons, long value) {
-                        GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), firstLanguage, outputLanguage, resultID, false, isFinal);
-                        WalkieTalkieService.super.notifyMessage(message);
-                        // we save every new message in the exchanged messages so that the fragment can restore them
-                        WalkieTalkieService.super.addOrUpdateMessage(message);
-                        //we restart the mic here
-                        startVoiceRecorder();
-                        notifyMicActivated();
-                    }
-                });
+                deliverTranslation(textToTranslate, translatedText, resultID, false, isFinal, inputLanguage, outputLanguage);
             }
 
             @Override
@@ -488,12 +443,213 @@ public class WalkieTalkieService extends VoiceTranslationService {
 
     private void translate(final String textToTranslate, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, final Translator.TranslateListener responseListener){
         if(!isMetaText(textToTranslate)) {
-            translator.translate(textToTranslate, languageInput, languageOutput, beamSize, saveResults, Global.RTranslatorMode.WALKIE_TALKIE_MODE, responseListener);
+            beginSpeech();
+            translator.translate(textToTranslate, languageInput, languageOutput, beamSize, saveResults, Global.RTranslatorMode.WALKIE_TALKIE_MODE, speechListener(responseListener));
         }else{
             Log.i("walkieTalkie", "skipped translation of: "+textToTranslate+" because it is meta text");
             //we restart the mic here
             startVoiceRecorder();
             notifyMicActivated();
+        }
+    }
+
+    private void beginSpeech() {
+        synchronized (speechLock) {
+            speechGeneration++;
+            spokenPrefix = "";
+            spokenResultId = -1;
+            generationOpen = true;
+            finalSpeechQueued = false;
+        }
+        // Drop speech left over from the previous sentence before the new one starts.
+        Runnable stopSpeech = new Runnable() {
+            @Override
+            public void run() {
+                if (ttsEngine != null) {
+                    ttsEngine.stop();
+                }
+            }
+        };
+        if (mainHandler != null && android.os.Looper.myLooper() != mainHandler.getLooper()) {
+            mainHandler.postAtFrontOfQueue(stopSpeech);
+        } else {
+            stopSpeech.run();
+        }
+    }
+
+    private Translator.TranslateListener speechListener(final Translator.TranslateListener delegate) {
+        final int generation;
+        synchronized (speechLock) {
+            generation = speechGeneration;
+        }
+        return new Translator.TranslateListener() {
+            @Override
+            public void onTranslatedText(String textToTranslate, String translatedText, String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
+                if (!isCurrentSpeech(generation)) {
+                    return;
+                }
+                delegate.onTranslatedText(textToTranslate, translatedText, synonyms, resultID, isFinal, resultType, inputLanguage, outputLanguage);
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                if (!isCurrentSpeech(generation)) {
+                    return;
+                }
+                synchronized (speechLock) {
+                    generationOpen = false;
+                    finalSpeechQueued = false;
+                }
+                if (ttsEngine != null) {
+                    ttsEngine.stop();
+                }
+                delegate.onFailure(reasons, value);
+            }
+        };
+    }
+
+    private boolean isCurrentSpeech(int generation) {
+        synchronized (speechLock) {
+            return generation == speechGeneration;
+        }
+    }
+
+    private void deliverTranslation(String textToTranslate, String translatedText, long resultID, boolean isMine, boolean isFinal, CustomLocale inputLanguage, CustomLocale outputLanguage) {
+        final int generation;
+        synchronized (speechLock) {
+            generation = speechGeneration;
+        }
+        GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), inputLanguage, outputLanguage, resultID, isMine, isFinal);
+        notifyMessage(message);
+        addOrUpdateMessage(message);
+        if (isAudioMute) {
+            if (isFinal) {
+                finishWithoutSpeech();
+            }
+            return;
+        }
+        ((Global) getApplication()).getTTSLanguages(true, new Global.GetLocalesListListener() {
+            @Override
+            public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
+                if (!isCurrentSpeech(generation)) {
+                    return;
+                }
+                boolean canSpeak = ttsEngine != null && ttsEngine.isActive() && CustomLocale.containsLanguage(ttsLanguages, outputLanguage);
+                if (!canSpeak) {
+                    if (isFinal) {
+                        finishWithoutSpeech();
+                    }
+                    return;
+                }
+                feedTts(translatedText, resultID, isMine, isFinal, outputLanguage);
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                if (!isCurrentSpeech(generation)) {
+                    return;
+                }
+                if (isFinal) {
+                    finishWithoutSpeech();
+                }
+            }
+        });
+    }
+
+    private void feedTts(String translation, long resultID, boolean isMine, boolean isFinal, CustomLocale outputLanguage) {
+        if (translation == null) {
+            translation = "";
+        }
+        boolean resetSpeech = false;
+        boolean speakChunk = false;
+        boolean closeIfIdle = false;
+        String chunk = null;
+        synchronized (speechLock) {
+            if (resultID != spokenResultId) {
+                spokenResultId = resultID;
+                spokenPrefix = "";
+            }
+            if (!translation.startsWith(spokenPrefix)) {
+                if (!isFinal) {
+                    return;
+                }
+                resetSpeech = true;
+                spokenPrefix = "";
+            }
+            String pending = translation.substring(spokenPrefix.length());
+            chunk = SimultaneousText.takeSpeakable(pending, isFinal);
+            speakChunk = chunk != null && !chunk.trim().isEmpty();
+            if (speakChunk) {
+                spokenPrefix = spokenPrefix + chunk;
+            }
+            if (isFinal) {
+                finalSpeechQueued = true;
+                closeIfIdle = !speakChunk;
+            }
+        }
+        if (resetSpeech && ttsEngine != null) {
+            ttsEngine.stop();
+        }
+        if (speakChunk) {
+            GuiMessage spoken = new GuiMessage(new Message("", WalkieTalkieService.this, chunk), outputLanguage, outputLanguage, resultID, isMine, true);
+            speak(spoken, outputLanguage);
+        }
+        if (closeIfIdle && !isTtsBusy()) {
+            finishWithoutSpeech();
+        }
+    }
+
+    private void finishWithoutSpeech() {
+        if (isTtsBusy()) {
+            synchronized (speechLock) {
+                finalSpeechQueued = true;
+            }
+            return;
+        }
+        long resultId;
+        synchronized (speechLock) {
+            generationOpen = false;
+            finalSpeechQueued = false;
+            resultId = spokenResultId;
+        }
+        notifyTTSDone(String.valueOf(resultId));
+        startVoiceRecorder();
+        notifyMicActivated();
+    }
+
+    @Override
+    public void notifyTTSDone(String utteranceId) {
+        synchronized (speechLock) {
+            if (generationOpen && !finalSpeechQueued) {
+                return;
+            }
+            // A later chunk is already queued. Keep the bubble highlighted.
+            if (ttsEngine != null && !ttsEngine.isEmpty()) {
+                return;
+            }
+        }
+        super.notifyTTSDone(utteranceId);
+    }
+
+    @Override
+    protected boolean shouldReactivateMicAfterTts() {
+        if (!shouldDeactivateMicDuringTTS()) {
+            return false;
+        }
+        synchronized (speechLock) {
+            // Keep the mic closed while tokens are still arriving.
+            if (generationOpen && !finalSpeechQueued) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    protected void onMicReactivatedAfterTts() {
+        synchronized (speechLock) {
+            generationOpen = false;
+            finalSpeechQueued = false;
         }
     }
 

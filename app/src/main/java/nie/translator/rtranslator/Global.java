@@ -67,7 +67,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public enum RTranslatorMode {
         TEXT_TRANSLATION_MODE,
         WALKIE_TALKIE_MODE,
-        CONVERSATION_MODE
+        CONVERSATION_MODE,
+        SIMULTANEOUS_MODE
     }
 
     public enum LanguageNumber {
@@ -83,6 +84,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public static String[] REQUIRED_PERMISSIONS_PAIRING;
     public static final int REQUEST_CODE_PERMISSIONS_CONVERSATION = 3;
     public static final int REQUEST_CODE_PERMISSIONS_WALKIETALKIE = 4;
+    public static final int REQUEST_CODE_PERMISSIONS_SIMULTANEOUS = 6;
     public static final String[] REQUIRED_PERMISSIONS_VOICE = new String[]{
             Manifest.permission.RECORD_AUDIO,
     };
@@ -96,6 +98,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private CustomLocale secondLanguage;
     private CustomLocale firstTextLanguage;
     private CustomLocale secondTextLanguage;
+    private CustomLocale simultaneousSourceLanguage;
+    private CustomLocale simultaneousTargetLanguage;
     private RecentPeersDataManager recentPeersDataManager;
     private ConversationBluetoothCommunicator bluetoothCommunicator;
     @Nullable
@@ -104,6 +108,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private Recognizer speechRecognizer;
     private String name = "";
     private int micSensitivity = -1;
+    private float ttsSpeechRate = -1f;
     private int speechTimeout = -1;
     private int prevVoiceDuration = -1;
     private int beamSize = -1;
@@ -115,10 +120,16 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private static Handler mHandler = new Handler();
     private final Object lock = new Object();
     private boolean useTatoeba;
+    private boolean simultaneousVadSegmentation;
     private boolean useTranslationDictionaries;
     private boolean useMozillaForVoiceTranslation;
     private boolean whisperReducedRam;
     private int translationMode;
+    public static final int ASR_WHISPER = 0;
+    public static final int ASR_QWEN3_06 = 1;
+    public static final int ASR_QWEN3_17 = 2;
+    public static final int ASR_WHISPER_TURBO = 3;
+    private int asrModel;
     private VadSilero vad;
     private boolean modelsLoaded = false;
 
@@ -132,10 +143,14 @@ public class Global extends Application implements DefaultLifecycleObserver {
         createNotificationChannel();
         SharedPreferences sharedPreferences = getSharedPreferences("default", Context.MODE_PRIVATE);
         useTatoeba = sharedPreferences.getBoolean("useTatoeba", false);
+        // Absent key means a new install: simultaneous interpretation uses the downloadable Silero VAD.
+        // LoadingActivity turns this off when the file was never downloaded, so older installs stay on the pause splitter.
+        simultaneousVadSegmentation = sharedPreferences.getBoolean("simultaneousVadSegmentation", true);
         useTranslationDictionaries = sharedPreferences.getBoolean("useTranslationDictionaries", false);
         useMozillaForVoiceTranslation = sharedPreferences.getBoolean("useMozillaForVoiceTranslation", false);
         whisperReducedRam = sharedPreferences.getBoolean("whisperReducedRam", getTotalRamSize() <= 7000);
         translationMode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
+        asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_WHISPER);
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             REQUIRED_PERMISSIONS_PAIRING = new String[]{
@@ -254,7 +269,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public ArrayList<CustomLocale> getTranslatorLanguages(RTranslatorMode rtranslatorMode, final boolean recycleResult) {
         if (recycleResult) {
-            if(isUseMozillaForVoiceTranslation() && (rtranslatorMode == RTranslatorMode.CONVERSATION_MODE || rtranslatorMode == RTranslatorMode.WALKIE_TALKIE_MODE)) {
+            if(isUseMozillaForVoiceTranslation() && isVoiceMode(rtranslatorMode)) {
                 return getMozillaLanguages(true);
             }else{
                 if(!translatorLanguages.isEmpty()) return translatorLanguages;
@@ -277,7 +292,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
             return mozillaLanguages;
         }else{
             translatorLanguages = languages;
-            if(isUseMozillaForVoiceTranslation() && (rtranslatorMode == RTranslatorMode.CONVERSATION_MODE || rtranslatorMode == RTranslatorMode.WALKIE_TALKIE_MODE)) {
+            if(isUseMozillaForVoiceTranslation() && isVoiceMode(rtranslatorMode)) {
                 return mozillaLanguages;
             }else{
                 return languages;
@@ -390,6 +405,19 @@ public class Global extends Application implements DefaultLifecycleObserver {
         });
     }
 
+    public DownloadGroupInfo getTranslateGemmaDownloadInfo() {
+        String downloadFolder = getFilesDir().getAbsolutePath() + "/Translation/TranslateGemma";
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo(
+                        "translategemma-4b-it.Q4_K_M.gguf",
+                        "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q4_K_M.gguf",
+                        downloadFolder,
+                        2431600,
+                        false,
+                        false)
+        });
+    }
+
     public DownloadGroupInfo getMadladDownloadInfo(){
         String downloadFolder = getFilesDir().getAbsolutePath();
         String baseUrl = "https://github.com/niedev/OnnxModelsEnhancer/releases/download/v1.0.0-beta/";
@@ -403,6 +431,24 @@ public class Global extends Application implements DefaultLifecycleObserver {
                         true)
 
         });
+    }
+
+    public DownloadGroupInfo getSileroVadDownloadInfo() {
+        String folder = getFilesDir().getAbsolutePath() + "/VAD";
+        // Pinned to Silero VAD v6.2.1. 2327524 bytes, shown as kilobytes for the progress bar.
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo(
+                        "silero_vad.onnx",
+                        "https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx",
+                        folder,
+                        2273,
+                        false,
+                        false)
+        });
+    }
+
+    public File getSileroVadFile() {
+        return new File(getFilesDir(), "VAD/silero_vad.onnx");
     }
 
     public DownloadGroupInfo getTatoebaDownloadInfo(){
@@ -555,6 +601,144 @@ public class Global extends Application implements DefaultLifecycleObserver {
         });
     }
 
+    public DownloadGroupInfo getWhisperDownloadInfo() {
+        DownloadInfo[] initial = getInitialDownloadInfo().downloadsInfo;
+        ArrayList<DownloadInfo> whisper = new ArrayList<>();
+        for (DownloadInfo info : initial) {
+            if (info.getName().startsWith("Whisper_")) {
+                whisper.add(info);
+            }
+        }
+        return new DownloadGroupInfo(whisper.toArray(new DownloadInfo[0]));
+    }
+
+    public int getAsrModel() {
+        return asrModel;
+    }
+
+    public String getAsrModelDirectory() {
+        if (asrModel == ASR_QWEN3_17) {
+            return getFilesDir().getAbsolutePath() + "/ASR/Qwen3-ASR-1.7B";
+        }
+        return getFilesDir().getAbsolutePath() + "/ASR/Qwen3-ASR-0.6B";
+    }
+
+    public String getWhisperTurboDirectory() {
+        return getFilesDir().getAbsolutePath() + "/ASR/Whisper-Large-V3-Turbo";
+    }
+
+    public DownloadGroupInfo getAsrDownloadInfo(int model) {
+        if (model == ASR_QWEN3_06) {
+            return getQwen3AsrDownloadInfo(false);
+        }
+        if (model == ASR_QWEN3_17) {
+            return getQwen3AsrDownloadInfo(true);
+        }
+        if (model == ASR_WHISPER_TURBO) {
+            return getWhisperTurboDownloadInfo();
+        }
+        return getWhisperDownloadInfo();
+    }
+
+    public DownloadGroupInfo getWhisperTurboDownloadInfo() {
+        String folder = getWhisperTurboDirectory();
+        String base = "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/main/";
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo("encoder_model_int8.onnx", base + "onnx/encoder_model_int8.onnx", folder, kb(644822094L), false, false),
+                new DownloadInfo("decoder_model_merged_int8.onnx", base + "onnx/decoder_model_merged_int8.onnx", folder, kb(439936716L), false, false),
+                new DownloadInfo("vocab.json", base + "vocab.json", folder, kb(1036558L), false, false)
+        });
+    }
+
+    public DownloadGroupInfo getQwen3Asr06DownloadInfo() {
+        return getQwen3AsrDownloadInfo(false);
+    }
+
+    public DownloadGroupInfo getQwen3Asr17DownloadInfo() {
+        return getQwen3AsrDownloadInfo(true);
+    }
+
+    private DownloadGroupInfo getQwen3AsrDownloadInfo(boolean large) {
+        String folder = getFilesDir().getAbsolutePath() + (large ? "/ASR/Qwen3-ASR-1.7B" : "/ASR/Qwen3-ASR-0.6B");
+        String repo = large ? "andrewleech/qwen3-asr-1.7b-onnx" : "andrewleech/qwen3-asr-0.6b-onnx";
+        String base = "https://huggingface.co/" + repo + "/resolve/main/";
+        // int4 package only. decoder_weights.data is the fp32 decoder and is not downloaded.
+        // encoder.int4.onnx is the float32 encoder shipped under that name: int8 here loses accuracy.
+        long encoderBytes = large ? 1270241779L : 745762694L;
+        long initBytes = large ? 356165L : 355390L;
+        long stepBytes = large ? 355662L : 354888L;
+        long weightsBytes = large ? 2226321408L : 962460672L;
+        long embedBytes = large ? 622329856L : 311164928L;
+        long configBytes = large ? 1251L : 1250L;
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo("encoder.int4.onnx", base + "encoder.int4.onnx", folder, kb(encoderBytes), false, false),
+                new DownloadInfo("decoder_init.int4.onnx", base + "decoder_init.int4.onnx", folder, kb(initBytes), false, false),
+                new DownloadInfo("decoder_step.int4.onnx", base + "decoder_step.int4.onnx", folder, kb(stepBytes), false, false),
+                new DownloadInfo("decoder_weights.int4.data", base + "decoder_weights.int4.data", folder, kb(weightsBytes), false, false),
+                new DownloadInfo("embed_tokens.bin", base + "embed_tokens.bin", folder, kb(embedBytes), false, false),
+                new DownloadInfo("config.json", base + "config.json", folder, kb(configBytes), false, false),
+                new DownloadInfo("tokenizer.json", base + "tokenizer.json", folder, kb(11429377L), false, false)
+        });
+    }
+
+    private static long kb(long bytes) {
+        return Math.max(1L, (bytes + 1023L) / 1024L);
+    }
+
+    public boolean groupFilesPresent(DownloadGroupInfo group) {
+        if (group == null || group.downloadsInfo == null) {
+            return false;
+        }
+        for (DownloadInfo info : group.downloadsInfo) {
+            File file = new File(info.getDestinationCompletePath());
+            if (!file.isFile() || file.length() == 0) {
+                return false;
+            }
+        }
+        return group.downloadsInfo.length > 0;
+    }
+
+    public void setAsrModel(int asrModel, boolean reloadRecognizer, @Nullable Translator.GeneralListener listener) {
+        this.asrModel = asrModel;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putInt("selectedAsrModel", asrModel);
+        editor.apply();
+        if (!reloadRecognizer || speechRecognizer == null) {
+            if (listener != null) {
+                listener.onSuccess();
+            }
+            return;
+        }
+        speechRecognizer.stop();
+        speechRecognizer.destroy();
+        speechRecognizer = null;
+        initializeSpeechRecognizer(new NeuralNetworkApi.InitListener() {
+            @Override
+            public void onInitializationFinished() {
+                if (listener != null) {
+                    listener.onSuccess();
+                }
+            }
+
+            @Override
+            public void onError(int[] reasons, long value) {
+                if (listener != null) {
+                    listener.onFailure(reasons, value);
+                }
+            }
+        });
+    }
+
+    public DownloadGroupInfo getDictionaryDownloadInfo() {
+        DownloadInfo[] initial = getInitialDownloadInfo().downloadsInfo;
+        for (DownloadInfo info : initial) {
+            if ("TranslationDictionaries.zip".equals(info.getName())) {
+                return new DownloadGroupInfo(new DownloadInfo[]{info});
+            }
+        }
+        return getInitialDownloadInfo();
+    }
+
 
     @Nullable
     public Translator getTranslator() {
@@ -571,6 +755,10 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public void deleteSpeechRecognizer(){
+        if (speechRecognizer != null) {
+            speechRecognizer.stop();
+            speechRecognizer.destroy();
+        }
         speechRecognizer = null;
     }
 
@@ -850,6 +1038,25 @@ public class Global extends Application implements DefaultLifecycleObserver {
         editor.apply();
     }
 
+    public float getTtsSpeechRate() {
+        if (ttsSpeechRate < 0f) {
+            ttsSpeechRate = getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
+        }
+        return ttsSpeechRate;
+    }
+
+    public void setTtsSpeechRate(float value) {
+        if (value < 0.5f) {
+            value = 0.5f;
+        } else if (value > 2f) {
+            value = 2f;
+        }
+        ttsSpeechRate = value;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putFloat("ttsSpeechRate", value);
+        editor.apply();
+    }
+
     public int getSpeechTimeout() {
         if (speechTimeout == -1) {
             final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
@@ -909,6 +1116,17 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public boolean isUseTatoeba(){
         return useTatoeba;
+    }
+
+    public boolean isSimultaneousVadSegmentation() {
+        return simultaneousVadSegmentation;
+    }
+
+    public void setSimultaneousVadSegmentation(boolean enabled) {
+        simultaneousVadSegmentation = enabled;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putBoolean("simultaneousVadSegmentation", enabled);
+        editor.apply();
     }
 
     public boolean isUseTranslationDictionaries(){
@@ -1208,9 +1426,87 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private void loadLanguagesResources(CustomLocale firstLanguage, CustomLocale secondLanguage, RTranslatorMode mode, Translator.GeneralListener listener){
         if(translator != null) {
             translator.loadLanguageResources(firstLanguage, secondLanguage, mode, listener);
-        }else{
+        }else if(listener != null){
             listener.onSuccess();  //if the translator is not initialized yet we do not load the language resources
         }
+    }
+
+    private static boolean isVoiceMode(RTranslatorMode rtranslatorMode) {
+        return rtranslatorMode == RTranslatorMode.CONVERSATION_MODE
+                || rtranslatorMode == RTranslatorMode.WALKIE_TALKIE_MODE
+                || rtranslatorMode == RTranslatorMode.SIMULTANEOUS_MODE;
+    }
+
+    public CustomLocale getSimultaneousSourceLanguage(final boolean recycleResult) {
+        ArrayList<CustomLocale> languages = getLanguages(RTranslatorMode.SIMULTANEOUS_MODE, true);
+        CustomLocale target = getSimultaneousTargetLanguage(true);
+        CustomLocale fallback = new CustomLocale("en");
+        if (target.equalsLanguage(fallback)) {
+            for (CustomLocale candidate : languages) {
+                if (!candidate.equalsLanguage(target)) {
+                    fallback = candidate;
+                    break;
+                }
+            }
+        }
+        return resolveSavedLanguage(languages, "simultaneousSourceLanguage", fallback, recycleResult, true);
+    }
+
+    public CustomLocale getSimultaneousTargetLanguage(final boolean recycleResult) {
+        ArrayList<CustomLocale> languages = getLanguages(RTranslatorMode.SIMULTANEOUS_MODE, true);
+        return resolveSavedLanguage(languages, "simultaneousTargetLanguage", getLanguage(true), recycleResult, false);
+    }
+
+    public void setSimultaneousSourceLanguage(CustomLocale language) {
+        simultaneousSourceLanguage = language;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putString("simultaneousSourceLanguage", language.getCode());
+        editor.apply();
+        if (nie.translator.rtranslator.voice_translation._live_translation._simultaneous.SimultaneousService.isRunning) {
+            loadLanguagesResources(language, getSimultaneousTargetLanguage(true), RTranslatorMode.SIMULTANEOUS_MODE, null);
+        }
+    }
+
+    public void setSimultaneousTargetLanguage(CustomLocale language) {
+        simultaneousTargetLanguage = language;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putString("simultaneousTargetLanguage", language.getCode());
+        editor.apply();
+        if (nie.translator.rtranslator.voice_translation._live_translation._simultaneous.SimultaneousService.isRunning) {
+            loadLanguagesResources(getSimultaneousSourceLanguage(true), language, RTranslatorMode.SIMULTANEOUS_MODE, null);
+        }
+    }
+
+    private CustomLocale resolveSavedLanguage(ArrayList<CustomLocale> languages, String preferenceKey, CustomLocale fallback, boolean recycleResult, boolean source) {
+        CustomLocale cached = source ? simultaneousSourceLanguage : simultaneousTargetLanguage;
+        CustomLocale language = null;
+        if (recycleResult && cached != null) {
+            language = cached;
+        } else {
+            String code = getSharedPreferences("default", Context.MODE_PRIVATE).getString(preferenceKey, fallback.getCode());
+            if (code != null) {
+                language = CustomLocale.getInstance(code);
+            }
+        }
+        int index = CustomLocale.search(languages, language);
+        if (index != -1) {
+            language = languages.get(index);
+        } else {
+            int fallbackIndex = CustomLocale.search(languages, fallback);
+            if (fallbackIndex != -1) {
+                language = languages.get(fallbackIndex);
+            } else if (!languages.isEmpty()) {
+                language = languages.get(0);
+            } else if (language == null) {
+                language = fallback;
+            }
+        }
+        if (source) {
+            simultaneousSourceLanguage = language;
+        } else {
+            simultaneousTargetLanguage = language;
+        }
+        return language;
     }
 }
 
