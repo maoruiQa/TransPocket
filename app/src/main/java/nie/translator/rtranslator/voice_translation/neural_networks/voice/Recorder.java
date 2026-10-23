@@ -131,6 +131,8 @@ public class Recorder {
     private ClauseVadSegmenter clauseSegmenter;
     private final short[] clauseFrame = new short[ClauseVadSegmenter.FRAME_SAMPLES];
     private int clauseFrameFill;
+    /** Exclusive end of the last clause already given to recognition. -1 before the first emit. */
+    private int clauseEmittedUntil = -1;
     private boolean clauseVadFailureLogged;
     private volatile boolean ttsPlaying;
     private volatile boolean echoControlActive;
@@ -750,6 +752,7 @@ public class Recorder {
         tailIndex = 0;
         startVoiceIndex = 0;
         clauseFrameFill = 0;
+        clauseEmittedUntil = -1;
         //vadChunkFill = 0;
         mLastVoiceHeardMillis = Long.MAX_VALUE;
         if (clauseSegmenter != null) {
@@ -816,6 +819,7 @@ public class Recorder {
             return;
         }
         startVoiceIndex = endIndex;
+        clauseEmittedUntil = endIndex;
         mVoiceStartedMillis = System.currentTimeMillis();
         if (stillVoiced) {
             mLastVoiceHeardMillis = mVoiceStartedMillis;
@@ -863,7 +867,7 @@ public class Recorder {
     /** Audio thread only. */
     private void applyClauseDecision(ClauseVadSegmenter.FrameDecision decision, int endIndex) {
         if (decision.speechStarted) {
-            noteClauseSpeech(rewindSamples(endIndex, ClauseVadSegmenter.ONSET_FRAMES * ClauseVadSegmenter.FRAME_SAMPLES));
+            noteClauseSpeech(clauseStartIndex(endIndex));
         } else if (decision.speech) {
             mLastVoiceHeardMillis = System.currentTimeMillis();
         }
@@ -922,15 +926,18 @@ public class Recorder {
         }
     }
 
-    private int rewindSamples(int end, int samples) {
-        int available = getMBufferRangeSize(headIndex, end);
-        if (samples > available) {
-            samples = available;
+    /**
+     * Silero confirms speech a few frames late. The anticipation setting is the
+     * audio before that confirmation. It must not reach back into a clause that
+     * was already emitted.
+     */
+    private int clauseStartIndex(int endIndex) {
+        int padSamples = (global.getPrevVoiceDuration() * sampleRate) / 1000;
+        int onsetSamples = ClauseVadSegmenter.ONSET_FRAMES * ClauseVadSegmenter.FRAME_SAMPLES;
+        if (padSamples < onsetSamples) {
+            padSamples = onsetSamples;
         }
-        if (end >= samples) {
-            return end - samples;
-        }
-        return mBuffer.length - (samples - end);
+        return ClauseAudioStart.index(mBuffer.length, endIndex, padSamples, headIndex, clauseEmittedUntil);
     }
 
     @Nullable
