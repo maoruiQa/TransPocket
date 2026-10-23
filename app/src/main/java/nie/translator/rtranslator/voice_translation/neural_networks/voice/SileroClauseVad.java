@@ -18,7 +18,8 @@ import ai.onnxruntime.OrtSession;
  * The session is not safe to run from two threads. Recorder calls
  * {@link #probability(short[])} and {@link #resetState()} only on the audio
  * thread, and closes the session after that thread has left the model.
- * LSTM state stays across clause cuts and is cleared when the speaker stops.
+ * LSTM state and the 64-sample context stay across clause cuts and are
+ * cleared when the speaker stops.
  */
 public final class SileroClauseVad {
     private static final String TAG = "silero-vad";
@@ -27,6 +28,7 @@ public final class SileroClauseVad {
     private final OrtEnvironment environment;
     private OrtSession session;
     private final float[] state = new float[STATE_SIZE];
+    private final SileroVadWindow window = new SileroVadWindow();
 
     private SileroClauseVad(File model) throws OrtException {
         environment = OrtEnvironment.getEnvironment();
@@ -67,8 +69,9 @@ public final class SileroClauseVad {
         for (int i = 0; i < audio.length; i++) {
             audio[i] = frame[i] / 32768f;
         }
+        float[] modelInput = window.assemble(audio);
         Map<String, OnnxTensor> inputs = new HashMap<>();
-        try (OnnxTensor input = OnnxTensor.createTensor(environment, FloatBuffer.wrap(audio), new long[]{1, ClauseVadSegmenter.FRAME_SAMPLES});
+        try (OnnxTensor input = OnnxTensor.createTensor(environment, FloatBuffer.wrap(modelInput), new long[]{1, SileroVadWindow.MODEL_SAMPLES});
              OnnxTensor stateTensor = OnnxTensor.createTensor(environment, FloatBuffer.wrap(state), new long[]{2, 1, 128});
              OnnxTensor sampleRate = OnnxTensor.createTensor(environment, LongBuffer.wrap(new long[]{ClauseVadSegmenter.SAMPLE_RATE}), new long[0])) {
             inputs.put("input", input);
@@ -80,6 +83,7 @@ public final class SileroClauseVad {
                 }
                 float probability = readProbability(result.get("output").get().getValue());
                 copyState(result.get("stateN").get().getValue());
+                window.advance(audio);
                 return probability;
             }
         }
@@ -89,6 +93,7 @@ public final class SileroClauseVad {
         for (int i = 0; i < state.length; i++) {
             state[i] = 0f;
         }
+        window.reset();
     }
 
     public void close() {
