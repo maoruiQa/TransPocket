@@ -26,6 +26,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.splashscreen.SplashScreen;
@@ -33,8 +35,9 @@ import androidx.core.splashscreen.SplashScreen;
 import java.io.File;
 import java.util.ArrayList;
 
-import nie.translator.rtranslator.access.AccessActivity;
 import nie.translator.rtranslator.downloader.DownloadGroupInfo;
+
+import nie.translator.rtranslator.access.AccessActivity;
 import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.settings.SettingsActivity;
@@ -54,6 +57,10 @@ public class LoadingActivity extends GeneralActivity {
     private Global global;
     private boolean startingActivity = false;
     private boolean showingError = false;
+    private boolean contentReady = false;
+    private boolean startupStarted = false;
+    private TextView loadingStage;
+    private ProgressBar loadingProgress;
 
     public LoadingActivity() {
         // Required empty public constructor
@@ -75,16 +82,25 @@ public class LoadingActivity extends GeneralActivity {
         }
         setContentView(R.layout.activity_loading);
         mainHandler = new Handler(Looper.getMainLooper());
+        loadingStage = findViewById(R.id.loadingStage);
+        loadingProgress = findViewById(R.id.loadingProgress);
+        showStage(0);
 
-        // Keep the splash screen visible for this Activity.
+        // Drop the splash once this layout has been drawn. Model loading continues with the progress bar.
         if(splashScreen != null) {
             splashScreen.setKeepOnScreenCondition(new SplashScreen.KeepOnScreenCondition() {
                 @Override
                 public boolean shouldKeepOnScreen() {
-                    return !showingError;
+                    return !contentReady;
                 }
             });
         }
+        findViewById(android.R.id.content).post(new Runnable() {
+            @Override
+            public void run() {
+                contentReady = true;
+            }
+        });
     }
 
     @Override
@@ -100,17 +116,80 @@ public class LoadingActivity extends GeneralActivity {
         super.onResume();
         isVisible = true;
         global = (Global) getApplication();
-        if (isFirstStart()) {
-            startAccessActivity();
-        } else if (global.getTranslator() != null && (Global.ONLY_TEXT_TRANSLATION_MODE || global.getSpeechRecognizer() != null)) {
-            if(checkIfResourcesPreferencesRespectDownloads()) {
-                startVoiceTranslationActivity();
-            }else{
-                startSettingsActivityWithModelManager();
-            }
-        } else {
-            initializeApp(false);
+        if (!startupStarted) {
+            startupStarted = true;
+            beginStartup();
         }
+    }
+
+    private void beginStartup() {
+        showStage(0);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (isFirstStart()) {
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!isFinishing()) {
+                                startAccessActivity();
+                            }
+                        }
+                    });
+                    return;
+                }
+                boolean modelsReady = global.getTranslator() != null && (Global.ONLY_TEXT_TRANSLATION_MODE || global.getSpeechRecognizer() != null);
+                if (modelsReady) {
+                    final boolean resourcesMatch = checkIfResourcesPreferencesRespectDownloads();
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isFinishing()) {
+                                return;
+                            }
+                            showStage(3);
+                            if (resourcesMatch) {
+                                startVoiceTranslationActivity();
+                            } else {
+                                startSettingsActivityWithModelManager();
+                            }
+                        }
+                    });
+                } else {
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!isFinishing()) {
+                                initializeApp(false);
+                            }
+                        }
+                    });
+                }
+            }
+        }, "appStartup").start();
+    }
+
+    private void showStage(int stage) {
+        if (loadingStage == null || loadingProgress == null) {
+            return;
+        }
+        int text;
+        switch (stage) {
+            case 0:
+                text = R.string.loading_stage_check;
+                break;
+            case 1:
+                text = R.string.loading_stage_translator;
+                break;
+            case 2:
+                text = R.string.loading_stage_speech;
+                break;
+            default:
+                text = R.string.loading_stage_open;
+                break;
+        }
+        loadingStage.setText(text);
+        loadingProgress.setProgress(Math.min(stage + 1, 4));
     }
 
     @Override
@@ -164,20 +243,45 @@ public class LoadingActivity extends GeneralActivity {
 
     private void initializeApp(boolean ignoreTTSError) {
         Log.i("app", "App initialization");
-        adaptResourcesPreferencesToDownloads();
+        showStage(0);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                adaptResourcesPreferencesToDownloads();
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!isFinishing()) {
+                            continueInitializeApp(ignoreTTSError);
+                        }
+                    }
+                });
+            }
+        }, "appStartup").start();
+    }
+
+    private void continueInitializeApp(boolean ignoreTTSError) {
+        showStage(1);
         global.getLanguagesAndCheckTTS(false, ignoreTTSError, new Global.GetLocalesListListener() {
             @Override
             public void onSuccess(ArrayList<CustomLocale> result) {
                 global.initializeTranslator(new Translator.GeneralListener() {
                     @Override
                     public void onSuccess() {
+                        showStage(2);
                         NeuralNetworkApi.InitListener speechRecognizerInitListener = new NeuralNetworkApi.InitListener() {
                             @Override
                             public void onInitializationFinished() {
-                                global.setModelsLoaded(true);
-                                if (isVisible) {
-                                    startVoiceTranslationActivity();
-                                }
+                                mainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        global.setModelsLoaded(true);
+                                        showStage(3);
+                                        if (isVisible) {
+                                            startVoiceTranslationActivity();
+                                        }
+                                    }
+                                });
                             }
 
                             @Override
@@ -263,39 +367,39 @@ public class LoadingActivity extends GeneralActivity {
     private boolean checkIfResourcesPreferencesRespectDownloads(){
         long initTime = System.currentTimeMillis();
         // check of translation model preference
-        DownloadManager downloadManager = new DownloadManager(this);
+        ArrayList<DownloadGroupInfo> saved = DownloadManager.getSavedDownloadStatus(this);
         int translationMode = global.getTranslationMode();
         switch (translationMode) {
             case Translator.MOZILLA:
-                if(!checkMozillaModelsPresence(downloadManager)){
+                if(!checkMozillaModelsPresence(saved)){
                     return false;
                 }
                 break;
             case Translator.HY_MT:
-                if(!downloadManager.checkDownloadCompleted(global.getHyMtDownloadInfo())){
+                if(!DownloadManager.isDownloadCompleted(saved, global.getHyMtDownloadInfo())){
                     return false;
                 }
                 break;
             case Translator.MADLAD_CACHE:
-                if(!downloadManager.checkDownloadCompleted(global.getMadladDownloadInfo())){
+                if(!DownloadManager.isDownloadCompleted(saved, global.getMadladDownloadInfo())){
                     return false;
                 }
                 break;
             case Translator.TRANSLATEGEMMA:
-                if(!downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())){
+                if(!DownloadManager.isDownloadCompleted(saved, global.getTranslateGemmaDownloadInfo())){
                     return false;
                 }
                 break;
         }
         // check of Mozilla for voice translation modes preference
-        if(translationMode != Translator.MOZILLA && global.isUseMozillaForVoiceTranslation() && !checkMozillaModelsPresence(downloadManager)){
+        if(translationMode != Translator.MOZILLA && global.isUseMozillaForVoiceTranslation() && !checkMozillaModelsPresence(saved)){
             return false;
         }
         // check of Tatoeba preference
-        if(global.isUseTatoeba() && !downloadManager.checkDownloadCompleted(global.getTatoebaDownloadInfo())){
+        if(global.isUseTatoeba() && !DownloadManager.isDownloadCompleted(saved, global.getTatoebaDownloadInfo())){
             return false;
         }
-        if (global.isSimultaneousVadSegmentation() && !downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
+        if (global.isSimultaneousVadSegmentation() && !DownloadManager.isDownloadCompleted(saved, global.getSileroVadDownloadInfo())) {
             return false;
         }
         android.util.Log.i("performance", "checkIfResourcesPreferencesRespectDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");
@@ -316,19 +420,19 @@ public class LoadingActivity extends GeneralActivity {
     private void adaptResourcesPreferencesToDownloads(){
         long initTime = System.currentTimeMillis();
         // eventual adaptation of translation model preference
-        DownloadManager downloadManager = new DownloadManager(this);
+        ArrayList<DownloadGroupInfo> saved = DownloadManager.getSavedDownloadStatus(this);
         int translationMode = global.getTranslationMode();
         ArrayList<Integer> availableModels = new ArrayList<>();
-        if(checkMozillaModelsPresence(downloadManager)){
+        if(checkMozillaModelsPresence(saved)){
             availableModels.add(Translator.MOZILLA);
         }
-        if(downloadManager.checkDownloadCompleted(global.getHyMtDownloadInfo())){
+        if(DownloadManager.isDownloadCompleted(saved, global.getHyMtDownloadInfo())){
             availableModels.add(Translator.HY_MT);
         }
-        if(downloadManager.checkDownloadCompleted(global.getMadladDownloadInfo())){
+        if(DownloadManager.isDownloadCompleted(saved, global.getMadladDownloadInfo())){
             availableModels.add(Translator.MADLAD_CACHE);
         }
-        if(downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())){
+        if(DownloadManager.isDownloadCompleted(saved, global.getTranslateGemmaDownloadInfo())){
             availableModels.add(Translator.TRANSLATEGEMMA);
         }
         if(!availableModels.contains(translationMode)){
@@ -357,13 +461,13 @@ public class LoadingActivity extends GeneralActivity {
             editor.apply();
         }
         // eventual adaptation of Tatoeba preference
-        if(!downloadManager.checkDownloadCompleted(global.getTatoebaDownloadInfo())){
+        if(!DownloadManager.isDownloadCompleted(saved, global.getTatoebaDownloadInfo())){
             final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
             SharedPreferences.Editor editor = sharedPreferences.edit();
             editor.putBoolean("useTatoeba", false);
             editor.apply();
         }
-        if (!downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
+        if (!DownloadManager.isDownloadCompleted(saved, global.getSileroVadDownloadInfo())) {
             global.setSimultaneousVadSegmentation(false);
         }
         android.util.Log.i("performance", "adaptResourcesPreferencesToDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");

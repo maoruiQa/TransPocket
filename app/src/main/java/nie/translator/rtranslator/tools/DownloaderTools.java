@@ -28,16 +28,19 @@ public class DownloaderTools {
      * @return true if there is at least one Mozilla model downloaded
      */
     public static boolean checkMozillaModelsPresence(DownloadManager downloadManager){
-        boolean found = false;
-        for(DownloadGroupInfo downloadGroupInfo : downloadManager.getSavedDownloadStatus()){
-            if(isMozillaDownload(downloadGroupInfo)){
-                if(downloadGroupInfo.isAllDownloadCompleted()){
-                    found = true;
-                    break;
-                }
+        return checkMozillaModelsPresence(downloadManager.getSavedDownloadStatus());
+    }
+
+    public static boolean checkMozillaModelsPresence(ArrayList<DownloadGroupInfo> saved){
+        if (saved == null) {
+            return false;
+        }
+        for(DownloadGroupInfo downloadGroupInfo : saved){
+            if(isMozillaDownload(downloadGroupInfo) && downloadGroupInfo.isAllDownloadCompleted()){
+                return true;
             }
         }
-        return found;
+        return false;
     }
 
     /**

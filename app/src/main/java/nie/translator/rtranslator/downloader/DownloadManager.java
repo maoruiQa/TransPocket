@@ -82,6 +82,18 @@ public class DownloadManager implements ServiceConnection {
         return false;
     }
 
+    /** Same as {@link #subscribeAndResumeDownload(Callback)} but uses a status list that was already parsed. */
+    public boolean subscribeAndResumeDownload(@Nullable Callback callback, @Nullable ArrayList<DownloadGroupInfo> savedStatus) {
+        if(this.callback == null) {
+            this.callback = callback;
+            if(hasActiveDownload(savedStatus, true)) {
+                startAndBindService();
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void unsubscribe() {
         if(callback != null) {
             if (downloaderService != null) {
@@ -196,16 +208,19 @@ public class DownloadManager implements ServiceConnection {
     }
 
     public boolean checkDownloadCompleted(DownloadGroupInfo downloadGroupInfo){
-        boolean found = false;
-        for(DownloadGroupInfo downloadGroupInfoItem : getSavedDownloadStatus()){
-            if(downloadGroupInfoItem.equals(downloadGroupInfo)){
-                if(downloadGroupInfoItem.isAllDownloadCompleted()){
-                    found = true;
-                }
-                break;
+        return isDownloadCompleted(getSavedDownloadStatus(), downloadGroupInfo);
+    }
+
+    public static boolean isDownloadCompleted(@Nullable ArrayList<DownloadGroupInfo> saved, @Nullable DownloadGroupInfo group) {
+        if (saved == null || group == null) {
+            return false;
+        }
+        for (DownloadGroupInfo item : saved) {
+            if (item.equals(group)) {
+                return item.isAllDownloadCompleted();
             }
         }
-        return found;
+        return false;
     }
 
     private void startAndBindService(){
@@ -229,18 +244,16 @@ public class DownloadManager implements ServiceConnection {
     }
 
     private boolean areDownloadsRunning(boolean includePaused){
-        SharedPreferences sharedPreferences = context.getSharedPreferences("default", Context.MODE_PRIVATE);
-        String downloadsStatusString = sharedPreferences.getString("downloadsStatus", "");
-        if (!downloadsStatusString.isEmpty()) {
-            //we check if there are unfinished downloads that are not paused (or also paused ones if includePaused is true)
-            Gson gson = new Gson();
-            ArrayList<DownloadGroupInfo> downloadGroupInfos = gson.fromJson(downloadsStatusString, new TypeToken<ArrayList<DownloadGroupInfo>>() {}.getType());
-            if (downloadGroupInfos != null) {
-                for (DownloadGroupInfo groupInfo : downloadGroupInfos) {
-                    if (!groupInfo.isAllDownloadCompleted() && (includePaused || groupInfo.getRunningDownloadIndex() != -1)) {
-                        return true;
-                    }
-                }
+        return hasActiveDownload(getSavedDownloadStatus(), includePaused);
+    }
+
+    private static boolean hasActiveDownload(@Nullable ArrayList<DownloadGroupInfo> downloadGroupInfos, boolean includePaused) {
+        if (downloadGroupInfos == null) {
+            return false;
+        }
+        for (DownloadGroupInfo groupInfo : downloadGroupInfos) {
+            if (!groupInfo.isAllDownloadCompleted() && (includePaused || groupInfo.getRunningDownloadIndex() != -1)) {
+                return true;
             }
         }
         return false;

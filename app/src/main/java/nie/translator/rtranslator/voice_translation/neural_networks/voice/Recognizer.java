@@ -183,10 +183,17 @@ public class Recognizer extends NeuralNetworkApi {
 
 
     public Recognizer(Global global, final boolean returnResultOnlyAtTheEnd, final NeuralNetworkApi.InitListener initListener) {
+        this(global, returnResultOnlyAtTheEnd, initListener, true);
+    }
+
+    /**
+     * @param async false creates the sessions on the caller thread. Used when that thread already owns stop and close.
+     */
+    public Recognizer(Global global, final boolean returnResultOnlyAtTheEnd, final NeuralNetworkApi.InitListener initListener, boolean async) {
         this.global = global;
         if (global.getAsrModel() == Global.ASR_QWEN3_06 || global.getAsrModel() == Global.ASR_QWEN3_17) {
             onnxEnv = OrtEnvironment.getEnvironment();
-            new Thread(new Runnable() {
+            loadAsync(async, new Runnable() {
                 @Override
                 public void run() {
                     try {
@@ -197,12 +204,12 @@ public class Recognizer extends NeuralNetworkApi {
                         initListener.onError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
                     }
                 }
-            }).start();
+            });
             return;
         }
         if (global.getAsrModel() == Global.ASR_WHISPER_TURBO) {
             onnxEnv = OrtEnvironment.getEnvironment();
-            new Thread(new Runnable() {
+            loadAsync(async, new Runnable() {
                 @Override
                 public void run() {
                     try {
@@ -213,7 +220,7 @@ public class Recognizer extends NeuralNetworkApi {
                         initListener.onError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
                     }
                 }
-            }).start();
+            });
             return;
         }
         //onnxEnv = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_VERBOSE);
@@ -225,7 +232,7 @@ public class Recognizer extends NeuralNetworkApi {
         String cacheInitBatchPath = global.getFilesDir().getPath() + "/Whisper_cache_initializer_batch.onnx";
         String detokenizerPath = global.getFilesDir().getPath() + "/Whisper_detokenizer.onnx";
 
-        new Thread(new Runnable() {
+        loadAsync(async, new Runnable() {
             @Override
             public void run() {
                 try {
@@ -266,7 +273,15 @@ public class Recognizer extends NeuralNetworkApi {
                     initListener.onError(new int[]{ErrorCodes.ERROR_LOADING_MODEL},0);
                 }
             }
-        }).start();
+        });
+    }
+
+    private void loadAsync(boolean async, Runnable load) {
+        if (async) {
+            new Thread(load).start();
+        } else {
+            load.run();
+        }
     }
 
     public void initializeEncoderSession() throws OrtException {

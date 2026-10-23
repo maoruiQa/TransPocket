@@ -122,6 +122,8 @@ public class ModelManagerFragment extends Fragment {
     private boolean baselineTatoeba;
     private boolean baselineVadSegmentation;
     private boolean baselineTranslationDict;
+    private ArrayList<DownloadGroupInfo> savedDownloadStatus;
+    private int managerLoadGeneration = 0;
 
 
     @Override
@@ -175,6 +177,9 @@ public class ModelManagerFragment extends Fragment {
         super.onActivityCreated(savedInstanceState);
         activity = requireActivity();
         global = (Global) activity.getApplication();
+        if (activity instanceof SettingsActivity) {
+            ((SettingsActivity) activity).onModelManagerShown();
+        }
 
         //initialize download manager
         downloadManager = new DownloadManager(global);
@@ -187,7 +192,7 @@ public class ModelManagerFragment extends Fragment {
         resourceManagers.put("qwen17Manager", new ResourceManager(activity, global.getQwen3Asr17DownloadInfo(), qwen17ManagerView, downloadManager));
         resourceManagers.put("tatoebaManager", new ResourceManager(activity, global.getTatoebaDownloadInfo(), tatoebaManagerView, downloadManager));
         resourceManagers.put("vadManager", new ResourceManager(activity, global.getSileroVadDownloadInfo(), vadManagerView, downloadManager));
-        buildLiveDraftRows();
+        showLiveDraftLoading();
 
         // initialize GUI based on shared preferences
         restoreGuiPreferenceState();
@@ -305,21 +310,39 @@ public class ModelManagerFragment extends Fragment {
     @Override
     public void onStart() {
         super.onStart();
-        boolean serviceStarted = downloadManager.subscribeAndResumeDownload(downloadManagerCallback);
-        if(!serviceStarted){
-            ArrayList<DownloadGroupInfo> downloadStatus = downloadManager.getSavedDownloadStatus();
-            // we change the GUI based on current saved download status
-            // normally we do this when the service starts, but if it won't start (paused download or other reasons)
-            // we restore the GUI state based on the saved download state instead.
-            restoreGuiDownloadState(downloadStatus);
+        final int generation = ++managerLoadGeneration;
+        final Activity host = activity;
+        if (host == null || downloadManager == null) {
+            return;
         }
+        new Thread(() -> {
+            ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
+            HashMap<String, Boolean> ready = new HashMap<>();
+            for (LiveDraftVoices.Voice voice : LiveDraftVoices.all()) {
+                ready.put(voice.code, LiveDraftVoices.isReady(host, voice.code));
+            }
+            host.runOnUiThread(() -> {
+                if (generation != managerLoadGeneration || !isAdded()) {
+                    return;
+                }
+                savedDownloadStatus = saved;
+                buildLiveDraftRows(ready);
+                boolean serviceStarted = downloadManager.subscribeAndResumeDownload(downloadManagerCallback, saved);
+                if (!serviceStarted && !guiStateRestored) {
+                    restoreGuiDownloadState(saved);
+                }
+            });
+        }, "modelManagerState").start();
     }
 
     @Override
     public void onStop() {
         super.onStop();
+        managerLoadGeneration++;
         guiStateRestored = false;
-        downloadManager.unsubscribe();
+        if (downloadManager != null) {
+            downloadManager.unsubscribe();
+        }
     }
 
     public void restoreGuiPreferenceState(){
@@ -467,6 +490,16 @@ public class ModelManagerFragment extends Fragment {
 
             }
         });
+        editDialogLayout.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                if (editDialogLayout.getViewTreeObserver().isAlive()) {
+                    editDialogLayout.getViewTreeObserver().removeOnPreDrawListener(this);
+                }
+                editDialogLayout.post(() -> beginApply(dialog, editDialogLayout));
+                return true;
+            }
+        });
         dialog.show();
 
         TextView textView = editDialogLayout.findViewById(R.id.textView);
@@ -479,66 +512,127 @@ public class ModelManagerFragment extends Fragment {
             }
         });
 
-        textView.setText(getString(R.string.applying_settings));
-        applyTranslationStatus(new Translator.GeneralListener() {
-            @Override
-            public void onSuccess() {
-                applyAsrStatus(new Translator.GeneralListener() {
+        showApplyStage(editDialogLayout, 0);
+    }
+
+    private void showApplyStage(View layout, int stage) {
+        TextView textView = layout.findViewById(R.id.textView);
+        android.widget.ProgressBar stageBar = layout.findViewById(R.id.progressStage);
+        int text;
+        switch (stage) {
+            case 0:
+                text = R.string.apply_stage_check;
+                break;
+            case 1:
+                text = R.string.apply_stage_translation;
+                break;
+            case 2:
+                text = R.string.apply_stage_speech;
+                break;
+            default:
+                text = R.string.apply_stage_languages;
+                break;
+        }
+        textView.setText(text);
+        if (stageBar != null) {
+            stageBar.setMax(4);
+            stageBar.setProgress(stage + 1);
+            stageBar.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void beginApply(AlertDialog dialog, View layout) {
+        if (!isAdded() || radioGroup == null || asrRadioGroup == null) {
+            return;
+        }
+        final boolean firstLaunch = activity instanceof AccessActivity;
+        final int translationRadio = radioGroup.getCheckedRadioButtonId();
+        final int asrRadio = asrRadioGroup.getCheckedRadioButtonId();
+        final boolean mozillaVoice = switchMozillaForVoiceModes.isChecked();
+        final boolean tatoeba = switchTatoeba.isChecked();
+        final boolean vad = switchVadSegmentation.isChecked();
+        final boolean dictionaries = switchTranslationDict.isChecked();
+        final DownloadGroupInfo hyDownload = downloadOf("hyManager");
+        final DownloadGroupInfo madladDownload = downloadOf("madladManager");
+        final DownloadGroupInfo gemmaDownload = downloadOf("gemmaManager");
+        final DownloadGroupInfo tatoebaDownload = downloadOf("tatoebaManager");
+        final DownloadGroupInfo vadDownload = downloadOf("vadManager");
+        new Thread(() -> {
+            ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
+            ApplyPlan plan = validateApply(saved, firstLaunch, translationRadio, asrRadio, mozillaVoice, tatoeba, vad, hyDownload, madladDownload, gemmaDownload, tatoebaDownload, vadDownload);
+            activity.runOnUiThread(() -> {
+                if (!isAdded()) {
+                    return;
+                }
+                savedDownloadStatus = saved;
+                if (plan.failure != null) {
+                    notifyApplyError(plan.failure.stage, plan.failure.error, plan.failure.value, layout);
+                    return;
+                }
+                showApplyStage(layout, 1);
+                global.setSimultaneousVadSegmentation(vad);
+                global.setTranslationStatus(plan.translationModel, mozillaVoice, tatoeba, dictionaries, new Translator.GeneralListener() {
                     @Override
                     public void onSuccess() {
-                        applyWhisperAfterAsr();
-                    }
-
-                    @Override
-                    public void onFailure(int[] reasons, long value) {
-                        ApplySettingsStage stage = ApplySettingsStage.values()[reasons[0]];
-                        notifyApplyError(stage, reasons[1], value, editDialogLayout);
-                    }
-                });
-            }
-
-            private void applyWhisperAfterAsr() {
-                applyWhisperRamReduction(new Translator.GeneralListener() {
-                    @Override
-                    public void onSuccess() {
-                        // before the end we will update the languages, this is already done in the case of:
-                        // - change of translation model
-                        // - enabling or disabling Mozilla for voice translation modes
-                        // but it is always necessary in the case of:
-                        // - download and delete of Mozilla models (if Mozilla is selected as translation model or voice translation modes model)
-                        // Since this is a fairly light operation and I don't want to track every change to the Mozilla models, we will execute it at every applySettings
-                        global.updateLanguagesAndResources(new Translator.GeneralListener() {
+                        showApplyStage(layout, 2);
+                        global.setAsrModel(plan.asrModel, plan.asrPresent, new Translator.GeneralListener() {
                             @Override
                             public void onSuccess() {
-                                dialog.cancel();
-                                if (activity instanceof SettingsActivity) {
-                                    ((SettingsActivity) activity).startFragment(SettingsActivity.SETTINGS_FRAGMENT, null);
-                                } else if (activity instanceof AccessActivity) {
-                                    if (needsDownloadBeforeEnter()) {
-                                        ((AccessActivity) activity).startFragment(AccessActivity.DOWNLOAD_FRAGMENT, null);
-                                    } else {
-                                        startRTranslator();
+                                applyWhisperAfterAsr();
+                            }
+
+                            @Override
+                            public void onFailure(int[] reasons, long value) {
+                                int error = reasons.length > 0 ? reasons[0] : ErrorCodes.ERROR_LOADING_MODEL;
+                                notifyApplyError(ApplySettingsStage.ASR_MODEL, error, value, layout);
+                            }
+                        });
+                    }
+
+                    private void applyWhisperAfterAsr() {
+                        applyWhisperRamReduction(new Translator.GeneralListener() {
+                            @Override
+                            public void onSuccess() {
+                                showApplyStage(layout, 3);
+                                // Language lists are rebuilt off the main thread. Mozilla downloads are not tracked one by one, so this runs on every apply.
+                                global.updateLanguagesAndResources(new Translator.GeneralListener() {
+                                    @Override
+                                    public void onSuccess() {
+                                        dialog.cancel();
+                                        if (activity instanceof SettingsActivity) {
+                                            ((SettingsActivity) activity).leaveModelManager();
+                                        } else if (activity instanceof AccessActivity) {
+                                            if (needsDownloadBeforeEnter()) {
+                                                ((AccessActivity) activity).startFragment(AccessActivity.DOWNLOAD_FRAGMENT, null);
+                                            } else {
+                                                startRTranslator();
+                                            }
+                                        }
                                     }
-                                }
+                                });
+                            }
+
+                            @Override
+                            public void onFailure(int[] reasons, long value) {
+                                int error = reasons.length > 0 ? reasons[0] : ErrorCodes.ERROR;
+                                notifyApplyError(ApplySettingsStage.WHISPER_RAM_REDUCTION, error, value, layout);
                             }
                         });
                     }
 
                     @Override
                     public void onFailure(int[] reasons, long value) {
-                        int error = reasons[0];
-                        notifyApplyError(ApplySettingsStage.WHISPER_RAM_REDUCTION, error, value, editDialogLayout);
+                        int error = reasons.length > 0 ? reasons[0] : ErrorCodes.ERROR_LOADING_MODEL;
+                        notifyApplyError(ApplySettingsStage.TRANSLATION_MODEL, error, value, layout);
                     }
                 });
-            }
+            });
+        }, "applySettings").start();
+    }
 
-            @Override
-            public void onFailure(int[] reasons, long value) {
-                ApplySettingsStage stage = ApplySettingsStage.values()[reasons[0]];
-                int error = reasons[1];
-                notifyApplyError(stage, error, value, editDialogLayout);
-            }
-        });
+    private DownloadGroupInfo downloadOf(String managerKey) {
+        ResourceManager manager = resourceManagers.get(managerKey);
+        return manager == null ? null : manager.getDownloadInfo();
     }
 
     private void notifyApplyError(ApplySettingsStage stage, int error, long value, View dialogLayout){
@@ -547,6 +641,10 @@ public class ModelManagerFragment extends Fragment {
         android.widget.ProgressBar progressBar = dialogLayout.findViewById(R.id.progressBar);
 
         progressBar.setVisibility(View.INVISIBLE);
+        android.widget.ProgressBar stageBar = dialogLayout.findViewById(R.id.progressStage);
+        if (stageBar != null) {
+            stageBar.setVisibility(View.INVISIBLE);
+        }
         okButton.setVisibility(View.VISIBLE);
 
         switch (error) {
@@ -603,82 +701,87 @@ public class ModelManagerFragment extends Fragment {
         }
     }
 
-    private void applyTranslationStatus(Translator.GeneralListener listener){
-        //check eventual translation model errors
-        int checkRadioId = radioGroup.getCheckedRadioButtonId();
-        int model = Translator.MOZILLA;
-        if(checkRadioId == R.id.radioMozilla) {
-            model = Translator.MOZILLA;
-            if(!checkMozillaModelsPresence(downloadManager)){
-                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.MOZILLA);
-                return;
+    private ApplyPlan validateApply(ArrayList<DownloadGroupInfo> saved, boolean firstLaunch, int translationRadio, int asrRadio, boolean mozillaVoice, boolean tatoeba, boolean vad, DownloadGroupInfo hyDownload, DownloadGroupInfo madladDownload, DownloadGroupInfo gemmaDownload, DownloadGroupInfo tatoebaDownload, DownloadGroupInfo vadDownload) {
+        ApplyPlan plan = new ApplyPlan();
+        plan.translationModel = Translator.MOZILLA;
+        if (translationRadio == R.id.radioMozilla) {
+            plan.translationModel = Translator.MOZILLA;
+            if (!checkMozillaModelsPresence(saved)) {
+                plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.MOZILLA);
+                return plan;
             }
-        } else if(checkRadioId == R.id.radioHY) {
-            model = Translator.HY_MT;
-            ResourceManager hyManager = resourceManagers.get("hyManager");
-            boolean downloaded = hyManager != null && downloadManager.checkDownloadCompleted(hyManager.getDownloadInfo());
-            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
-                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.HY_MT);
-                return;
+        } else if (translationRadio == R.id.radioHY) {
+            plan.translationModel = Translator.HY_MT;
+            if (!DownloadManager.isDownloadCompleted(saved, hyDownload) && !firstLaunch) {
+                plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.HY_MT);
+                return plan;
             }
-        } else if(checkRadioId == R.id.radioMadlad) {
-            model = Translator.MADLAD_CACHE;
-            ResourceManager madladManager = resourceManagers.get("madladManager");
-            boolean downloaded = madladManager != null && downloadManager.checkDownloadCompleted(madladManager.getDownloadInfo());
-            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
-                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.MADLAD_CACHE);
-                return;
+        } else if (translationRadio == R.id.radioMadlad) {
+            plan.translationModel = Translator.MADLAD_CACHE;
+            if (!DownloadManager.isDownloadCompleted(saved, madladDownload) && !firstLaunch) {
+                plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.MADLAD_CACHE);
+                return plan;
             }
-        } else if(checkRadioId == R.id.radioGemma) {
-            model = Translator.TRANSLATEGEMMA;
-            ResourceManager gemmaManager = resourceManagers.get("gemmaManager");
-            boolean downloaded = gemmaManager != null && downloadManager.checkDownloadCompleted(gemmaManager.getDownloadInfo());
-            if(!downloaded && !(activity instanceof nie.translator.rtranslator.access.AccessActivity)){
-                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.TRANSLATEGEMMA);
-                return;
+        } else if (translationRadio == R.id.radioGemma) {
+            plan.translationModel = Translator.TRANSLATEGEMMA;
+            if (!DownloadManager.isDownloadCompleted(saved, gemmaDownload) && !firstLaunch) {
+                plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.TRANSLATEGEMMA);
+                return plan;
             }
         }
-        //check eventual Mozilla for voices mode errors
-        if(radioGroup.getCheckedRadioButtonId() != R.id.radioMozilla && switchMozillaForVoiceModes.isChecked()){
-            // if there is at least one Mozilla mode downloaded we apply the new setting
-            if(!checkMozillaModelsPresence(downloadManager)) {
-                listener.onFailure(new int[]{ApplySettingsStage.MOZILLA_FOR_VOICE.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, 0);
-                return;
-            }
+        if (translationRadio != R.id.radioMozilla && mozillaVoice && !checkMozillaModelsPresence(saved)) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.MOZILLA_FOR_VOICE, ErrorCodes.NO_DOWNLOADED_RESOURCE, 0);
+            return plan;
         }
-        //check eventual tatoeba errors
-        if(switchTatoeba.isChecked()){
-            ResourceManager tatoebaManager = resourceManagers.get("tatoebaManager");
-            if(tatoebaManager == null || !downloadManager.checkDownloadCompleted(tatoebaManager.getDownloadInfo())){
-                listener.onFailure(new int[]{ApplySettingsStage.TATOEBA.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, Translator.HY_MT);
-            }
+        if (tatoeba && !DownloadManager.isDownloadCompleted(saved, tatoebaDownload)) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.TATOEBA, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.HY_MT);
+            return plan;
         }
-        if (switchVadSegmentation.isChecked()) {
-            ResourceManager vadManager = resourceManagers.get("vadManager");
-            boolean downloaded = vadManager != null && downloadManager.checkDownloadCompleted(vadManager.getDownloadInfo());
-            // First launch has not downloaded anything yet. Save the switch and let DownloadFragment fetch the file.
-            if (!downloaded && !(activity instanceof AccessActivity)) {
-                listener.onFailure(new int[]{ApplySettingsStage.VAD_SEGMENTATION.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, 0);
-                return;
-            }
+        if (vad && !DownloadManager.isDownloadCompleted(saved, vadDownload) && !firstLaunch) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.VAD_SEGMENTATION, ErrorCodes.NO_DOWNLOADED_RESOURCE, 0);
+            return plan;
         }
-        global.setSimultaneousVadSegmentation(switchVadSegmentation.isChecked());
-        //apply translation status
-        global.setTranslationStatus(model, switchMozillaForVoiceModes.isChecked(), switchTatoeba.isChecked(), switchTranslationDict.isChecked(), new Translator.GeneralListener() {
-            @Override
-            public void onSuccess() {
-                listener.onSuccess();
-            }
-
-            @Override
-            public void onFailure(int[] reasons, long value) {
-                listener.onFailure(new int[]{ApplySettingsStage.TRANSLATION_MODEL.ordinal(), reasons[0]}, value);
-            }
-        });
+        plan.asrModel = asrModelFor(asrRadio);
+        if (plan.asrModel == Global.ASR_QWEN3_17 && global.getTotalRamSize() < 7000) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
+            return plan;
+        }
+        if (plan.asrModel == Global.ASR_QWEN3_06 && global.getTotalRamSize() < 4500) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
+            return plan;
+        }
+        if (plan.asrModel == Global.ASR_WHISPER_TURBO && global.getTotalRamSize() < 6000) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
+            return plan;
+        }
+        DownloadGroupInfo asrDownload = global.getAsrDownloadInfo(plan.asrModel);
+        plan.asrPresent = global.groupFilesPresent(asrDownload) || DownloadManager.isDownloadCompleted(saved, asrDownload);
+        if (!plan.asrPresent && !firstLaunch) {
+            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, plan.asrModel);
+        }
+        return plan;
     }
 
-    private int selectedAsrModel() {
-        int checked = asrRadioGroup.getCheckedRadioButtonId();
+    private static final class ApplyFailure {
+        final ApplySettingsStage stage;
+        final int error;
+        final long value;
+
+        ApplyFailure(ApplySettingsStage stage, int error, long value) {
+            this.stage = stage;
+            this.error = error;
+            this.value = value;
+        }
+    }
+
+    private static final class ApplyPlan {
+        int translationModel;
+        int asrModel;
+        boolean asrPresent;
+        ApplyFailure failure;
+    }
+
+    private int asrModelFor(int checked) {
         if (checked == R.id.radioQwen17) {
             return Global.ASR_QWEN3_17;
         }
@@ -689,29 +792,6 @@ public class ModelManagerFragment extends Fragment {
             return Global.ASR_WHISPER_TURBO;
         }
         return Global.ASR_WHISPER;
-    }
-
-    private void applyAsrStatus(Translator.GeneralListener listener) {
-        int model = selectedAsrModel();
-        if (model == Global.ASR_QWEN3_17 && global.getTotalRamSize() < 7000) {
-            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
-            return;
-        }
-        if (model == Global.ASR_QWEN3_06 && global.getTotalRamSize() < 4500) {
-            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
-            return;
-        }
-        if (model == Global.ASR_WHISPER_TURBO && global.getTotalRamSize() < 6000) {
-            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.ERROR}, model);
-            return;
-        }
-        DownloadGroupInfo download = global.getAsrDownloadInfo(model);
-        boolean present = global.groupFilesPresent(download) || downloadManager.checkDownloadCompleted(download);
-        if (!present && !(activity instanceof AccessActivity)) {
-            listener.onFailure(new int[]{ApplySettingsStage.ASR_MODEL.ordinal(), ErrorCodes.NO_DOWNLOADED_RESOURCE}, model);
-            return;
-        }
-        global.setAsrModel(model, present, listener);
     }
 
     private void applyWhisperRamReduction(Translator.GeneralListener listener){
@@ -820,39 +900,70 @@ public class ModelManagerFragment extends Fragment {
         }
     }
 
+    private boolean isGroupDownloaded(DownloadGroupInfo group) {
+        if (savedDownloadStatus != null) {
+            return DownloadManager.isDownloadCompleted(savedDownloadStatus, group);
+        }
+        return downloadManager.checkDownloadCompleted(group);
+    }
+
     private boolean needsDownloadBeforeEnter() {
         DownloadGroupInfo asrDownload = global.getAsrDownloadInfo(global.getAsrModel());
-        if (!global.groupFilesPresent(asrDownload) && !downloadManager.checkDownloadCompleted(asrDownload)) {
+        if (!global.groupFilesPresent(asrDownload) && !isGroupDownloaded(asrDownload)) {
             return true;
         }
         int mode = global.getTranslationMode();
-        if (mode == Translator.HY_MT && !downloadManager.checkDownloadCompleted(global.getHyMtDownloadInfo())) {
+        if (mode == Translator.HY_MT && !isGroupDownloaded(global.getHyMtDownloadInfo())) {
             return true;
         }
-        if (mode == Translator.MADLAD_CACHE && !downloadManager.checkDownloadCompleted(global.getMadladDownloadInfo())) {
+        if (mode == Translator.MADLAD_CACHE && !isGroupDownloaded(global.getMadladDownloadInfo())) {
             return true;
         }
-        if (mode == Translator.TRANSLATEGEMMA && !downloadManager.checkDownloadCompleted(global.getTranslateGemmaDownloadInfo())) {
+        if (mode == Translator.TRANSLATEGEMMA && !isGroupDownloaded(global.getTranslateGemmaDownloadInfo())) {
             return true;
         }
-        if (switchTatoeba.isChecked() && !downloadManager.checkDownloadCompleted(global.getTatoebaDownloadInfo())) {
+        if (switchTatoeba.isChecked() && !isGroupDownloaded(global.getTatoebaDownloadInfo())) {
             return true;
         }
-        if (switchVadSegmentation.isChecked() && !downloadManager.checkDownloadCompleted(global.getSileroVadDownloadInfo())) {
+        if (switchVadSegmentation.isChecked() && !isGroupDownloaded(global.getSileroVadDownloadInfo())) {
             return true;
         }
-        if (switchTranslationDict.isChecked() && !downloadManager.checkDownloadCompleted(global.getDictionaryDownloadInfo())) {
+        if (switchTranslationDict.isChecked() && !isGroupDownloaded(global.getDictionaryDownloadInfo())) {
             return true;
         }
         for (DownloadGroupInfo voice : LiveDraftVoices.wantedDownloads(activity)) {
-            if (!LiveDraftVoices.isReadyGroup(activity, voice) && !downloadManager.checkDownloadCompleted(voice)) {
+            if (!LiveDraftVoices.isReadyGroup(activity, voice) && !isGroupDownloaded(voice)) {
                 return true;
             }
         }
         return false;
     }
 
-    private void buildLiveDraftRows() {
+    private void showLiveDraftLoading() {
+        if (liveDraftList == null || activity == null) {
+            return;
+        }
+        liveDraftList.removeAllViews();
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(activity);
+        int size = Tools.convertDpToPixels(activity, 24);
+        row.addView(bar, new LinearLayout.LayoutParams(size, size));
+        TextView label = new TextView(activity);
+        label.setText(R.string.loading_model_files);
+        int pad = Tools.convertDpToPixels(activity, 12);
+        label.setPadding(pad, pad, 0, pad);
+        row.addView(label);
+        int margin = Tools.convertDpToPixels(activity, 16);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.setMarginStart(margin);
+        params.topMargin = margin;
+        params.bottomMargin = margin;
+        liveDraftList.addView(row, params);
+    }
+
+    private void buildLiveDraftRows(HashMap<String, Boolean> ready) {
         if (liveDraftList == null) {
             return;
         }
@@ -878,7 +989,7 @@ public class ModelManagerFragment extends Fragment {
             row.addView(box, boxParams);
             liveDraftList.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
             ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
-            if (LiveDraftVoices.isReady(activity, voice.code)) {
+            if (ready != null && Boolean.TRUE.equals(ready.get(voice.code))) {
                 manager.setState(ResourceManagerView.State.DOWNLOADED, false);
             }
             resourceManagers.put("liveDraft-" + voice.code, manager);

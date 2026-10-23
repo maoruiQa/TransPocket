@@ -193,7 +193,7 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         modelsManagerPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
             @Override
             public boolean onPreferenceClick(Preference preference) {
-                activity.startFragment(SettingsActivity.MODEL_MANAGER, null);
+                activity.openModelManager();
                 return true;
             }
         });

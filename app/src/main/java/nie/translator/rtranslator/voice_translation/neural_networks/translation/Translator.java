@@ -117,9 +117,6 @@ public class Translator extends NeuralNetworkApi {
     public Translator(@NonNull Global global, int mode, boolean useMozillaForVoiceTranslation, boolean useTatoeba, boolean useTranslationDicts, GeneralListener initListener) {
         this.global = global;
         mainHandler = new android.os.Handler(Looper.getMainLooper());
-        initializeNllbLanguagesCodes(global);
-        initializeHyLanguagesInfo(global);
-
         setTranslationStatus(mode, useMozillaForVoiceTranslation, useTatoeba, useTranslationDicts, initListener);
     }
 
@@ -127,6 +124,16 @@ public class Translator extends NeuralNetworkApi {
         final Thread t = new Thread("textTranslation") {
             public void run() {
                 try {
+                    // Language tables are parsed here so opening the app does not stop on the main thread.
+                    if (nllbLanguagesCodes.isEmpty()) {
+                        initializeNllbLanguagesCodes(global);
+                    }
+                    if (hyLanguagesInfo.isEmpty()) {
+                        initializeHyLanguagesInfo(global);
+                    }
+                    if (languageResourcesManager == null) {
+                        global.getLanguages(Global.RTranslatorMode.TEXT_TRANSLATION_MODE, false);
+                    }
                     int oldMode = Translator.this.mode;
                     Translator.this.mode = modelMode;
                     if(oldMode != modelMode) {

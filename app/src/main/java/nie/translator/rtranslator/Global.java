@@ -184,6 +184,13 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public void initializeSpeechRecognizer(NeuralNetworkApi.InitListener initListener){
+        initializeSpeechRecognizer(initListener, true);
+    }
+
+    /**
+     * @param async false runs session creation on the caller thread. The apply-settings path uses that so stop, close, and open stay on one background thread.
+     */
+    public void initializeSpeechRecognizer(NeuralNetworkApi.InitListener initListener, boolean async){
         if(speechRecognizer == null) {
             vad = Vad.builder()
                     .setContext(this)
@@ -193,7 +200,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
                     .setSilenceDurationMs(300)
                     .setSpeechDurationMs(50)
                     .build();
-            speechRecognizer = new Recognizer(this, true, initListener);
+            speechRecognizer = new Recognizer(this, true, initListener, async);
         }else{
             initListener.onInitializationFinished();
         }
@@ -243,7 +250,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
             TTS.getSupportedLanguages(this, new TTS.SupportedLanguagesListener() {    //we load TTS languages to catch eventual TTS errors
                 @Override
                 public void onLanguagesListAvailable(ArrayList<CustomLocale> ttsLanguages) {
-                    responseListener.onSuccess(getLanguages(RTranslatorMode.TEXT_TRANSLATION_MODE, recycleResult));
+                    // The language tables are built on the translator thread. This callback only reports TTS readiness.
+                    responseListener.onSuccess(ttsLanguages);
                 }
 
                 @Override
@@ -718,34 +726,53 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public void setAsrModel(int asrModel, boolean reloadRecognizer, @Nullable Translator.GeneralListener listener) {
+        boolean changed = this.asrModel != asrModel;
         this.asrModel = asrModel;
         SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
         editor.putInt("selectedAsrModel", asrModel);
         editor.apply();
-        if (!reloadRecognizer || speechRecognizer == null) {
+        if (!changed || !reloadRecognizer || speechRecognizer == null) {
             if (listener != null) {
                 listener.onSuccess();
             }
             return;
         }
-        speechRecognizer.stop();
-        speechRecognizer.destroy();
-        speechRecognizer = null;
-        initializeSpeechRecognizer(new NeuralNetworkApi.InitListener() {
-            @Override
-            public void onInitializationFinished() {
-                if (listener != null) {
-                    listener.onSuccess();
-                }
+        new Thread(() -> {
+            try {
+            Recognizer previous = speechRecognizer;
+            if (previous != null) {
+                previous.stop();
+                previous.destroy();
             }
+            speechRecognizer = null;
+            initializeSpeechRecognizer(new NeuralNetworkApi.InitListener() {
+                @Override
+                public void onInitializationFinished() {
+                    mainHandler.post(() -> {
+                        if (listener != null) {
+                            listener.onSuccess();
+                        }
+                    });
+                }
 
-            @Override
-            public void onError(int[] reasons, long value) {
-                if (listener != null) {
-                    listener.onFailure(reasons, value);
+                @Override
+                public void onError(int[] reasons, long value) {
+                    mainHandler.post(() -> {
+                        if (listener != null) {
+                            listener.onFailure(reasons, value);
+                        }
+                    });
                 }
+            }, false);
+            } catch (Exception e) {
+                e.printStackTrace();
+                mainHandler.post(() -> {
+                    if (listener != null) {
+                        listener.onFailure(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
+                    }
+                });
             }
-        });
+        }, "asrReload").start();
     }
 
     public DownloadGroupInfo getDictionaryDownloadInfo() {
@@ -1243,29 +1270,38 @@ public class Global extends Application implements DefaultLifecycleObserver {
      * @param listener
      */
     public void updateLanguagesAndResources(Translator.GeneralListener listener){
-        getLanguages(RTranslatorMode.TEXT_TRANSLATION_MODE, false);  //this will update the recognizer langs, the translator langs and also the mozilla langs (for all the RTranslator modes)
-        setFirstTextLanguage(getFirstTextLanguage(false), new Translator.GeneralListener() {
-            @Override
-            public void onSuccess() {
-                setSecondTextLanguage(getSecondTextLanguage(false), new Translator.GeneralListener() {
-                    @Override
-                    public void onSuccess() {
-                        setFirstLanguage(getFirstLanguage(false), new Translator.GeneralListener() {
-                            @Override
-                            public void onSuccess() {
-                                setSecondLanguage(getSecondLanguage(false), new Translator.GeneralListener() {
-                                    @Override
-                                    public void onSuccess() {
-                                        setLanguage(getLanguage(false));
-                                        mainHandler.post(() -> listener.onSuccess());
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            }
-        });
+        new Thread(() -> {
+            getLanguages(RTranslatorMode.TEXT_TRANSLATION_MODE, false);  //this will update the recognizer langs, the translator langs and also the mozilla langs (for all the RTranslator modes)
+            final CustomLocale firstText = getFirstTextLanguage(false);
+            final CustomLocale secondText = getSecondTextLanguage(false);
+            final CustomLocale first = getFirstLanguage(false);
+            final CustomLocale second = getSecondLanguage(false);
+            final CustomLocale language = getLanguage(false);
+            mainHandler.post(() -> setFirstTextLanguage(firstText, new Translator.GeneralListener() {
+                @Override
+                public void onSuccess() {
+                    setSecondTextLanguage(secondText, new Translator.GeneralListener() {
+                        @Override
+                        public void onSuccess() {
+                            setFirstLanguage(first, new Translator.GeneralListener() {
+                                @Override
+                                public void onSuccess() {
+                                    setSecondLanguage(second, new Translator.GeneralListener() {
+                                        @Override
+                                        public void onSuccess() {
+                                            setLanguage(language);
+                                            if (listener != null) {
+                                                listener.onSuccess();
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            }));
+        }, "updateLanguages").start();
     }
 
     public String getName() {

@@ -19,6 +19,7 @@ package nie.translator.rtranslator.settings;
 import android.os.Bundle;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.ProgressBar;
 import android.widget.Toolbar;
 
 import androidx.appcompat.app.AlertDialog;
@@ -53,6 +54,13 @@ public class SettingsActivity extends GeneralActivity {
         View decorView = getWindow().getDecorView();
         decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
 
+        getSupportFragmentManager().addOnBackStackChangedListener(() -> {
+            Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_settings_container);
+            if (current != null) {
+                fragment = current;
+            }
+        });
+
         Bundle b = getIntent().getExtras();
         boolean startWithModelManager = b != null && b.getBoolean("startWithModelManager");
         if (savedInstanceState != null) {
@@ -65,7 +73,44 @@ public class SettingsActivity extends GeneralActivity {
         }
     }
 
+    public void openModelManager() {
+        ProgressBar bar = findViewById(R.id.progressBarSettings);
+        Toolbar toolbar = findViewById(R.id.toolbarSettings);
+        if (bar != null) {
+            bar.setVisibility(View.VISIBLE);
+        }
+        if (toolbar != null) {
+            toolbar.setTitle(R.string.opening_model_manager);
+            toolbar.post(() -> startFragment(MODEL_MANAGER, null, true));
+        } else {
+            startFragment(MODEL_MANAGER, null, true);
+        }
+    }
+
+    public void onModelManagerShown() {
+        ProgressBar bar = findViewById(R.id.progressBarSettings);
+        Toolbar toolbar = findViewById(R.id.toolbarSettings);
+        if (bar != null) {
+            bar.setVisibility(View.GONE);
+        }
+        if (toolbar != null) {
+            toolbar.setTitle(R.string.title_activity_settings);
+        }
+    }
+
+    public void leaveModelManager() {
+        if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+            getSupportFragmentManager().popBackStack();
+        } else {
+            startFragment(SETTINGS_FRAGMENT, null);
+        }
+    }
+
     public void startFragment(String action, Bundle bundle) {
+        startFragment(action, bundle, false);
+    }
+
+    public void startFragment(String action, Bundle bundle, boolean addToBackStack) {
         switch (action) {
             case SETTINGS_FRAGMENT: {
                 SettingsFragment accessFragment = new SettingsFragment();
@@ -87,6 +132,9 @@ public class SettingsActivity extends GeneralActivity {
                 FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
                 transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_CLOSE);
                 transaction.replace(R.id.fragment_settings_container, modelManagerFragment);
+                if (addToBackStack) {
+                    transaction.addToBackStack(MODEL_MANAGER);
+                }
                 transaction.commit();
                 fragment = modelManagerFragment;
                 break;
@@ -99,6 +147,7 @@ public class SettingsActivity extends GeneralActivity {
                 FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
                 transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_CLOSE);
                 transaction.replace(R.id.fragment_settings_container, mozillaManagerFragment);
+                transaction.addToBackStack(MOZILLA_MANAGER);
                 transaction.commit();
                 fragment = mozillaManagerFragment;
                 break;
@@ -138,10 +187,14 @@ public class SettingsActivity extends GeneralActivity {
                 if(((ModelManagerFragment) fragment).checkSettingsChanged()){
                     showConfirmApplyDialog();
                 }else {
-                    startFragment(SETTINGS_FRAGMENT, null);
+                    leaveModelManager();
                 }
             }else if (fragment instanceof MozillaManagerFragment) {
-                startFragment(MODEL_MANAGER, null);
+                if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+                    getSupportFragmentManager().popBackStack();
+                } else {
+                    startFragment(MODEL_MANAGER, null);
+                }
             }else{
                 super.onBackPressed();
             }
@@ -185,7 +238,7 @@ public class SettingsActivity extends GeneralActivity {
             @Override
             public void onClick(View v) {
                 dialog.dismiss();
-                startFragment(SETTINGS_FRAGMENT, null);
+                leaveModelManager();
             }
         });
     }

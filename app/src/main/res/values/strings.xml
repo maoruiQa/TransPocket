@@ -40,6 +40,16 @@
     <string name="testing_integrity">Testing...</string>
     <string name="paused">Paused: </string>
     <string name="applying_settings">Applying new settings...</string>
+    <string name="loading_stage_check">Checking downloaded files\u2026</string>
+    <string name="loading_stage_translator">Loading the translation model\u2026</string>
+    <string name="loading_stage_speech">Loading speech recognition\u2026</string>
+    <string name="loading_stage_open">Opening\u2026</string>
+    <string name="opening_model_manager">Opening model manager\u2026</string>
+    <string name="loading_model_files">Reading downloaded models\u2026</string>
+    <string name="apply_stage_check">Checking files\u2026</string>
+    <string name="apply_stage_translation">Switching the translation model\u2026</string>
+    <string name="apply_stage_speech">Switching the speech model\u2026</string>
+    <string name="apply_stage_languages">Updating language resources\u2026</string>
     <string name="dictionary">Dictionary</string>
     <string name="apply">Apply</string>
     <string name="speech_recognition_model">Speech Recognition Model</string>
