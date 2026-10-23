@@ -20,6 +20,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -68,6 +69,8 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
     private Handler handler = new Handler();
     private SimultaneousService.SimultaneousServiceCommunicator serviceCommunicator;
     private VoiceTranslationService.VoiceTranslationServiceCallback serviceCallback;
+    /** False until translation resources and the microphone are both ready. Speech before that is not captured. */
+    private boolean listeningReady;
 
     public SimultaneousFragment() {
     }
@@ -95,8 +98,10 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
         sound = view.findViewById(R.id.soundButton);
         microphone = view.findViewById(R.id.buttonMic);
         microphone.initialize(this, view.findViewById(R.id.leftLine), view.findViewById(R.id.centerLine), view.findViewById(R.id.rightLine));
-        description.setText(R.string.description_simultaneous);
+        showPreparing();
         deactivateInputs(DeactivableButton.DEACTIVATED);
+        // The first deactivate only records the color. The button's layout tint still looks live, so apply it once more.
+        microphone.deactivate(DeactivableButton.DEACTIVATED);
         view.setAccessibilityPaneTitle(getString(R.string.title_fragment_simultaneous));
     }
 
@@ -119,6 +124,9 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
         View.OnClickListener deactivatedClickListener = new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (!listeningReady) {
+                    Toast.makeText(activity, R.string.simultaneous_preparing, Toast.LENGTH_SHORT).show();
+                }
             }
         };
         View.OnClickListener micMissingClickListener = new View.OnClickListener() {
@@ -182,7 +190,15 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
 
     @Override
     public void onStart() {
+        listeningReady = false;
+        resumeModelLoading();
         super.onStart();
+        if (description != null && Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)) {
+            showPreparing();
+            if (microphone != null) {
+                microphone.deactivate(DeactivableButton.DEACTIVATED);
+            }
+        }
         if (getArguments() != null && getArguments().getBoolean("firstStart", false)) {
             getArguments().remove("firstStart");
             handler.postDelayed(new Runnable() {
@@ -261,14 +277,60 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
                     sound.deactivate(DeactivableButton.DEACTIVATED_FOR_TTS_ERROR);
                 }
                 if (!Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)) {
+                    hideModelLoading();
+                    description.setText(R.string.description_permission_simultaneous);
                     deactivateInputs(DeactivableButton.DEACTIVATED_FOR_MISSING_MIC_PERMISSION);
-                } else if (isMicActivated) {
-                    activateInputs(!microphone.isMute());
+                } else if (!isMicActivated) {
+                    showPreparing();
+                    microphone.deactivate(DeactivableButton.DEACTIVATED);
                 } else {
-                    deactivateInputs(DeactivableButton.DEACTIVATED);
+                    showReady();
+                    if (!microphone.isActivated()) {
+                        activateInputs(!microphone.isMute());
+                    }
                 }
             }
         });
+    }
+
+    @Override
+    public void onMicPermissionResult(boolean granted) {
+        if (!granted) {
+            return;
+        }
+        // The service starts capture once the translation resources are ready. Starting here would turn the button on while the opening speech is still dropped.
+        startMicrophone(false);
+        if (!listeningReady) {
+            showPreparing();
+        }
+    }
+
+    private void showPreparing() {
+        listeningReady = false;
+        resumeModelLoading();
+        showModelLoading(0, 100);
+        if (microphone != null) {
+            microphone.setContentDescription(getString(R.string.simultaneous_preparing));
+        }
+    }
+
+    private void showReady() {
+        if (description == null) {
+            return;
+        }
+        finishModelLoading();
+        CharSequence previous = description.getText();
+        description.setText(R.string.simultaneous_ready);
+        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.primary_very_dark));
+        if (microphone != null) {
+            microphone.setContentDescription(getString(R.string.description_start_automatic_recognition));
+        }
+        if (!listeningReady) {
+            listeningReady = true;
+            if (!TextUtils.equals(previous, description.getText())) {
+                description.announceForAccessibility(description.getText());
+            }
+        }
     }
 
     @Override
@@ -378,8 +440,22 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
         }
 
         @Override
+        public void onModelLoading(int progress, int max) {
+            if (!listeningReady && Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)) {
+                showModelLoading(progress, max);
+                if (microphone != null) {
+                    microphone.deactivate(DeactivableButton.DEACTIVATED);
+                }
+            }
+        }
+
+        @Override
         public void onMicActivated() {
             super.onMicActivated();
+            showReady();
+            if (sound.getActivationStatus() != DeactivableButton.DEACTIVATED_FOR_TTS_ERROR) {
+                sound.activate(false);
+            }
             if (!microphone.isActivated()) {
                 microphone.activate(false);
             }

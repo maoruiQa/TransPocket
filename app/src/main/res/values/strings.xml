@@ -192,6 +192,9 @@
     <string name="description_live_conversation">Pair with other phones. Each phone recognizes its own speaker.</string>
     <string name="description_live_simultaneous">This phone listens to the other person, translates, and speaks the translation.</string>
     <string name="description_simultaneous">Listens to the other person, translates each sentence, and reads the translation aloud.</string>
+    <string name="simultaneous_preparing">Preparing the microphone and translation. Wait until the screen says you can speak.</string>
+    <string name="simultaneous_ready">You can speak now. Each sentence is translated and read aloud.</string>
+    <string name="voice_loading_microphone">Opening the microphone\u2026</string>
     <string name="dialog_select_source_language">Select the other person\'s language</string>
     <string name="dialog_select_target_language">Select your language</string>
     <string name="simultaneous_mode_running">Simultaneous interpretation is running...</string>
@@ -238,20 +241,31 @@
     <string name="error_missing_qwen35">Download Qwen3.5 0.8B before selecting it.</string>
     <string name="asr_model">Speech recognition</string>
     <string name="title_live_draft">Live Draft</string>
-    <string name="description_live_draft">Optional. Kokoro is the default on-device voice. Fun-CosyVoice 3 is the other choice. After the model is on the phone, supported languages are spoken with it instead of the system text-to-speech engine. Audio starts while the sentence is still being generated.</string>
-    <string name="title_live_draft_kokoro">Kokoro</string>
+    <string name="description_live_draft">The default voice is the system text-to-speech engine. Fun-CosyVoice 3 is optional. After that model is on the phone, its languages are spoken on the device. Each finished sentence starts immediately.</string>
+    <string name="title_live_draft_system">System text-to-speech</string>
     <string name="title_live_draft_cosyvoice">Fun-CosyVoice 3</string>
-    <string name="description_live_draft_kokoro">About %1$d MB. Chinese and English. This is the default Live Draft model.</string>
-    <string name="description_live_draft_cosyvoice">About %1$d MB. Chinese, English, Japanese, Korean, German, Spanish, French, Italian, Russian, and Cantonese. If playback reaches the end of the audio before the next piece is ready, it pauses and continues without skipping words.</string>
+    <string name="description_live_draft_system">No download. Uses the engine chosen in the phone\'s text-to-speech settings. A finished sentence is spoken right away, and the next sentence is queued while it plays.</string>
+    <string name="description_live_draft_cosyvoice">About %1$d MB, quantized. Chinese, English, Japanese, Korean, German, Spanish, French, Italian, Russian, and Cantonese. If playback reaches the end of the audio before the next piece is ready, it pauses and continues without skipping words.</string>
     <string name="title_live_draft_voice">Voice</string>
+    <string name="live_draft_gender_female">Female</string>
+    <string name="live_draft_gender_male">Male</string>
+    <string name="description_live_draft_reference">The voice is chosen from the language and this female or male setting. You can replace it with your own recording: 3 to 10 seconds of clear speech, with no music. Shorter than 3 seconds is unstable. Longer than 15 seconds uses only the first 15 seconds.</string>
+    <string name="title_live_draft_upload">Use my recording</string>
+    <string name="title_live_draft_clear_reference">Use automatic voice</string>
+    <string name="live_draft_reference_uploaded">Using your recording for this voice.</string>
+    <string name="live_draft_reference_automatic">Using the automatic voice for the language.</string>
+    <string name="live_draft_reference_short">This recording is shorter than 3 seconds. The cloned voice may be unstable.</string>
+    <string name="live_draft_reference_long">This recording is longer than 10 seconds. Only the first 15 seconds are used.</string>
+    <string name="live_draft_reference_unreadable">This recording could not be read. Choose a 3 to 10 second speech file.</string>
     <string name="title_asr_whisper">Whisper Small</string>
-    <string name="description_asr_whisper">OpenAI Whisper Small, the speech recognizer already used by the app. Partial int8, about 290 MB.</string>
+    <string name="description_asr_whisper">OpenAI Whisper Small.</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>
-    <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo, INT8. More accurate than Whisper Small. About 1.0 GB to download and about 2.6 GB of memory. Needs a phone with at least 6 GB of RAM.</string>
+    <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo. More accurate than Whisper Small. Needs a phone with at least 6 GB of RAM.</string>
     <string name="title_asr_qwen06">Qwen3-ASR 0.6B</string>
-    <string name="description_asr_qwen06">Qwen/Qwen3-ASR-0.6B. Decoder int4, embeddings fp16, encoder fp32. That mix is the measured CPU choice: an int8 encoder loses accuracy. About 1.9 GB to download and about 2 GB of memory.</string>
+    <string name="description_asr_qwen06">Qwen3-ASR 0.6B.</string>
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
-    <string name="description_asr_qwen17">Qwen/Qwen3-ASR-1.7B with the same quantization: decoder int4, embeddings fp16, encoder fp32. More accurate than the 0.6B model. About 3.9 GB to download and about 4 GB of memory. Needs a phone with at least 8 GB of RAM.</string>
+    <string name="description_asr_qwen17">Qwen3-ASR 1.7B. More accurate than the 0.6B model. Needs a phone with at least 8 GB of RAM.</string>
+    <string name="asr_quantization">Quantization</string>
     <string name="error_missing_asr">Download the selected speech model before using it.</string>
     <string name="error_asr_ram">This phone does not have enough memory for the selected speech model.</string>
     <string name="model_recommendation_madlad">Recommended: Madlad. HY-MT is tight on this phone. Madlad fits and covers more languages. About %1$s GB of memory, %2$s GB free.</string>
@@ -273,6 +287,7 @@
     <string name="preference_header_advanced">Advanced</string>
 
     <string name="preference_title_mic_sensitivity">Microphone sensitivity</string>
+    <string name="preference_title_mic_sensitivity_extended">Extended sensitivity</string>
     <string name="preference_title_languages_quality">Support low quality languages</string>
     <string name="preference_title_show_original_transcription">Show original transcriptions beyond the translation</string>
     <string name="preference_title_support_tts_quality">Support languages with low quality tts</string>
@@ -292,7 +307,8 @@
     <string name="preference_title_beam_size">Beam Search (beta)</string>
     <string name="preference_title_models_manager">Models Manager</string>
 
-    <string name="preference_description_mic_sensitivity">Select the volume level you need to start and maintain voice recognition</string>
+    <string name="preference_description_mic_sensitivity">Select the volume level you need to start and maintain voice recognition. 100%% is the previous highest level. Turn on extended sensitivity to go higher.</string>
+    <string name="preference_description_mic_sensitivity_extended">Raises the slider limit from 100%% to %1$d%%. Above 100%%, every extra 100%% halves the volume that starts recognition. Background noise can start it too.</string>
     <string name="preference_description_languages_quality">It allow to also supports languages that have low translation or speech recognition quality</string>
     <string name="preference_description_show_original_transcription_msg_preference">It allows to show the original transcription beyond the translation of the message.</string>
     <string name="preference_description_support_tts_quality">It allow to also supports languages that have a low quality speech synthesizer</string>
@@ -300,6 +316,23 @@
     <string name="preference_description_speech_timeout">Select the time after you stop talking to send the transcribed text</string>
     <string name="preference_description_prev_voice_duration">Select the length of the recording before you start speaking that will be included in the voice recognition</string>
     <string name="preference_description_beam_size">Set the beam size of the beam search algorithm, to improve translation quality at the expense of speed (only for text translation)</string>
+    <string name="preference_title_gemma_thinking">TranslateGemma thinking</string>
+    <string name="preference_description_gemma_thinking">Off by default. Turn it on to let TranslateGemma write a short note before the translation. Other models ignore this.</string>
+    <string name="preference_title_gemma_thinking_level">Reasoning level</string>
+    <string name="preference_description_gemma_thinking_level">How long that note may be. Low is the shortest. Current: %s</string>
+    <string name="gemma_thinking_low">Low</string>
+    <string name="gemma_thinking_medium">Medium</string>
+    <string name="gemma_thinking_high">High</string>
+    <string-array name="gemma_thinking_level_entries">
+        <item>@string/gemma_thinking_low</item>
+        <item>@string/gemma_thinking_medium</item>
+        <item>@string/gemma_thinking_high</item>
+    </string-array>
+    <string-array name="gemma_thinking_level_values">
+        <item>low</item>
+        <item>medium</item>
+        <item>high</item>
+    </string-array>
     <string name="preference_description_models_manager">Choose the model you want to use for translation and manage other translation options</string>
 
     <string name="conversation_mode" >Conversation</string>

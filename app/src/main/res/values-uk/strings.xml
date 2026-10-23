@@ -162,6 +162,9 @@
     <string name="description_live_conversation">З\'єднайте інші телефони. Кожен телефон розпізнає мовлення зі свого боку.</string>
     <string name="description_live_simultaneous">Цей телефон слухає співрозмовника, перекладає і озвучує переклад.</string>
     <string name="description_simultaneous">Слухає співрозмовника, перекладає кожне речення і озвучує переклад.</string>
+    <string name="simultaneous_preparing">Підготовка мікрофона й перекладу. Говоріть, коли з’явиться напис, що можна починати.</string>
+    <string name="simultaneous_ready">Можна говорити. Кожне речення перекладається й озвучується.</string>
+    <string name="voice_loading_microphone">Відкриття мікрофона\u2026</string>
     <string name="dialog_select_source_language">Оберіть мову співрозмовника</string>
     <string name="dialog_select_target_language">Оберіть свою мову</string>
     <string name="simultaneous_mode_running">Синхронний переклад працює...</string>
@@ -239,6 +242,13 @@
     <string name="preference_description_speech_timeout">Виберіть час, після якого ви перестаєте говорити, щоб надіслати транскрибований текст</string>
     <string name="preference_description_prev_voice_duration">Виберіть тривалість запису, перед тим як ви почнете говорити, який буде включено до розпізнавання голосу</string>
     <string name="preference_description_beam_size">Встановіть розмір променя алгоритму пошуку променя, щоб покращити якість перекладу за рахунок швидкості (лише для перекладу тексту)</string>
+    <string name="preference_title_gemma_thinking">Міркування TranslateGemma</string>
+    <string name="preference_description_gemma_thinking">За замовчуванням вимкнено. Якщо увімкнути, TranslateGemma напише коротку нотатку перед перекладом. Інші моделі це ігнорують.</string>
+    <string name="preference_title_gemma_thinking_level">Рівень міркування</string>
+    <string name="preference_description_gemma_thinking_level">Якою довгою може бути нотатка. Низький — найкоротший. Зараз: %s</string>
+    <string name="gemma_thinking_low">Низький</string>
+    <string name="gemma_thinking_medium">Середній</string>
+    <string name="gemma_thinking_high">Високий</string>
     <string name="preference_description_models_manager">Виберіть модель, яку ви хочете використовувати для перекладу, і керуйте іншими параметрами перекладу</string>
 
     <string name="preference_title_simultaneous_auto_speak">Автоматичне озвучення</string>

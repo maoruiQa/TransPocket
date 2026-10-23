@@ -60,8 +60,10 @@ public class Recognizer extends NeuralNetworkApi {
     private ArrayList<RecognizerListener> callbacks = new ArrayList<>();
     private ArrayList<RecognizerMultiListener> multiCallbacks = new ArrayList<>();
     private boolean recognizing = false;
+    private boolean speechWarmed = false;
     private ArrayDeque<DataContainer> dataToRecognize = new ArrayDeque<>();
     private final Object lock = new Object();
+    private final Object warmupLock = new Object();
 
     private static final String[] LANGUAGES = {
             "en",
@@ -197,7 +199,9 @@ public class Recognizer extends NeuralNetworkApi {
                 @Override
                 public void run() {
                     try {
-                        qwenEngine = new Qwen3AsrEngine(new File(global.getAsrModelDirectory()));
+                        boolean fp32 = global.getAsrQuant(global.getAsrModel()) == Global.ASR_QUANT_FP32;
+                        qwenEngine = new Qwen3AsrEngine(new File(global.getAsrModelDirectory()), fp32);
+                        global.markAsrRunning();
                         initListener.onInitializationFinished();
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -207,13 +211,17 @@ public class Recognizer extends NeuralNetworkApi {
             });
             return;
         }
-        if (global.getAsrModel() == Global.ASR_WHISPER_TURBO) {
+        if (global.getAsrModel() == Global.ASR_WHISPER_TURBO || (global.getAsrModel() == Global.ASR_WHISPER && global.groupFilesPresent(global.getWhisperDownloadInfo()))) {
             onnxEnv = OrtEnvironment.getEnvironment();
             loadAsync(async, new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        turboEngine = new WhisperTurboEngine(new File(global.getWhisperTurboDirectory()));
+                        boolean small = global.getAsrModel() == Global.ASR_WHISPER;
+                        int quant = global.getAsrQuant(global.getAsrModel());
+                        File dir = new File(small ? global.getWhisperSmallDirectory() : global.getWhisperTurboDirectory());
+                        turboEngine = new WhisperTurboEngine(dir, Global.whisperEncoderName(quant), Global.whisperDecoderName(quant), small ? 80 : 128, small ? 12 : 20);
+                        global.markAsrRunning();
                         initListener.onInitializationFinished();
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -267,6 +275,7 @@ public class Recognizer extends NeuralNetworkApi {
                     //detokenizerSessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.NO_OPT);
                     detokenizerSession = onnxEnv.createSession(detokenizerPath, detokenizerSessionOptions);
 
+                    global.markAsrRunning();
                     initListener.onInitializationFinished();
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -326,6 +335,78 @@ public class Recognizer extends NeuralNetworkApi {
         enqueue(new DataContainer(data, beamSize, languageCode, true));
     }
 
+    /**
+     * Runs one short silent pass before capture starts. The first ONNX execution
+     * is slow enough to stall the audio thread and drop the opening speech.
+     */
+    public void warmup() {
+        synchronized (warmupLock) {
+            if (speechWarmed) {
+                return;
+            }
+            synchronized (lock) {
+                while (recognizing) {
+                    try {
+                        lock.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                recognizing = true;
+            }
+            try {
+                float[] silence = new float[16000];
+                if (qwenEngine != null) {
+                    qwenEngine.warmup();
+                } else if (turboEngine != null) {
+                    turboEngine.warmup();
+                } else if (initSession != null && encoderSession != null) {
+                    warmupLegacy(silence);
+                }
+            } catch (Exception e) {
+                Log.w("recognizer", "speech warmup failed", e);
+            } finally {
+                boolean drain = false;
+                synchronized (lock) {
+                    speechWarmed = true;
+                    if (dataToRecognize.isEmpty()) {
+                        recognizing = false;
+                        lock.notifyAll();
+                    } else {
+                        drain = true;
+                    }
+                }
+                if (drain) {
+                    drainQueue();
+                }
+            }
+        }
+    }
+
+    private void warmupLegacy(float[] samples) throws OrtException {
+        OnnxTensor audioTensor = OnnxTensor.createTensor(onnxEnv, FloatBuffer.wrap(samples), TensorUtils.tensorShape(1L, (long) samples.length));
+        OrtSession.Result outputsInit = null;
+        OrtSession.Result encoded = null;
+        try {
+            Map<String, OnnxTensor> initInputs = new LinkedHashMap<>();
+            initInputs.put("audio_pcm", audioTensor);
+            outputsInit = initSession.run(initInputs);
+            OnnxTensor outputInit = (OnnxTensor) outputsInit.get(0);
+            Map<String, OnnxTensor> inputs = new LinkedHashMap<>();
+            inputs.put("input_features", outputInit);
+            encoded = encoderSession.run(inputs);
+        } finally {
+            if (encoded != null) {
+                encoded.close();
+            }
+            if (outputsInit != null) {
+                outputsInit.close();
+            }
+            audioTensor.close();
+        }
+    }
+
     public void recognize(final float[] data, int beamSize, final String languageCode1, final String languageCode2) {
         enqueue(new DataContainer(data, beamSize, languageCode1, languageCode2));
     }
@@ -360,6 +441,7 @@ public class Recognizer extends NeuralNetworkApi {
                 data = dataToRecognize.pollFirst();
                 if (data == null) {
                     recognizing = false;
+                    lock.notifyAll();
                     return;
                 }
             }
@@ -726,6 +808,29 @@ public class Recognizer extends NeuralNetworkApi {
         if (turboEngine != null) {
             turboEngine.close();
             turboEngine = null;
+        }
+        // Whisper Small sessions are not inside those engines. Leaving them open
+        // keeps their weights resident, so the next model fails to allocate.
+        closeSession(initSession);
+        closeSession(encoderSession);
+        closeSession(cacheInitSession);
+        closeSession(cacheInitBatchSession);
+        closeSession(decoderSession);
+        closeSession(detokenizerSession);
+        initSession = null;
+        encoderSession = null;
+        cacheInitSession = null;
+        cacheInitBatchSession = null;
+        decoderSession = null;
+        detokenizerSession = null;
+    }
+
+    private static void closeSession(OrtSession session) {
+        if (session != null) {
+            try {
+                session.close();
+            } catch (OrtException ignored) {
+            }
         }
     }
 

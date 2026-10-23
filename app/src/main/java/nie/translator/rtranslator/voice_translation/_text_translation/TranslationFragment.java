@@ -667,7 +667,6 @@ public class TranslationFragment extends Fragment {
                         @Override
                         public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
                             if (CustomLocale.containsLanguage(ttsLanguages, firstLanguage)) { // check if the language can be speak
-                                tts.stop();
                                 ttsListener.onDone("");  //we call this to make eventual visual updates to the tts buttons (stop() doesn't call onDone automatically)
                                 speak(inputText.getText().toString(), firstLanguage);
                                 ttsInputButton.setImageResource(R.drawable.stop_icon);
@@ -696,7 +695,6 @@ public class TranslationFragment extends Fragment {
                         @Override
                         public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
                             if (CustomLocale.containsLanguage(ttsLanguages, secondLanguage)) { // check if the language can be speak
-                                tts.stop();
                                 ttsListener.onDone("");  //we call this to make eventual visual updates to the tts buttons (stop() doesn't call onDone automatically)
                                 speak(outputText.getText().toString(), secondLanguage);
                                 ttsOutputButton.setImageResource(R.drawable.stop_icon);
@@ -789,7 +787,7 @@ public class TranslationFragment extends Fragment {
     public void speak(String text, CustomLocale language) {
         if (tts != null && (tts.isActive() || LiveDraftSpeaker.canSpeak(activity, language.getLanguage()))) {
             tts.setLanguage(language, activity);
-            tts.speak(text, TextToSpeech.QUEUE_ADD, null, "c01");
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "c01");
         }
     }
 

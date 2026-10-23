@@ -41,6 +41,7 @@ import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ButtonKeyboard;
+import nie.translator.rtranslator.tools.gui.GuiTools;
 import nie.translator.rtranslator.tools.gui.ButtonMic;
 import nie.translator.rtranslator.tools.gui.ButtonSound;
 import nie.translator.rtranslator.tools.gui.DeactivableButton;
@@ -135,7 +136,7 @@ public class ConversationMainFragment extends VoiceTranslationFragment {
             }
         });
         microphone.setMicInput(micInput);
-        description.setText(R.string.description_conversation);
+        showModelLoading(1, 3);
         container.setVisibility(View.INVISIBLE);  //we make the UI invisible until the restore of the attributes from the service (to avoid instant changes of the UI).
     }
 
@@ -333,20 +334,32 @@ public class ConversationMainFragment extends VoiceTranslationFragment {
                 }
 
                 if(!Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)){
+                    hideModelLoading();
                     deactivateInputs(DeactivableButton.DEACTIVATED_FOR_MISSING_MIC_PERMISSION);
                 } else {
                     if (isMicActivated) {
+                        showConversationIdle();
                         if (!microphone.isMute() && !isEditTextOpen) {
                             activateInputs(true);
                         } else {
                             activateInputs(false);
                         }
                     } else {
+                        showModelLoading(1, 3);
                         deactivateInputs(DeactivableButton.DEACTIVATED);
                     }
                 }
             }
         });
+    }
+
+    private void showConversationIdle() {
+        finishModelLoading();
+        if (description == null || (mAdapter != null && mAdapter.getItemCount() > 0)) {
+            return;
+        }
+        description.setText(R.string.description_conversation);
+        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.light_gray));
     }
 
     @Override
@@ -465,8 +478,16 @@ public class ConversationMainFragment extends VoiceTranslationFragment {
         }
 
         @Override
+        public void onModelLoading(int progress, int max) {
+            if (Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)) {
+                showModelLoading(progress, max);
+            }
+        }
+
+        @Override
         public void onMicActivated() {
             super.onMicActivated();
+            showConversationIdle();
             if(!microphone.isActivated()) {
                 microphone.activate(false);
             }

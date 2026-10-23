@@ -17,6 +17,8 @@ public final class PcmQueue {
     private boolean finished;
     private boolean cancelled;
     private boolean holding;
+    /** A finished sentence may start playback before the opening prime fills. */
+    private boolean sentenceReady;
 
     public PcmQueue(int sampleRate) {
         highSamples = Math.max(1, PcmPlayback.samplesFor(sampleRate, PcmPlayback.HIGH_MS));
@@ -104,11 +106,47 @@ public final class PcmQueue {
         }
     }
 
+    /** One sentence has been synthesized. Short audio can start without waiting for the rest. */
+    public void sentenceReady() {
+        synchronized (lock) {
+            sentenceReady = true;
+            lock.notifyAll();
+        }
+    }
+
+    public boolean isSentenceReady() {
+        synchronized (lock) {
+            return sentenceReady;
+        }
+    }
+
     public void finish() {
         synchronized (lock) {
             finished = true;
             lock.notifyAll();
         }
+    }
+
+    /**
+     * Blocks until samples arrive, the utterance is finished, or playback is cancelled.
+     * Returns 0 when finished and empty, or -1 when cancelled.
+     */
+    public int readWaiting(short[] dest) throws InterruptedException {
+        if (dest == null || dest.length == 0) {
+            return 0;
+        }
+        synchronized (lock) {
+            while (!cancelled && queued == 0 && !finished) {
+                lock.wait(50);
+            }
+            if (cancelled) {
+                return -1;
+            }
+            if (queued == 0) {
+                return 0;
+            }
+        }
+        return read(dest);
     }
 
     public void cancel() {

@@ -42,13 +42,16 @@ public class SimultaneousTextTest {
     }
 
     @Test
-    public void takeSpeakableWaitsForABoundary() {
+    public void takeSpeakableWaitsForASentence() {
         assertNull(SimultaneousText.takeSpeakable("short text", false));
+        assertNull(SimultaneousText.takeSpeakable("你好，世界", false));
     }
 
     @Test
-    public void takeSpeakableCutsAtPunctuation() {
-        assertEquals("你好，", SimultaneousText.takeSpeakable("你好，世界", false));
+    public void takeSpeakableCutsAtTheFirstSentence() {
+        assertEquals("第一句。", SimultaneousText.takeSpeakable("第一句。第二句。第三句。", false));
+        assertEquals("第一句。", SimultaneousText.takeSpeakable("第一句。第二句。", true));
+        assertEquals("Value is 3.14.", SimultaneousText.takeSpeakable("Value is 3.14. Next.", false));
     }
 
     @Test
@@ -58,6 +61,57 @@ public class SimultaneousTextTest {
 
     @Test
     public void takeSpeakableCutsALongUnpunctuatedChunk() {
-        assertEquals("1234567890123456", SimultaneousText.takeSpeakable("12345678901234567890", false));
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 90; i++) {
+            text.append('a');
+        }
+        assertEquals(SimultaneousText.SPEAK_CHUNK_CHARS, SimultaneousText.takeSpeakable(text.toString(), false).length());
+    }
+
+    @Test
+    public void takeSpeakableCutsALongSentenceAtTheLastClause() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            text.append('a');
+        }
+        text.append(',');
+        for (int i = 0; i < 50; i++) {
+            text.append('b');
+        }
+        assertEquals(41, SimultaneousText.takeSpeakable(text.toString(), false).length());
+    }
+
+    @Test
+    public void takeSpeakableKeepsAFinishedSentenceWhole() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            text.append('a');
+        }
+        text.append(". Next.");
+        assertEquals(101, SimultaneousText.takeSpeakable(text.toString(), false).length());
+    }
+
+    @Test
+    public void takeSpeakableHardCapCutsALongSentence() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            text.append('a');
+        }
+        text.append(". Next.");
+        String piece = SimultaneousText.takeSpeakable(text.toString(), false, SimultaneousText.SPEAK_CHUNK_CHARS, true);
+        assertEquals(SimultaneousText.SPEAK_CHUNK_CHARS, piece.length());
+        assertEquals(false, SimultaneousText.isAudible("。。！"));
+        assertEquals(true, SimultaneousText.isAudible("下一句"));
+    }
+
+    @Test
+    public void speakablePiecesKeepTheUnfinishedTailUntilFinal() {
+        java.util.ArrayList<String> waiting = SimultaneousText.speakablePieces("第一句。第二句。尾巴", false);
+        assertEquals(2, waiting.size());
+        assertEquals("第一句。", waiting.get(0));
+        assertEquals("第二句。", waiting.get(1));
+        java.util.ArrayList<String> finished = SimultaneousText.speakablePieces("第一句。第二句。尾巴", true);
+        assertEquals(3, finished.size());
+        assertEquals("尾巴", finished.get(2));
     }
 }

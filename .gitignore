@@ -7,3 +7,8 @@
 .externalNativeBuild
 app/.cxx
 app/release
+app/src/main/jniLibs/arm64-v8a/libcrispasr.so
+app/src/main/jniLibs/arm64-v8a/libggml.so
+app/src/main/jniLibs/arm64-v8a/libggml-base.so
+app/src/main/jniLibs/arm64-v8a/libggml-cpu.so
+app/src/main/jniLibs/arm64-v8a/libomp.so

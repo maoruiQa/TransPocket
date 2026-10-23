@@ -60,6 +60,7 @@ import nie.translator.rtranslator.voice_translation._conversation_mode.communica
 import nie.translator.rtranslator.voice_translation._text_translation.TranslationFragment;
 import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetworkApi;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
+import nie.translator.rtranslator.voice_translation.neural_networks.voice.MicSensitivity;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recorder;
 
@@ -109,6 +110,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private Recognizer speechRecognizer;
     private String name = "";
     private int micSensitivity = -1;
+    private boolean micSensitivityExtended;
     private float ttsSpeechRate = -1f;
     private int speechTimeout = -1;
     private int prevVoiceDuration = -1;
@@ -130,7 +132,20 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public static final int ASR_QWEN3_06 = 1;
     public static final int ASR_QWEN3_17 = 2;
     public static final int ASR_WHISPER_TURBO = 3;
+    public static final int ASR_QUANT_INT4 = 0;
+    public static final int ASR_QUANT_INT8 = 1;
+    public static final int ASR_QUANT_FP16 = 2;
+    public static final int ASR_QUANT_FP32 = 3;
+    public static final String GEMMA_THINKING_OFF = "off";
+    public static final String GEMMA_THINKING_LOW = "low";
+    public static final String GEMMA_THINKING_MEDIUM = "medium";
+    public static final String GEMMA_THINKING_HIGH = "high";
+    private static final int[] WHISPER_QUANTS = {ASR_QUANT_INT4, ASR_QUANT_INT8, ASR_QUANT_FP16, ASR_QUANT_FP32};
+    private static final int[] QWEN_QUANTS = {ASR_QUANT_INT4, ASR_QUANT_FP32};
+    private static final long WHISPER_VOCAB_BYTES = 1036558L;
     private int asrModel;
+    @Nullable
+    private String runningAsrSignature;
     private VadSilero vad;
     private boolean modelsLoaded = false;
 
@@ -637,14 +652,115 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public DownloadGroupInfo getWhisperDownloadInfo() {
-        DownloadInfo[] initial = getInitialDownloadInfo().downloadsInfo;
-        ArrayList<DownloadInfo> whisper = new ArrayList<>();
-        for (DownloadInfo info : initial) {
-            if (info.getName().startsWith("Whisper_")) {
-                whisper.add(info);
+        return whisperOnnxDownload(ASR_WHISPER, getWhisperSmallDirectory(), "https://huggingface.co/onnx-community/whisper-small/resolve/main/");
+    }
+
+    public static int[] asrQuantChoices(int model) {
+        if (model == ASR_QWEN3_06 || model == ASR_QWEN3_17) {
+            return QWEN_QUANTS.clone();
+        }
+        return WHISPER_QUANTS.clone();
+    }
+
+    public static String asrQuantLabel(int quant) {
+        switch (quant) {
+            case ASR_QUANT_INT8:
+                return "int8";
+            case ASR_QUANT_FP16:
+                return "fp16";
+            case ASR_QUANT_FP32:
+                return "fp32";
+            default:
+                return "int4";
+        }
+    }
+
+    public static String whisperEncoderName(int quant) {
+        switch (quant) {
+            case ASR_QUANT_INT8:
+                return "encoder_model_int8.onnx";
+            case ASR_QUANT_FP16:
+                return "encoder_model_fp16.onnx";
+            case ASR_QUANT_FP32:
+                return "encoder_model.onnx";
+            default:
+                return "encoder_model_q4.onnx";
+        }
+    }
+
+    public static String whisperDecoderName(int quant) {
+        switch (quant) {
+            case ASR_QUANT_INT8:
+                return "decoder_model_merged_int8.onnx";
+            case ASR_QUANT_FP16:
+                return "decoder_model_merged_fp16.onnx";
+            case ASR_QUANT_FP32:
+                return "decoder_model_merged.onnx";
+            default:
+                return "decoder_model_merged_q4.onnx";
+        }
+    }
+
+    public int getAsrQuant(int model) {
+        SharedPreferences prefs = getSharedPreferences("default", Context.MODE_PRIVATE);
+        String key = asrQuantKey(model);
+        if (!prefs.contains(key)) {
+            // Turbo used to download only the int8 pair. Keep that install until a level is chosen.
+            if (model == ASR_WHISPER_TURBO && whisperQuantPresent(model, ASR_QUANT_INT8) && !whisperQuantPresent(model, ASR_QUANT_INT4)) {
+                return ASR_QUANT_INT8;
+            }
+            return ASR_QUANT_INT4;
+        }
+        int quant = prefs.getInt(key, ASR_QUANT_INT4);
+        for (int choice : asrQuantChoices(model)) {
+            if (choice == quant) {
+                return quant;
             }
         }
-        return new DownloadGroupInfo(whisper.toArray(new DownloadInfo[0]));
+        return ASR_QUANT_INT4;
+    }
+
+    private boolean whisperQuantPresent(int model, int quant) {
+        String folder = model == ASR_WHISPER_TURBO ? getWhisperTurboDirectory() : getWhisperSmallDirectory();
+        File encoder = new File(folder, whisperEncoderName(quant));
+        File decoder = new File(folder, whisperDecoderName(quant));
+        File vocab = new File(folder, "vocab.json");
+        if (!encoder.isFile() || encoder.length() == 0 || !decoder.isFile() || decoder.length() == 0 || !vocab.isFile() || vocab.length() == 0) {
+            return false;
+        }
+        if (quant == ASR_QUANT_FP32 && model == ASR_WHISPER_TURBO) {
+            File data = new File(folder, "encoder_model.onnx_data");
+            return data.isFile() && data.length() > 0;
+        }
+        return true;
+    }
+
+    public void setAsrQuant(int model, int quant) {
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putInt(asrQuantKey(model), quant).apply();
+    }
+
+    public void markAsrRunning() {
+        runningAsrSignature = asrSignature();
+    }
+
+    private String asrSignature() {
+        if (asrModel == ASR_WHISPER && !groupFilesPresent(getWhisperDownloadInfo()) && legacyWhisperPresent()) {
+            return "whisper-legacy";
+        }
+        return asrModel + ":" + getAsrQuant(asrModel);
+    }
+
+    private static String asrQuantKey(int model) {
+        switch (model) {
+            case ASR_QWEN3_06:
+                return "asrQuantQwen06";
+            case ASR_QWEN3_17:
+                return "asrQuantQwen17";
+            case ASR_WHISPER_TURBO:
+                return "asrQuantWhisperTurbo";
+            default:
+                return "asrQuantWhisper";
+        }
     }
 
     public int getAsrModel() {
@@ -656,6 +772,10 @@ public class Global extends Application implements DefaultLifecycleObserver {
             return getFilesDir().getAbsolutePath() + "/ASR/Qwen3-ASR-1.7B";
         }
         return getFilesDir().getAbsolutePath() + "/ASR/Qwen3-ASR-0.6B";
+    }
+
+    public String getWhisperSmallDirectory() {
+        return getFilesDir().getAbsolutePath() + "/ASR/Whisper-Small";
     }
 
     public String getWhisperTurboDirectory() {
@@ -676,13 +796,65 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public DownloadGroupInfo getWhisperTurboDownloadInfo() {
-        String folder = getWhisperTurboDirectory();
-        String base = "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/main/";
-        return new DownloadGroupInfo(new DownloadInfo[]{
-                new DownloadInfo("encoder_model_int8.onnx", base + "onnx/encoder_model_int8.onnx", folder, kb(644822094L), false, false),
-                new DownloadInfo("decoder_model_merged_int8.onnx", base + "onnx/decoder_model_merged_int8.onnx", folder, kb(439936716L), false, false),
-                new DownloadInfo("vocab.json", base + "vocab.json", folder, kb(1036558L), false, false)
-        });
+        return whisperOnnxDownload(ASR_WHISPER_TURBO, getWhisperTurboDirectory(), "https://huggingface.co/onnx-community/whisper-large-v3-turbo/resolve/main/");
+    }
+
+    private DownloadGroupInfo whisperOnnxDownload(int model, String folder, String base) {
+        int quant = getAsrQuant(model);
+        boolean turbo = model == ASR_WHISPER_TURBO;
+        String encoder = whisperEncoderName(quant);
+        String decoder = whisperDecoderName(quant);
+        long encoderBytes;
+        long decoderBytes;
+        long dataBytes = 0;
+        if (turbo) {
+            switch (quant) {
+                case ASR_QUANT_INT8:
+                    encoderBytes = 644822094L;
+                    decoderBytes = 439936716L;
+                    break;
+                case ASR_QUANT_FP16:
+                    encoderBytes = 1274342603L;
+                    decoderBytes = 344227339L;
+                    break;
+                case ASR_QUANT_FP32:
+                    encoderBytes = 439254L;
+                    decoderBytes = 688031263L;
+                    dataBytes = 2547875840L;
+                    break;
+                default:
+                    encoderBytes = 424942775L;
+                    decoderBytes = 334147222L;
+                    break;
+            }
+        } else {
+            switch (quant) {
+                case ASR_QUANT_INT8:
+                    encoderBytes = 92326127L;
+                    decoderBytes = 156750845L;
+                    break;
+                case ASR_QUANT_FP16:
+                    encoderBytes = 176607756L;
+                    decoderBytes = 308583076L;
+                    break;
+                case ASR_QUANT_FP32:
+                    encoderBytes = 352825870L;
+                    decoderBytes = 615324301L;
+                    break;
+                default:
+                    encoderBytes = 66182104L;
+                    decoderBytes = 233149327L;
+                    break;
+            }
+        }
+        ArrayList<DownloadInfo> files = new ArrayList<>();
+        files.add(new DownloadInfo(encoder, base + "onnx/" + encoder, folder, kb(encoderBytes), false, false));
+        if (dataBytes > 0) {
+            files.add(new DownloadInfo("encoder_model.onnx_data", base + "onnx/encoder_model.onnx_data", folder, kb(dataBytes), false, false));
+        }
+        files.add(new DownloadInfo(decoder, base + "onnx/" + decoder, folder, kb(decoderBytes), false, false));
+        files.add(new DownloadInfo("vocab.json", base + "vocab.json", folder, kb(WHISPER_VOCAB_BYTES), false, false));
+        return new DownloadGroupInfo(files.toArray(new DownloadInfo[0]));
     }
 
     public DownloadGroupInfo getQwen3Asr06DownloadInfo() {
@@ -697,19 +869,23 @@ public class Global extends Application implements DefaultLifecycleObserver {
         String folder = getFilesDir().getAbsolutePath() + (large ? "/ASR/Qwen3-ASR-1.7B" : "/ASR/Qwen3-ASR-0.6B");
         String repo = large ? "andrewleech/qwen3-asr-1.7b-onnx" : "andrewleech/qwen3-asr-0.6b-onnx";
         String base = "https://huggingface.co/" + repo + "/resolve/main/";
-        // int4 package only. decoder_weights.data is the fp32 decoder and is not downloaded.
-        // encoder.int4.onnx is the float32 encoder shipped under that name: int8 here loses accuracy.
+        // This export publishes int4 and fp32. The int4 encoder file is float32 weights under that name.
+        boolean fp32 = getAsrQuant(large ? ASR_QWEN3_17 : ASR_QWEN3_06) == ASR_QUANT_FP32;
+        String encoder = fp32 ? "encoder.onnx" : "encoder.int4.onnx";
+        String init = fp32 ? "decoder_init.onnx" : "decoder_init.int4.onnx";
+        String step = fp32 ? "decoder_step.onnx" : "decoder_step.int4.onnx";
+        String weights = fp32 ? "decoder_weights.data" : "decoder_weights.int4.data";
         long encoderBytes = large ? 1270241779L : 745762694L;
-        long initBytes = large ? 356165L : 355390L;
-        long stepBytes = large ? 355662L : 354888L;
-        long weightsBytes = large ? 2226321408L : 962460672L;
+        long initBytes = fp32 ? (large ? 286423L : 286310L) : (large ? 356165L : 355390L);
+        long stepBytes = fp32 ? (large ? 285925L : 285813L) : (large ? 355662L : 354888L);
+        long weightsBytes = fp32 ? (large ? 8126930944L : 3006500864L) : (large ? 2226321408L : 962460672L);
         long embedBytes = large ? 622329856L : 311164928L;
         long configBytes = large ? 1251L : 1250L;
         return new DownloadGroupInfo(new DownloadInfo[]{
-                new DownloadInfo("encoder.int4.onnx", base + "encoder.int4.onnx", folder, kb(encoderBytes), false, false),
-                new DownloadInfo("decoder_init.int4.onnx", base + "decoder_init.int4.onnx", folder, kb(initBytes), false, false),
-                new DownloadInfo("decoder_step.int4.onnx", base + "decoder_step.int4.onnx", folder, kb(stepBytes), false, false),
-                new DownloadInfo("decoder_weights.int4.data", base + "decoder_weights.int4.data", folder, kb(weightsBytes), false, false),
+                new DownloadInfo(encoder, base + encoder, folder, kb(encoderBytes), false, false),
+                new DownloadInfo(init, base + init, folder, kb(initBytes), false, false),
+                new DownloadInfo(step, base + step, folder, kb(stepBytes), false, false),
+                new DownloadInfo(weights, base + weights, folder, kb(weightsBytes), false, false),
                 new DownloadInfo("embed_tokens.bin", base + "embed_tokens.bin", folder, kb(embedBytes), false, false),
                 new DownloadInfo("config.json", base + "config.json", folder, kb(configBytes), false, false),
                 new DownloadInfo("tokenizer.json", base + "tokenizer.json", folder, kb(11429377L), false, false)
@@ -733,12 +909,49 @@ public class Global extends Application implements DefaultLifecycleObserver {
         return group.downloadsInfo.length > 0;
     }
 
+    public boolean legacyWhisperPresent() {
+        String dir = getFilesDir().getPath();
+        String[] names = {
+                "Whisper_cache_initializer.onnx",
+                "Whisper_cache_initializer_batch.onnx",
+                "Whisper_decoder.onnx",
+                "Whisper_detokenizer.onnx",
+                "Whisper_encoder.onnx",
+                "Whisper_initializer.onnx"
+        };
+        for (String name : names) {
+            File file = new File(dir, name);
+            if (!file.isFile() || file.length() == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Selected quant files, or the older split Whisper Small package when int4 has not been downloaded yet. */
+    public boolean asrReady(int model) {
+        if (groupFilesPresent(getAsrDownloadInfo(model))) {
+            return true;
+        }
+        return model == ASR_WHISPER && getAsrQuant(model) == ASR_QUANT_INT4 && legacyWhisperPresent();
+    }
+
+    public int asrDownloadSizeMb(int model) {
+        long kb = 0;
+        for (DownloadInfo info : getAsrDownloadInfo(model).downloadsInfo) {
+            kb += info.getSize();
+        }
+        return (int) Math.max(1L, (kb + 512L) / 1024L);
+    }
+
     public void setAsrModel(int asrModel, boolean reloadRecognizer, @Nullable Translator.GeneralListener listener) {
-        boolean changed = this.asrModel != asrModel;
+        boolean modelChanged = this.asrModel != asrModel;
         this.asrModel = asrModel;
         SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
         editor.putInt("selectedAsrModel", asrModel);
         editor.apply();
+        String nextSignature = asrSignature();
+        boolean changed = modelChanged || (runningAsrSignature != null && !nextSignature.equals(runningAsrSignature));
         if (!changed || !reloadRecognizer || speechRecognizer == null) {
             if (listener != null) {
                 listener.onSuccess();
@@ -1077,18 +1290,41 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public int getMicSensitivity() {
         if (micSensitivity == -1) {
             final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
-            micSensitivity = sharedPreferences.getInt("micSensibility", 100);
+            int saved = sharedPreferences.getInt("micSensibility", MicSensitivity.DEFAULT);
+            boolean extended = sharedPreferences.getBoolean("micSensitivityExtended", false);
+            // Older installs could save 101–200 before the switch existed.
+            if (!sharedPreferences.contains("micSensitivityExtended") && saved > MicSensitivity.STANDARD_MAX) {
+                extended = true;
+                sharedPreferences.edit().putBoolean("micSensitivityExtended", true).apply();
+            }
+            micSensitivityExtended = extended;
+            micSensitivity = MicSensitivity.clamp(saved, extended);
             setAmplitudeThreshold(micSensitivity);
         }
         return micSensitivity;
     }
 
+    public boolean isMicSensitivityExtended() {
+        getMicSensitivity();
+        return micSensitivityExtended;
+    }
+
+    public void setMicSensitivityExtended(boolean extended) {
+        getMicSensitivity();
+        micSensitivityExtended = extended;
+        SharedPreferences.Editor editor = this.getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putBoolean("micSensitivityExtended", extended);
+        editor.apply();
+        setMicSensitivity(micSensitivity);
+    }
+
     public void setMicSensitivity(int value) {
-        micSensitivity = value;
+        getMicSensitivity();
+        micSensitivity = MicSensitivity.clamp(value, micSensitivityExtended);
         setAmplitudeThreshold(micSensitivity);
         final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPreferences.edit();
-        editor.putInt("micSensibility", value);
+        editor.putInt("micSensibility", micSensitivity);
         editor.apply();
     }
 
@@ -1144,12 +1380,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     private void setAmplitudeThreshold(int micSensitivity) {
-        float amplitudePercentage = 1f - (micSensitivity / 100f);
-        if (amplitudePercentage < 0.5f) {
-            amplitudeThreshold = Math.round(Recorder.MIN_AMPLITUDE_THRESHOLD + ((Recorder.DEFAULT_AMPLITUDE_THRESHOLD - Recorder.MIN_AMPLITUDE_THRESHOLD) * (amplitudePercentage * 2)));
-        } else {
-            amplitudeThreshold = Math.round(Recorder.DEFAULT_AMPLITUDE_THRESHOLD + ((Recorder.MAX_AMPLITUDE_THRESHOLD - Recorder.DEFAULT_AMPLITUDE_THRESHOLD) * ((amplitudePercentage - 0.5F) * 2)));
-        }
+        amplitudeThreshold = MicSensitivity.amplitudeThreshold(micSensitivity);
     }
 
     public int getBeamSize() {
@@ -1166,6 +1397,31 @@ public class Global extends Application implements DefaultLifecycleObserver {
         SharedPreferences.Editor editor = sharedPreferences.edit();
         editor.putInt("beamSize", value);
         editor.apply();
+    }
+
+    /** Off unless the user turns it on. The saved default is off. */
+    public boolean isGemmaThinkingEnabled() {
+        return getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("gemmaThinking", false);
+    }
+
+    public void setGemmaThinkingEnabled(boolean enabled) {
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("gemmaThinking", enabled).apply();
+    }
+
+    /** Low, medium, or high. Used only while thinking is on. An unknown value is low. */
+    public String getGemmaThinkingLevel() {
+        String level = getSharedPreferences("default", Context.MODE_PRIVATE).getString("gemmaThinkingLevel", GEMMA_THINKING_LOW);
+        if (GEMMA_THINKING_MEDIUM.equals(level) || GEMMA_THINKING_HIGH.equals(level)) {
+            return level;
+        }
+        return GEMMA_THINKING_LOW;
+    }
+
+    public void setGemmaThinkingLevel(String level) {
+        if (!GEMMA_THINKING_MEDIUM.equals(level) && !GEMMA_THINKING_HIGH.equals(level)) {
+            level = GEMMA_THINKING_LOW;
+        }
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putString("gemmaThinkingLevel", level).apply();
     }
 
     public boolean isUseTatoeba(){

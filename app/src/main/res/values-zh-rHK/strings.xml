@@ -174,6 +174,9 @@
     <string name="description_live_conversation">與其他手機配對。每部手機辨識自己這一側的話。</string>
     <string name="description_live_simultaneous">這部手機聽對方說話，翻譯並朗讀譯文。</string>
     <string name="description_simultaneous">聽對方說話，一句一句翻譯，並朗讀譯文。</string>
+    <string name="simultaneous_preparing">正在準備麥克風和翻譯。請等到畫面顯示可以開始說話後再講。</string>
+    <string name="simultaneous_ready">可以開始說話了。系統會一句一句翻譯，並朗讀譯文。</string>
+    <string name="voice_loading_microphone">正在打開麥克風…</string>
     <string name="dialog_select_source_language">選擇對方的語言</string>
     <string name="dialog_select_target_language">選擇我的語言</string>
     <string name="simultaneous_mode_running">同聲傳譯正在執行...</string>
@@ -216,20 +219,30 @@
     <string name="error_missing_qwen35">請先下載 Qwen3.5 0.8B，再選擇它。</string>
     <string name="asr_model">語音辨識</string>
     <string name="title_live_draft">Live Draft</string>
-    <string name="description_live_draft">可選。預設使用 Kokoro，也可以改用 Fun-CosyVoice 3。模型下載到手機後，它支援的語言會用它朗讀，不再用系統文字轉語音。聲音會在句子還在生成時就開始播放。</string>
-    <string name="title_live_draft_kokoro">Kokoro</string>
+    <string name="description_live_draft">預設使用系統文字轉語音。也可以下載量化版 Fun-CosyVoice 3，它支援的語言會在手機上朗讀。每句結束就會開始朗讀，不用等整段譯完。</string>
+    <string name="title_live_draft_system">系統文字轉語音</string>
     <string name="title_live_draft_cosyvoice">Fun-CosyVoice 3</string>
-    <string name="description_live_draft_kokoro">大約 %1$d MB。中文和英文。這是預設的 Live Draft 模型。</string>
-    <string name="description_live_draft_cosyvoice">大約 %1$d MB。中文、英文、日文、韓文、德文、西班牙文、法文、意大利文、俄文和粵語。播放追上還沒生成的聲音時會停一下再繼續，不會把字跳過。</string>
+    <string name="description_live_draft_system">不用下載。使用手機系統設定裡的文字轉語音引擎。一句話一結束就開始朗讀，下一句會在播放時排進隊列。</string>
+    <string name="description_live_draft_cosyvoice">大約 %1$d MB，量化版。中文、英文、日文、韓文、德文、西班牙文、法文、意大利文、俄文和粵語。播放追上還沒生成的聲音時會停一下再繼續，不會把字跳過。</string>
     <string name="title_live_draft_voice">聲音</string>
+    <string name="live_draft_gender_female">女聲</string>
+    <string name="live_draft_gender_male">男聲</string>
+    <string name="description_live_draft_reference">系統會按語言和這裡的男聲或女聲選音色。也可以換成自己的錄音：3 到 10 秒的乾淨人聲，不要音樂。短於 3 秒不穩定。長於 15 秒只使用前 15 秒。</string>
+    <string name="title_live_draft_upload">使用我的錄音</string>
+    <string name="title_live_draft_clear_reference">改回自動音色</string>
+    <string name="live_draft_reference_uploaded">這個聲音使用你的錄音。</string>
+    <string name="live_draft_reference_automatic">這個聲音按語言自動選擇。</string>
+    <string name="live_draft_reference_short">這段錄音短於 3 秒，克隆出來的聲音可能不穩定。</string>
+    <string name="live_draft_reference_long">這段錄音長於 10 秒，只會使用前 15 秒。</string>
+    <string name="live_draft_reference_unreadable">這段錄音讀不了。請換一個 3 到 10 秒的人聲檔案。</string>
     <string name="title_asr_whisper">Whisper Small</string>
-    <string name="description_asr_whisper">應用目前使用的 OpenAI Whisper Small，部分 int8，大約 290 MB。</string>
+    <string name="description_asr_whisper">OpenAI Whisper Small。</string>
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>
-    <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo，INT8。比 Whisper Small 更準。下載大約 1.0 GB，執行大約占用 2.6 GB 記憶體，手機至少要有 6 GB 記憶體。</string>
+    <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo。比 Whisper Small 更準。手機至少要有 6 GB 記憶體。</string>
     <string name="title_asr_qwen06">Qwen3-ASR 0.6B</string>
-    <string name="description_asr_qwen06">Qwen/Qwen3-ASR-0.6B。解碼器 int4，詞嵌入 fp16，編碼器保持 fp32。這個組合是測過的 CPU 方案，編碼器再用 int8 會掉準確率。下載大約 1.9 GB，執行大約占用 2 GB 記憶體。</string>
+    <string name="description_asr_qwen06">Qwen3-ASR 0.6B。</string>
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
-    <string name="description_asr_qwen17">Qwen/Qwen3-ASR-1.7B，量化與 0.6B 相同：解碼器 int4，詞嵌入 fp16，編碼器 fp32。比 0.6B 更準。下載大約 3.9 GB，執行大約占用 4 GB 記憶體，手機至少要有 8 GB 記憶體。</string>
+    <string name="description_asr_qwen17">Qwen3-ASR 1.7B。比 0.6B 更準。手機至少要有 8 GB 記憶體。</string>
     <string name="error_missing_asr">請先下載所選的語音模型。</string>
     <string name="error_asr_ram">這部手機的記憶體不夠執行所選的語音模型。</string>
     <string name="model_recommendation_madlad">推薦：Madlad。這部手機跑 HY-MT 會比較緊。Madlad 放得下，而且語言更多。大約 %1$s GB 記憶體、%2$s GB 可用空間。</string>
@@ -251,6 +264,7 @@
     <string name="preference_header_advanced">進階</string>
 
     <string name="preference_title_mic_sensitivity">麥克風靈敏度</string>
+    <string name="preference_title_mic_sensitivity_extended">擴展靈敏度</string>
     <string name="preference_title_languages_quality">支援低品質語言</string>
     <string name="preference_title_support_tts_quality">支援低品質 TTS 語言</string>
     <string name="preference_title_language">個人語言</string>
@@ -269,7 +283,8 @@
     <string name="preference_title_beam_size">定向搜尋（測試版）</string>
     <string name="preference_title_models_manager">模型管理</string>
 
-    <string name="preference_description_mic_sensitivity">選擇您需要的音量級別以啟動和維持語音辨識</string>
+    <string name="preference_description_mic_sensitivity">選擇啟動並維持語音辨識所需的音量。100%% 是原先的最高檔。開啟擴展靈敏度後可以調得更高。</string>
+    <string name="preference_description_mic_sensitivity_extended">把滑桿上限從 100%% 提高到 %1$d%%。超過 100%% 後，每再增加 100%%，啟動辨識所需的音量減半。環境噪聲也可能觸發辨識。</string>
     <string name="preference_description_languages_quality">它還允許支援翻譯或語音識別品質較低的語言</string>
     <string name="preference_title_show_original_transcription">顯示翻譯之外的原始轉錄內容</string>
     <string name="preference_description_show_original_transcription_msg_preference">它允許顯示消息翻譯之外的原始轉錄內容。</string>
@@ -278,6 +293,13 @@
     <string name="preference_description_speech_timeout">選擇您停止說話後發送轉錄文字的時間</string>
     <string name="preference_description_prev_voice_duration">選擇開始說話前的錄音長度，將包括在語音辨識中</string>
     <string name="preference_description_beam_size">設定波束搜尋演算法的波束大小，以犧牲速度為代價來提高翻譯品質（僅適用於文字翻譯）</string>
+    <string name="preference_title_gemma_thinking">TranslateGemma 思考模式</string>
+    <string name="preference_description_gemma_thinking">預設關閉。開啟後，TranslateGemma 會先寫一段簡短推理，再給出譯文。其他模型不受影響。</string>
+    <string name="preference_title_gemma_thinking_level">推理擋位</string>
+    <string name="preference_description_gemma_thinking_level">控制這段推理的長短。低擋最短。目前：%s</string>
+    <string name="gemma_thinking_low">低</string>
+    <string name="gemma_thinking_medium">中</string>
+    <string name="gemma_thinking_high">高</string>
     <string name="preference_description_models_manager">選擇要用於翻譯的模型，並管理其他翻譯選項</string>
 
     <string name="conversation_mode" >對話模式</string>

@@ -28,16 +28,14 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.TensorInfo;
 
 /**
- * Whisper large-v3-turbo INT8 runner.
- * Encoder and merged decoder are the onnx-community INT8 graphs. INT8 keeps the
- * math in float32 on CPU; q4f16 is smaller but adds a float16 cast on every matmul.
+ * onnx-community Whisper runner (merged decoder).
+ * int4 is the q4 graph: int4 weights, float32 compute. q4f16 is not offered;
+ * it adds a float16 cast on every matmul. File names follow the selected quant.
  */
-class WhisperTurboEngine {
+public class WhisperTurboEngine {
     private static final int SAMPLE_RATE = 16000;
     private static final int N_FFT = 400;
     private static final int HOP = 160;
-    private static final int N_MELS = 128;
-    private static final int HEADS = 20;
     private static final int HEAD_DIM = 64;
 
     private static final Map<String, Integer> LANGUAGE_IDS = new HashMap<>();
@@ -66,8 +64,11 @@ class WhisperTurboEngine {
     private final OrtSession encoder;
     private final OrtSession decoder;
     private final String encoderInput;
+    private final OnnxJavaType encoderInputType;
     private final String logitsName;
     private final int fixedFrames;
+    private final int nMels;
+    private final int nHeads;
     private final HashMap<Integer, String> idToToken = new HashMap<>();
     private final HashMap<String, Integer> tokenToId = new HashMap<>();
     private int sot = 50258;
@@ -83,18 +84,25 @@ class WhisperTurboEngine {
     private final float[] sinTable;
     private final float[][] melBank;
 
-    WhisperTurboEngine(File modelDir) throws IOException, OrtException {
-        File encoderFile = new File(modelDir, "encoder_model_int8.onnx");
-        File decoderFile = new File(modelDir, "decoder_model_merged_int8.onnx");
+    public WhisperTurboEngine(File modelDir, String encoderName, String decoderName, int nMels, int nHeads) throws IOException, OrtException {
+        this.nMels = nMels;
+        this.nHeads = nHeads;
+        File encoderFile = new File(modelDir, encoderName);
+        File decoderFile = new File(modelDir, decoderName);
         File vocabFile = new File(modelDir, "vocab.json");
         if (!encoderFile.isFile() || !decoderFile.isFile() || !vocabFile.isFile()) {
-            throw new IOException("Whisper large-v3-turbo files are missing");
+            throw new IOException("Whisper files are missing");
         }
         loadVocab(vocabFile);
+        // vocab.json is the base BPE only (ids 0..50256). large-v3-turbo inserts
+        // <|yue|> at 50358, so <|transcribe|> is 50360 and <|notimestamps|> is 50364.
+        // whisper-small has no yue token and still uses 50359 / 50363. The small ids
+        // make turbo read the prompt as translate + nospeech and emit <|transcribe|>.
+        boolean largeV3 = nMels >= 128;
         sot = tokenId("<|startoftranscript|>", 50258);
         eos = tokenId("<|endoftext|>", 50257);
-        transcribe = tokenId("<|transcribe|>", 50360);
-        noTimestamps = tokenId("<|notimestamps|>", 50364);
+        transcribe = tokenId("<|transcribe|>", largeV3 ? 50360 : 50359);
+        noTimestamps = tokenId("<|notimestamps|>", largeV3 ? 50364 : 50363);
         textLimit = eos;
         firstLanguage = sot + 1;
         lastLanguage = transcribe - 2;
@@ -108,36 +116,53 @@ class WhisperTurboEngine {
                 sinTable[k * N_FFT + n] = (float) Math.sin(angle);
             }
         }
-        melBank = buildSlaneyBank(SAMPLE_RATE, N_FFT, N_MELS, 0f, 8000f);
+        melBank = buildSlaneyBank(SAMPLE_RATE, N_FFT, nMels, 0f, 8000f);
         env = OrtEnvironment.getEnvironment();
         OrtSession.SessionOptions options = new OrtSession.SessionOptions();
         options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT);
         options.setIntraOpNumThreads(Math.min(4, Runtime.getRuntime().availableProcessors()));
-        // The encoder is 32 layers. An arena keeps the peak allocation after the first utterance.
+        // An arena keeps the peak allocation after the first utterance.
         options.setCPUArenaAllocator(false);
         options.setMemoryPatternOptimization(false);
         encoder = env.createSession(encoderFile.getAbsolutePath(), options);
         decoder = env.createSession(decoderFile.getAbsolutePath(), options);
         encoderInput = encoderInputName();
         TensorInfo encoderInfo = (TensorInfo) encoder.getInputInfo().get(encoderInput).getInfo();
+        encoderInputType = encoderInfo.type;
         long[] encoderShape = encoderInfo.getShape();
         fixedFrames = encoderShape.length > 2 && encoderShape[2] > 0 ? (int) encoderShape[2] : -1;
         logitsName = logitsOutputName();
     }
 
-    void close() {
+    public void close() {
         closeSession(encoder);
         closeSession(decoder);
     }
 
-    Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage) throws OrtException, IOException {
+    public Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage) throws OrtException, IOException {
+        return transcribe(samples, languageCode, languageCode2, softLanguage, Integer.MAX_VALUE);
+    }
+
+    /**
+     * One short silent pass. The first real execution loads the session and is slow
+     * enough to stall capture, so it runs before the microphone opens.
+     */
+    public void warmup() throws OrtException, IOException {
+        transcribe(new float[SAMPLE_RATE], "en", null, false, 1);
+    }
+
+    private Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage, int decoderSteps) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcripts("", 0, null, 0);
         }
         float[] mel = logMel(fitLength(samples));
-        int frames = mel.length / N_MELS;
+        int frames = mel.length / nMels;
+        if (fixedFrames > 0 && frames != fixedFrames) {
+            mel = fitMel(mel, frames, fixedFrames);
+            frames = fixedFrames;
+        }
         android.util.Log.i("performance", "Whisper turbo mel frames: " + frames + " fixedFrames: " + fixedFrames);
-        OnnxTensor features = OnnxTensor.createTensor(env, FloatBuffer.wrap(mel), new long[]{1, N_MELS, frames});
+        OnnxTensor features = floatTensor(mel, new long[]{1, nMels, frames}, encoderInputType);
         OnnxTensor hidden = null;
         OrtSession.Result encoded = null;
         try {
@@ -154,18 +179,18 @@ class WhisperTurboEngine {
         try {
             boolean hintLanguage = softLanguage && languageCode2 == null;
             int encoderFrames = encoderFrames(hidden);
-            Hypothesis first = decode(hidden, frames, encoderFrames, hintLanguage ? languageHint(languageCode) : languageId(languageCode), hintLanguage);
+            Hypothesis first = decode(hidden, frames, encoderFrames, hintLanguage ? languageHint(languageCode) : languageId(languageCode), hintLanguage, decoderSteps);
             if (languageCode2 == null) {
                 return new Transcripts(first.text, first.score, null, 0);
             }
-            Hypothesis second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false);
+            Hypothesis second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, decoderSteps);
             return new Transcripts(first.text, first.score, second.text, second.score);
         } finally {
             hidden.close();
         }
     }
 
-    private Hypothesis decode(OnnxTensor hidden, int frames, int encoderFrames, int languageId, boolean softLanguage) throws OrtException, IOException {
+    private Hypothesis decode(OnnxTensor hidden, int frames, int encoderFrames, int languageId, boolean softLanguage, int decoderSteps) throws OrtException, IOException {
         ArrayList<Integer> produced = new ArrayList<>();
         Map<String, OnnxTensor> cache = new HashMap<>();
         int position = 0;
@@ -188,6 +213,9 @@ class WhisperTurboEngine {
         double score = 0;
         int scored = 0;
         int limit = tokenCap(frames);
+        if (decoderSteps > 0 && decoderSteps < limit) {
+            limit = decoderSteps;
+        }
         try {
             for (int step = 0; step < limit; step++) {
                 int[] ids = step == 0 ? prompt : new int[]{produced.get(produced.size() - 1)};
@@ -257,6 +285,15 @@ class WhisperTurboEngine {
                     continue;
                 }
                 String pastName = "past_key_values." + name.substring("present.".length());
+                // use_cache returns an empty encoder cache (shape [0, heads, 1, dim]).
+                // Cross-attention has to keep the cache computed on the first step.
+                if (pastName.contains("encoder")) {
+                    OnnxTensor existing = cache.remove(pastName);
+                    if (existing != null) {
+                        next.put(pastName, existing);
+                        continue;
+                    }
+                }
                 next.put(pastName, copyTensor((OnnxTensor) result.get(name).get()));
             }
             closeTensors(cache);
@@ -271,10 +308,14 @@ class WhisperTurboEngine {
             return OnnxTensor.createTensor(env, LongBuffer.wrap(toLong(ids)), new long[]{1, ids.length});
         }
         if ("encoder_hidden_states".equals(name)) {
+            if (info.type != hidden.getInfo().type && (info.type == OnnxJavaType.FLOAT || info.type == OnnxJavaType.FLOAT16)) {
+                return floatTensor(OnnxFloats.toFloats(hidden), hidden.getInfo().getShape(), info.type);
+            }
             return hidden;
         }
         if ("use_cache_branch".equals(name)) {
-            return boolTensor(!first);
+            // The merged decoder declares this bool as shape [1]. A scalar is rejected.
+            return boolTensor(!first, info.getShape());
         }
         if ("cache_position".equals(name)) {
             long[] positions = new long[ids.length];
@@ -291,7 +332,7 @@ class WhisperTurboEngine {
         if (name.startsWith("past_key_values")) {
             return zeros(pastShape(name, info, encoderFrames), info.type);
         }
-        throw new OrtException("Whisper large-v3-turbo input is not handled: " + name);
+        throw new OrtException("Whisper input is not handled: " + name);
     }
 
     private long[] pastShape(String name, TensorInfo info, int encoderFrames) {
@@ -305,7 +346,7 @@ class WhisperTurboEngine {
             } else if (i == 0) {
                 shape[i] = 1;
             } else if (i == 1) {
-                shape[i] = HEADS;
+                shape[i] = nHeads;
             } else if (i == declared.length - 1) {
                 shape[i] = HEAD_DIM;
             } else {
@@ -350,32 +391,36 @@ class WhisperTurboEngine {
         return OnnxTensor.createTensor(env, LongBuffer.wrap(data), shape);
     }
 
-    private OnnxTensor boolTensor(boolean value) throws OrtException {
-        java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(new byte[]{(byte) (value ? 1 : 0)});
-        return OnnxTensor.createTensor(env, buffer, new long[]{}, OnnxJavaType.BOOL);
+    private OnnxTensor boolTensor(boolean value, long[] declared) throws OrtException {
+        long[] shape;
+        int count = 1;
+        if (declared == null || declared.length == 0) {
+            shape = new long[0];
+        } else {
+            shape = new long[declared.length];
+            for (int i = 0; i < declared.length; i++) {
+                long dim = declared[i] > 0 ? declared[i] : 1;
+                shape[i] = dim;
+                count *= (int) dim;
+            }
+        }
+        byte[] data = new byte[count];
+        byte bit = (byte) (value ? 1 : 0);
+        for (int i = 0; i < data.length; i++) {
+            data[i] = bit;
+        }
+        return OnnxTensor.createTensor(env, java.nio.ByteBuffer.wrap(data), shape, OnnxJavaType.BOOL);
     }
 
     private int argmaxText(float[] row) {
         int best = eos;
         float bestValue = -Float.MAX_VALUE;
-        int bestText = -1;
-        float bestTextValue = -Float.MAX_VALUE;
         for (int i = 0; i < row.length; i++) {
             float value = row[i];
             if (value > bestValue) {
                 bestValue = value;
                 best = i;
             }
-            if (i < textLimit && value > bestTextValue) {
-                bestTextValue = value;
-                bestText = i;
-            }
-        }
-        if (best == eos || best >= noTimestamps) {
-            return best;
-        }
-        if (best >= textLimit) {
-            return bestText;
         }
         return best;
     }
@@ -403,17 +448,30 @@ class WhisperTurboEngine {
             target += HOP - (target % HOP);
         }
         if (fixedFrames > 0) {
-            int required = fixedFrames * HOP;
-            if (target < required) {
-                target = required;
-            }
+            // large-v3-turbo encoder input is fixed at 3000 frames (30 s). Pad or trim.
+            target = fixedFrames * HOP;
         }
         if (target == samples.length) {
             return samples;
         }
+        if (target < samples.length) {
+            float[] trimmed = new float[target];
+            System.arraycopy(samples, 0, trimmed, 0, target);
+            return trimmed;
+        }
         float[] padded = new float[target];
         System.arraycopy(samples, 0, padded, 0, samples.length);
         return padded;
+    }
+
+    /** Mel is stored as [n_mels, frames]. Some encoder inputs use a fixed frame count. */
+    private float[] fitMel(float[] mel, int frames, int target) {
+        float[] fitted = new float[nMels * target];
+        int copy = Math.min(frames, target);
+        for (int melIndex = 0; melIndex < nMels; melIndex++) {
+            System.arraycopy(mel, melIndex * frames, fitted, melIndex * target, copy);
+        }
+        return fitted;
     }
 
     private int languageId(String language) throws IOException {
@@ -427,7 +485,7 @@ class WhisperTurboEngine {
         }
         Integer id = LANGUAGE_IDS.get(code);
         if (id == null) {
-            throw new IOException("Whisper large-v3-turbo has no language " + language);
+            throw new IOException("Whisper has no language " + language);
         }
         return id;
     }
@@ -469,7 +527,7 @@ class WhisperTurboEngine {
         float[] padded = reflectPad(samples, pad);
         int stftFrames = 1 + (padded.length - N_FFT) / HOP;
         int frames = Math.max(0, stftFrames - 1);
-        float[] mel = new float[N_MELS * frames];
+        float[] mel = new float[nMels * frames];
         float[] windowed = new float[N_FFT];
         float[] power = new float[N_FFT / 2 + 1];
         float max = -Float.MAX_VALUE;
@@ -489,7 +547,7 @@ class WhisperTurboEngine {
                 }
                 power[k] = real * real + imag * imag;
             }
-            for (int melIndex = 0; melIndex < N_MELS; melIndex++) {
+            for (int melIndex = 0; melIndex < nMels; melIndex++) {
                 double energy = 0;
                 for (int k = 0; k <= N_FFT / 2; k++) {
                     energy += melBank[melIndex][k] * power[k];
@@ -688,6 +746,43 @@ class WhisperTurboEngine {
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
 
+    private OnnxTensor floatTensor(float[] data, long[] shape, OnnxJavaType type) throws OrtException {
+        if (type == OnnxJavaType.FLOAT16) {
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocateDirect(data.length * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            for (float value : data) {
+                buffer.putShort(floatToHalf(value));
+            }
+            buffer.rewind();
+            return OnnxTensor.createTensor(env, buffer, shape, OnnxJavaType.FLOAT16);
+        }
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
+    }
+
+    private static short floatToHalf(float value) {
+        int bits = Float.floatToIntBits(value);
+        int sign = (bits >>> 16) & 0x8000;
+        int mantissa = bits & 0x7fffff;
+        int exponent = (bits >>> 23) & 0xff;
+        if (exponent == 255) {
+            return (short) (sign | 0x7c00 | (mantissa == 0 ? 0 : 0x200));
+        }
+        if (exponent == 0) {
+            return (short) sign;
+        }
+        int halfExponent = exponent - 127 + 15;
+        if (halfExponent >= 31) {
+            return (short) (sign | 0x7c00);
+        }
+        if (halfExponent <= 0) {
+            if (halfExponent < -10) {
+                return (short) sign;
+            }
+            mantissa |= 0x800000;
+            return (short) (sign | (mantissa >> (14 - halfExponent)));
+        }
+        return (short) (sign | (halfExponent << 10) | (mantissa >> 13));
+    }
+
     private static long[] toLong(int[] values) {
         long[] out = new long[values.length];
         for (int i = 0; i < values.length; i++) {
@@ -717,11 +812,11 @@ class WhisperTurboEngine {
         }
     }
 
-    static final class Transcripts {
-        final String firstText;
-        final double firstScore;
-        final String secondText;
-        final double secondScore;
+    public static final class Transcripts {
+        public final String firstText;
+        public final double firstScore;
+        public final String secondText;
+        public final double secondScore;
 
         Transcripts(String firstText, double firstScore, String secondText, double secondScore) {
             this.firstText = firstText;

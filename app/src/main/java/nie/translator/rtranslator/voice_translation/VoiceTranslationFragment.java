@@ -20,6 +20,8 @@ import android.content.DialogInterface;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -49,6 +51,10 @@ public abstract class VoiceTranslationFragment extends Fragment implements Micro
     protected RecyclerView mRecyclerView;
     protected ScrollView descriptionContainer;
     protected TextView description;
+    protected ProgressBar modelLoadingProgress;
+    private LinearLayout modelLoadingOverlay;
+    private TextView modelLoadingText;
+    private boolean acceptModelLoading = true;
     protected View.OnClickListener micClickListener;
 
     @Override
@@ -62,6 +68,9 @@ public abstract class VoiceTranslationFragment extends Fragment implements Micro
         mRecyclerView = view.findViewById(R.id.recycler_view);
         descriptionContainer = view.findViewById(R.id.descriptionContainer);
         description = view.findViewById(R.id.description);
+        modelLoadingOverlay = view.findViewById(R.id.modelLoadingOverlay);
+        modelLoadingText = view.findViewById(R.id.modelLoadingText);
+        modelLoadingProgress = view.findViewById(R.id.modelLoadingProgress);
         GuiTools.setDescriptionOptimizationForAccessibility(description);
     }
 
@@ -83,6 +92,68 @@ public abstract class VoiceTranslationFragment extends Fragment implements Micro
         });
         //mRecyclerView.setItemAnimator(null);
         mRecyclerView.setHasFixedSize(true);
+    }
+
+    protected void showModelLoading(int progress, int max) {
+        if (!acceptModelLoading || !isAdded() || description == null) {
+            return;
+        }
+        int text = loadingStageText(progress, max);
+        description.setText(text);
+        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.primary_very_dark));
+        boolean listVisible = mRecyclerView != null && mRecyclerView.getVisibility() == View.VISIBLE;
+        if (modelLoadingText != null) {
+            modelLoadingText.setText(text);
+            modelLoadingText.setVisibility(listVisible ? View.VISIBLE : View.GONE);
+        }
+        if (modelLoadingOverlay != null) {
+            modelLoadingOverlay.setVisibility(View.VISIBLE);
+        }
+        if (modelLoadingProgress != null) {
+            modelLoadingProgress.setMax(Math.max(1, max));
+            modelLoadingProgress.setIndeterminate(false);
+            modelLoadingProgress.setProgress(Math.max(0, progress));
+            modelLoadingProgress.setContentDescription(getString(text));
+        }
+    }
+
+    /**
+     * A 100-step bar is the microphone settle. Smaller bars keep the original three labels.
+     */
+    private static int loadingStageText(int progress, int max) {
+        if (max >= 100) {
+            if (progress * 3 < max) {
+                return R.string.loading_stage_translator;
+            }
+            if (progress * 3 < max * 2) {
+                return R.string.loading_stage_speech;
+            }
+            return R.string.voice_loading_microphone;
+        }
+        if (progress <= 1 && max >= 3) {
+            return R.string.loading_stage_translator;
+        }
+        if (progress >= max) {
+            return R.string.voice_loading_microphone;
+        }
+        return R.string.loading_stage_speech;
+    }
+
+    protected void hideModelLoading() {
+        if (modelLoadingOverlay != null) {
+            modelLoadingOverlay.setVisibility(View.GONE);
+        }
+    }
+
+    /** The screen is attached again and may need another microphone settle. */
+    protected void resumeModelLoading() {
+        acceptModelLoading = true;
+    }
+
+    /** The microphone can hear. Later loading events must not cover the screen again. */
+    protected void finishModelLoading() {
+        acceptModelLoading = false;
+        hideModelLoading();
     }
 
     protected abstract void connectToService();

@@ -8,22 +8,26 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.icu.text.DecimalFormat;
+import android.media.MediaMetadataRetriever;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
-import android.widget.Spinner;
 import android.widget.TextView;
 
+import java.io.InputStream;
+
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
@@ -39,8 +43,6 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
 
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.LoadingActivity;
@@ -51,6 +53,7 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.LiveDraftReference;
 import nie.translator.rtranslator.tools.LiveDraftSpeaker;
 import nie.translator.rtranslator.tools.LiveDraftVoices;
 import nie.translator.rtranslator.tools.Tools;
@@ -129,13 +132,27 @@ public class ModelManagerFragment extends Fragment {
     private boolean baselineTatoeba;
     private boolean baselineVadSegmentation;
     private boolean baselineTranslationDict;
+    private int baselineWhisperQuant;
+    private int baselineTurboQuant;
+    private int baselineQwen06Quant;
+    private int baselineQwen17Quant;
     private ArrayList<DownloadGroupInfo> savedDownloadStatus;
     private int managerLoadGeneration = 0;
+    private ActivityResultLauncher<String> referencePicker;
+    private TextView referenceStatus;
 
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        referencePicker = registerForActivityResult(new ActivityResultContracts.GetContent(), new ActivityResultCallback<Uri>() {
+            @Override
+            public void onActivityResult(Uri uri) {
+                if (uri != null) {
+                    storeReference(uri);
+                }
+            }
+        });
     }
 
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -426,7 +443,74 @@ public class ModelManagerFragment extends Fragment {
         updateRamUsageTranslation();
         updateRamUsageTranslationEnhancements();
         updateTextRamUsage();
+        bindAsrQuant(Global.ASR_WHISPER, whisperManagerView, "whisperManager");
+        bindAsrQuant(Global.ASR_WHISPER_TURBO, whisperTurboManagerView, "whisperTurboManager");
+        bindAsrQuant(Global.ASR_QWEN3_06, qwen06ManagerView, "qwen06Manager");
+        bindAsrQuant(Global.ASR_QWEN3_17, qwen17ManagerView, "qwen17Manager");
         captureSettingsBaseline();
+    }
+
+    private void bindAsrQuant(int model, ResourceManagerView view, String managerKey) {
+        int[] choices = Global.asrQuantChoices(model);
+        String[] labels = new String[choices.length];
+        int selected = 0;
+        int current = global.getAsrQuant(model);
+        for (int i = 0; i < choices.length; i++) {
+            labels[i] = Global.asrQuantLabel(choices[i]);
+            if (choices[i] == current) {
+                selected = i;
+            }
+        }
+        view.setModelSize(global.asrDownloadSizeMb(model));
+        view.setQuantChoices(labels, selected, index -> {
+            int quant = choices[index];
+            if (quant == global.getAsrQuant(model)) {
+                return;
+            }
+            global.setAsrQuant(model, quant);
+            ResourceManager manager = resourceManagers.get(managerKey);
+            if (manager != null) {
+                manager.replaceDownload(global.getAsrDownloadInfo(model));
+                refreshManagerState(manager);
+            }
+            view.setModelSize(global.asrDownloadSizeMb(model));
+            updateRamUsageSpeechRecognition();
+            updateTextRamUsage();
+        });
+    }
+
+    private void refreshManagerState(ResourceManager manager) {
+        ArrayList<DownloadGroupInfo> status = downloadManager.getDownloadsStatus();
+        boolean matched = false;
+        if (status != null) {
+            for (DownloadGroupInfo download : status) {
+                if (!download.equals(manager.getDownloadInfo())) {
+                    continue;
+                }
+                matched = true;
+                ResourceManagerView.State state = ResourceManagerView.State.EMPTY;
+                int index = DownloaderTools.findFirstIncompletedDownload(download);
+                if (download.isAllDownloadCompleted()) {
+                    state = ResourceManagerView.State.DOWNLOADED;
+                } else if (download.getRunningDownloadIndex() == -1 && download.getCurrentProgress() <= 0) {
+                    state = ResourceManagerView.State.EMPTY;
+                } else if ((download.getRunningDownloadIndex() == -1 && download.getCurrentProgress() > 0)
+                        || (download.getRunningDownloadIndex() != -1 && download.getRunningDownload().getCurrentError() != -1)) {
+                    state = ResourceManagerView.State.PAUSED;
+                } else if (download.getRunningDownloadIndex() != -1) {
+                    state = ResourceManagerView.State.DOWNLOADING;
+                }
+                if (index < download.downloadsInfo.length) {
+                    manager.setStatus(state, download.getCurrentProgress(), download.downloadsInfo[index].isUnzipping(), download.downloadsInfo[index].isTestingIntegrity());
+                    manager.setError(download.downloadsInfo[index].getCurrentError());
+                } else {
+                    manager.setStatus(state, download.getCurrentProgress(), false, false);
+                }
+            }
+        }
+        if (!matched && global.groupFilesPresent(manager.getDownloadInfo())) {
+            manager.setState(ResourceManagerView.State.DOWNLOADED, false);
+        }
     }
 
     /** Snapshot of the controls after they are filled from preferences. Later edits are compared to this, not to values the screen itself rewrites on open. */
@@ -438,6 +522,10 @@ public class ModelManagerFragment extends Fragment {
         baselineTatoeba = switchTatoeba.isChecked();
         baselineVadSegmentation = switchVadSegmentation.isChecked();
         baselineTranslationDict = switchTranslationDict.isChecked();
+        baselineWhisperQuant = global.getAsrQuant(Global.ASR_WHISPER);
+        baselineTurboQuant = global.getAsrQuant(Global.ASR_WHISPER_TURBO);
+        baselineQwen06Quant = global.getAsrQuant(Global.ASR_QWEN3_06);
+        baselineQwen17Quant = global.getAsrQuant(Global.ASR_QWEN3_17);
     }
 
     private void restoreGuiDownloadState(ArrayList<DownloadGroupInfo> downloadStatus){
@@ -484,7 +572,11 @@ public class ModelManagerFragment extends Fragment {
                 || switchWhisperReducedRam.isChecked() != baselineWhisperReducedRam
                 || switchTatoeba.isChecked() != baselineTatoeba
                 || switchVadSegmentation.isChecked() != baselineVadSegmentation
-                || switchTranslationDict.isChecked() != baselineTranslationDict;
+                || switchTranslationDict.isChecked() != baselineTranslationDict
+                || global.getAsrQuant(Global.ASR_WHISPER) != baselineWhisperQuant
+                || global.getAsrQuant(Global.ASR_WHISPER_TURBO) != baselineTurboQuant
+                || global.getAsrQuant(Global.ASR_QWEN3_06) != baselineQwen06Quant
+                || global.getAsrQuant(Global.ASR_QWEN3_17) != baselineQwen17Quant;
     }
 
     public void applySettings() {
@@ -765,20 +857,21 @@ public class ModelManagerFragment extends Fragment {
             return plan;
         }
         plan.asrModel = asrModelFor(asrRadio);
-        if (plan.asrModel == Global.ASR_QWEN3_17 && global.getTotalRamSize() < 7000) {
-            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
-            return plan;
+        int asrQuant = global.getAsrQuant(plan.asrModel);
+        int minRam = 0;
+        if (plan.asrModel == Global.ASR_QWEN3_17) {
+            minRam = asrQuant == Global.ASR_QUANT_FP32 ? 12000 : 7000;
+        } else if (plan.asrModel == Global.ASR_QWEN3_06) {
+            minRam = asrQuant == Global.ASR_QUANT_FP32 ? 8000 : 4500;
+        } else if (plan.asrModel == Global.ASR_WHISPER_TURBO) {
+            minRam = asrQuant == Global.ASR_QUANT_FP32 ? 8000 : 6000;
         }
-        if (plan.asrModel == Global.ASR_QWEN3_06 && global.getTotalRamSize() < 4500) {
-            plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
-            return plan;
-        }
-        if (plan.asrModel == Global.ASR_WHISPER_TURBO && global.getTotalRamSize() < 6000) {
+        if (minRam > 0 && global.getTotalRamSize() < minRam) {
             plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.ERROR, plan.asrModel);
             return plan;
         }
         DownloadGroupInfo asrDownload = global.getAsrDownloadInfo(plan.asrModel);
-        plan.asrPresent = global.groupFilesPresent(asrDownload) || DownloadManager.isDownloadCompleted(saved, asrDownload);
+        plan.asrPresent = global.asrReady(plan.asrModel) || DownloadManager.isDownloadCompleted(saved, asrDownload);
         if (!plan.asrPresent && !firstLaunch) {
             plan.failure = new ApplyFailure(ApplySettingsStage.ASR_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, plan.asrModel);
         }
@@ -825,15 +918,35 @@ public class ModelManagerFragment extends Fragment {
     private void updateRamUsageSpeechRecognition() {
         int checked = asrRadioGroup == null ? R.id.radioWhisper : asrRadioGroup.getCheckedRadioButtonId();
         if (checked == R.id.radioQwen17) {
-            setRamUsageSpeechRecognition(QWEN17_RAM_CONSUMPTION_MB);
+            setRamUsageSpeechRecognition(scaledAsrRam(QWEN17_RAM_CONSUMPTION_MB, Global.ASR_QUANT_INT4, global.getAsrQuant(Global.ASR_QWEN3_17)));
         } else if (checked == R.id.radioQwen06) {
-            setRamUsageSpeechRecognition(QWEN06_RAM_CONSUMPTION_MB);
+            setRamUsageSpeechRecognition(scaledAsrRam(QWEN06_RAM_CONSUMPTION_MB, Global.ASR_QUANT_INT4, global.getAsrQuant(Global.ASR_QWEN3_06)));
         } else if (checked == R.id.radioWhisperTurbo) {
-            setRamUsageSpeechRecognition(WHISPER_TURBO_RAM_CONSUMPTION_MB);
-        } else if (switchWhisperReducedRam.isChecked()) {
+            setRamUsageSpeechRecognition(scaledAsrRam(WHISPER_TURBO_RAM_CONSUMPTION_MB, Global.ASR_QUANT_INT8, global.getAsrQuant(Global.ASR_WHISPER_TURBO)));
+        } else if (!global.groupFilesPresent(global.getWhisperDownloadInfo()) && switchWhisperReducedRam.isChecked()) {
             setRamUsageSpeechRecognition(WHISPER_RAM_CONSUMPTION_REDUCED_MB);
-        } else {
+        } else if (!global.groupFilesPresent(global.getWhisperDownloadInfo())) {
             setRamUsageSpeechRecognition(WHISPER_RAM_CONSUMPTION_MB);
+        } else {
+            setRamUsageSpeechRecognition(scaledAsrRam(WHISPER_RAM_CONSUMPTION_MB, Global.ASR_QUANT_INT8, global.getAsrQuant(Global.ASR_WHISPER)));
+        }
+    }
+
+    /** Measured RAM stays on its original quant. Other levels are a weight-size estimate for the bar. */
+    private static int scaledAsrRam(int measuredMb, int measuredQuant, int quant) {
+        return Math.max(1, Math.round(measuredMb * quantRamFactor(quant) / quantRamFactor(measuredQuant)));
+    }
+
+    private static float quantRamFactor(int quant) {
+        switch (quant) {
+            case Global.ASR_QUANT_INT4:
+                return 0.75f;
+            case Global.ASR_QUANT_FP16:
+                return 1.15f;
+            case Global.ASR_QUANT_FP32:
+                return 1.9f;
+            default:
+                return 1f;
         }
     }
 
@@ -938,7 +1051,7 @@ public class ModelManagerFragment extends Fragment {
 
     private boolean needsDownloadBeforeEnter() {
         DownloadGroupInfo asrDownload = global.getAsrDownloadInfo(global.getAsrModel());
-        if (!global.groupFilesPresent(asrDownload) && !isGroupDownloaded(asrDownload)) {
+        if (!global.asrReady(global.getAsrModel()) && !isGroupDownloaded(asrDownload)) {
             return true;
         }
         int mode = global.getTranslationMode();
@@ -1000,12 +1113,15 @@ public class ModelManagerFragment extends Fragment {
             return;
         }
         liveDraftList.removeAllViews();
+        resourceManagers.remove("liveDraft-" + LiveDraftVoices.ENGINE_COSYVOICE);
+        resourceManagers.remove("liveDraft-" + LiveDraftVoices.ENGINE_SYSTEM);
         String selected = LiveDraftVoices.selected(activity);
-        RadioGroup group = new RadioGroup(activity);
-        group.setOrientation(RadioGroup.VERTICAL);
-        Spinner voices = new Spinner(activity);
+        // RadioGroup only tracks RadioButtons that are its direct children. These radios sit
+        // beside the download row, so the group never saw the click and the engine stayed unchanged.
+        LinearLayout group = new LinearLayout(activity);
+        group.setOrientation(LinearLayout.VERTICAL);
+        ArrayList<RadioButton> engineRadios = new ArrayList<>();
         for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
-            DownloadGroupInfo download = engine.downloadInfo(activity);
             LinearLayout row = new LinearLayout(activity);
             row.setOrientation(LinearLayout.HORIZONTAL);
             RadioButton radio = new RadioButton(activity);
@@ -1013,88 +1129,238 @@ public class ModelManagerFragment extends Fragment {
             radio.setTag(engine.id);
             radio.setChecked(engine.id.equals(selected));
             radio.setContentDescription(engineTitle(engine.id));
+            engineRadios.add(radio);
             row.addView(radio, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-            ResourceManagerView view = new ResourceManagerView(activity);
-            view.setTitle(engineTitle(engine.id));
-            view.setDescription(getString(engineDescription(engine.id), engine.sizeMb()));
-            view.setModelSize(engine.sizeMb());
-            LinearLayout.LayoutParams viewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-            viewParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
-            row.addView(view, viewParams);
-            group.addView(row, new RadioGroup.LayoutParams(RadioGroup.LayoutParams.MATCH_PARENT, RadioGroup.LayoutParams.WRAP_CONTENT));
-            ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
-            if (ready != null && Boolean.TRUE.equals(ready.get(engine.id))) {
-                manager.setState(ResourceManagerView.State.DOWNLOADED, false);
+            if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine.id)) {
+                DownloadGroupInfo download = engine.downloadInfo(activity);
+                ResourceManagerView view = new ResourceManagerView(activity);
+                view.setTitle(engineTitle(engine.id));
+                view.setDescription(getString(engineDescription(engine.id), engine.sizeMb()));
+                view.setModelSize(engine.sizeMb());
+                LinearLayout.LayoutParams viewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                viewParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
+                row.addView(view, viewParams);
+                ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
+                if (ready != null && Boolean.TRUE.equals(ready.get(engine.id))) {
+                    manager.setState(ResourceManagerView.State.DOWNLOADED, false);
+                }
+                resourceManagers.put("liveDraft-" + engine.id, manager);
+            } else {
+                LinearLayout text = new LinearLayout(activity);
+                text.setOrientation(LinearLayout.VERTICAL);
+                TextView title = new TextView(activity);
+                title.setText(engineTitle(engine.id));
+                TextView description = new TextView(activity);
+                description.setText(engineDescriptionText(engine.id));
+                text.addView(title);
+                text.addView(description);
+                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+                textParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
+                row.addView(text, textParams);
             }
-            resourceManagers.put("liveDraft-" + engine.id, manager);
+            group.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
         liveDraftList.addView(group, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        if (!LiveDraftVoices.ENGINE_COSYVOICE.equals(selected)) {
+            attachEngineChoice(engineRadios);
+            return;
+        }
+        int pad = Tools.convertDpToPixels(activity, 16);
         TextView voiceLabel = new TextView(activity);
         voiceLabel.setText(R.string.title_live_draft_voice);
-        int pad = Tools.convertDpToPixels(activity, 16);
         voiceLabel.setPadding(pad, pad, pad, 0);
         liveDraftList.addView(voiceLabel);
-        LinearLayout.LayoutParams voiceParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        voiceParams.setMarginStart(pad);
-        voiceParams.setMarginEnd(pad);
-        liveDraftList.addView(voices, voiceParams);
-        fillVoiceSpinner(voices, selected);
-        group.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+        RadioGroup genders = new RadioGroup(activity);
+        genders.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton female = new RadioButton(activity);
+        female.setId(View.generateViewId());
+        female.setText(R.string.live_draft_gender_female);
+        female.setTag(LiveDraftVoices.GENDER_FEMALE);
+        RadioButton male = new RadioButton(activity);
+        male.setId(View.generateViewId());
+        male.setText(R.string.live_draft_gender_male);
+        male.setTag(LiveDraftVoices.GENDER_MALE);
+        genders.addView(female);
+        genders.addView(male);
+        if (LiveDraftVoices.GENDER_MALE.equals(LiveDraftVoices.gender(activity))) {
+            male.setChecked(true);
+        } else {
+            female.setChecked(true);
+        }
+        LinearLayout.LayoutParams genderParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        genderParams.setMarginStart(pad);
+        liveDraftList.addView(genders, genderParams);
+        TextView hint = new TextView(activity);
+        hint.setText(R.string.description_live_draft_reference);
+        hint.setPadding(pad, 0, pad, 0);
+        liveDraftList.addView(hint);
+        LinearLayout actions = new LinearLayout(activity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button upload = new Button(activity);
+        upload.setText(R.string.title_live_draft_upload);
+        Button clear = new Button(activity);
+        clear.setText(R.string.title_live_draft_clear_reference);
+        actions.addView(upload);
+        actions.addView(clear);
+        liveDraftList.addView(actions);
+        referenceStatus = new TextView(activity);
+        referenceStatus.setPadding(pad, 0, pad, pad);
+        liveDraftList.addView(referenceStatus);
+        refreshReferenceStatus();
+        genders.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
                 RadioButton button = radioGroup.findViewById(checkedId);
-                if (button == null || !(button.getTag() instanceof String)) {
-                    return;
+                if (button != null && button.getTag() instanceof String) {
+                    LiveDraftVoices.setGender(activity, (String) button.getTag());
+                    LiveDraftSpeaker.release();
+                    refreshReferenceStatus();
                 }
-                String engine = (String) button.getTag();
-                LiveDraftVoices.setSelected(activity, engine);
-                LiveDraftSpeaker.release();
-                fillVoiceSpinner(voices, engine);
             }
         });
+        upload.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (referencePicker != null) {
+                    referencePicker.launch("audio/*");
+                }
+            }
+        });
+        clear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                LiveDraftVoices.clearUpload(activity, LiveDraftVoices.gender(activity));
+                LiveDraftSpeaker.release();
+                refreshReferenceStatus();
+            }
+        });
+        attachEngineChoice(engineRadios);
     }
 
-    private void fillVoiceSpinner(Spinner spinner, String engine) {
-        List<LiveDraftVoices.Speaker> speakers = LiveDraftVoices.voices(engine);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item);
-        String uiLanguage = LiveDraftVoices.normalize(Locale.getDefault().getLanguage());
-        int saved = LiveDraftVoices.voiceId(activity, engine, uiLanguage);
-        int selectedIndex = 0;
-        for (int i = 0; i < speakers.size(); i++) {
-            adapter.add(speakers.get(i).label(Locale.getDefault()));
-            if (speakers.get(i).id == saved) {
-                selectedIndex = i;
+    private void attachEngineChoice(final ArrayList<RadioButton> engineRadios) {
+        CompoundButton.OnCheckedChangeListener engineChoice = new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton button, boolean isChecked) {
+                if (!(button.getTag() instanceof String)) {
+                    return;
+                }
+                if (!isChecked) {
+                    for (RadioButton other : engineRadios) {
+                        if (other.isChecked()) {
+                            return;
+                        }
+                    }
+                    button.setChecked(true);
+                    return;
+                }
+                for (RadioButton other : engineRadios) {
+                    if (other != button && other.isChecked()) {
+                        other.setChecked(false);
+                    }
+                }
+                LiveDraftVoices.setSelected(activity, (String) button.getTag());
+                LiveDraftSpeaker.release();
+                buildLiveDraftRows(currentReady());
+            }
+        };
+        for (RadioButton radio : engineRadios) {
+            radio.setOnCheckedChangeListener(engineChoice);
+        }
+    }
+
+    private HashMap<String, Boolean> currentReady() {
+        HashMap<String, Boolean> ready = new HashMap<>();
+        if (activity == null) {
+            return ready;
+        }
+        for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
+            ready.put(engine.id, LiveDraftVoices.isReady(activity, engine.id));
+        }
+        return ready;
+    }
+
+    private void refreshReferenceStatus() {
+        if (referenceStatus == null || activity == null) {
+            return;
+        }
+        java.io.File upload = LiveDraftVoices.uploadFile(activity, LiveDraftVoices.gender(activity));
+        if (upload.isFile() && upload.length() > 0) {
+            referenceStatus.setText(R.string.live_draft_reference_uploaded);
+        } else {
+            referenceStatus.setText(R.string.live_draft_reference_automatic);
+        }
+    }
+
+    private void storeReference(Uri uri) {
+        if (activity == null) {
+            return;
+        }
+        long durationMs = -1L;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(activity, uri);
+            String value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (value != null) {
+                durationMs = Long.parseLong(value);
+            }
+        } catch (RuntimeException ignored) {
+            durationMs = -1L;
+        } finally {
+            try {
+                retriever.release();
+            } catch (RuntimeException ignored) {
+            } catch (java.io.IOException ignored) {
             }
         }
-        spinner.setOnItemSelectedListener(null);
-        spinner.setAdapter(adapter);
-        spinner.setSelection(selectedIndex);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position >= 0 && position < speakers.size()) {
-                    LiveDraftVoices.setVoice(activity, engine, speakers.get(position).id);
-                }
+        try {
+            InputStream input = activity.getContentResolver().openInputStream(uri);
+            if (input == null) {
+                showReferenceNote(LiveDraftReference.DurationNote.UNREADABLE);
+                return;
             }
+            try {
+                LiveDraftVoices.copyUpload(activity, LiveDraftVoices.gender(activity), input);
+            } finally {
+                input.close();
+            }
+        } catch (java.io.IOException error) {
+            showReferenceNote(LiveDraftReference.DurationNote.UNREADABLE);
+            return;
+        }
+        LiveDraftSpeaker.release();
+        refreshReferenceStatus();
+        if (durationMs > 0) {
+            showReferenceNote(LiveDraftReference.duration(durationMs));
+        }
+    }
 
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
-        });
+    private void showReferenceNote(LiveDraftReference.DurationNote note) {
+        int message;
+        if (note == LiveDraftReference.DurationNote.SHORT) {
+            message = R.string.live_draft_reference_short;
+        } else if (note == LiveDraftReference.DurationNote.LONG) {
+            message = R.string.live_draft_reference_long;
+        } else if (note == LiveDraftReference.DurationNote.UNREADABLE) {
+            message = R.string.live_draft_reference_unreadable;
+        } else {
+            return;
+        }
+        new MaterialAlertDialogBuilder(activity).setMessage(message).setPositiveButton(android.R.string.ok, null).show();
     }
 
     private int engineDescription(String engine) {
-        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
-            return R.string.description_live_draft_cosyvoice;
-        }
-        return R.string.description_live_draft_kokoro;
+        return R.string.description_live_draft_cosyvoice;
+    }
+
+    private String engineDescriptionText(String engine) {
+        return getString(R.string.description_live_draft_system);
     }
 
     private String engineTitle(String engine) {
         if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
             return getString(R.string.title_live_draft_cosyvoice);
         }
-        return getString(R.string.title_live_draft_kokoro);
+        return getString(R.string.title_live_draft_system);
     }
 
     private void startRTranslator(){

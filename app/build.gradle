@@ -33,6 +33,7 @@ android {
         versionName '3.0.0-beta2'
         versionCode 27
         minSdkVersion 28
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
                 arguments '-DSPM_ENABLE_SHARED=OFF',  //sentencepiece flags

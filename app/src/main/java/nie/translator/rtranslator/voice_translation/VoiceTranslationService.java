@@ -75,6 +75,7 @@ public abstract class VoiceTranslationService extends GeneralService {
     public static final int ON_VOLUME_LEVEL = 17;
     public static final int ON_MIC_ACTIVATED = 10;
     public static final int ON_MIC_DEACTIVATED = 11;
+    public static final int ON_MODEL_LOADING = 27;
     public static final int ON_MESSAGE = 2;
     public static final int ON_CONNECTED_BLUETOOTH_HEADSET = 15;
     public static final int ON_DISCONNECTED_BLUETOOTH_HEADSET = 16;
@@ -105,6 +106,9 @@ public abstract class VoiceTranslationService extends GeneralService {
     protected boolean isEditTextOpen = false;
     protected final Object mLock = new Object();
     protected boolean isMicActivated = true;
+    private boolean modelLoading;
+    private int prepareProgress = 1;
+    private int prepareMax = 3;
     protected boolean isMicAutomatic = true;
     protected boolean manualRecognizingFirstLanguage = false;
     protected boolean manualRecognizingSecondLanguage = false;
@@ -431,7 +435,12 @@ public abstract class VoiceTranslationService extends GeneralService {
     }
 
     protected boolean executeCommand(int command, Bundle data) {
-        if (!super.executeCommand(command, data)) {
+        boolean handledByBase = super.executeCommand(command, data);
+        // The messenger is stored by the base command. Resend after that, or the bar never catches a load that finished connecting.
+        if (command == INITIALIZE_COMMUNICATION && modelLoading) {
+            notifyModelLoading(prepareProgress, prepareMax);
+        }
+        if (!handledByBase) {
             switch (command) {
                 case START_MIC:
                     isMicMute = false;
@@ -534,6 +543,17 @@ public abstract class VoiceTranslationService extends GeneralService {
         super.notifyToClient(bundle);
     }
 
+    protected void notifyModelLoading(int progress, int max) {
+        prepareProgress = progress;
+        prepareMax = Math.max(1, max);
+        modelLoading = progress < prepareMax;
+        Bundle bundle = new Bundle();
+        bundle.putInt("callback", ON_MODEL_LOADING);
+        bundle.putInt("progress", progress);
+        bundle.putInt("max", prepareMax);
+        super.notifyToClient(bundle);
+    }
+
     protected void notifyMicActivated() {
         isMicActivated = true;
         Bundle bundle = new Bundle();
@@ -621,6 +641,14 @@ public abstract class VoiceTranslationService extends GeneralService {
                     case ON_MIC_ACTIVATED: {
                         for (int i = 0; i < clientCallbacks.size(); i++){
                             clientCallbacks.get(i).onMicActivated();
+                        }
+                        return true;
+                    }
+                    case ON_MODEL_LOADING: {
+                        int progress = data.getInt("progress");
+                        int max = data.getInt("max");
+                        for (int i = 0; i < clientCallbacks.size(); i++) {
+                            clientCallbacks.get(i).onModelLoading(progress, max);
                         }
                         return true;
                     }
@@ -778,6 +806,9 @@ public abstract class VoiceTranslationService extends GeneralService {
         }
 
         public void onMicActivated(){
+        }
+
+        public void onModelLoading(int progress, int max) {
         }
 
         public void onMicDeactivated(){

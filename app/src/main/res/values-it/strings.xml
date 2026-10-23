@@ -178,6 +178,9 @@
     <string name="description_live_conversation">Accoppia altri telefoni. Ogni telefono riconosce chi parla da quella parte.</string>
     <string name="description_live_simultaneous">Questo telefono ascolta l\'altra persona, traduce e legge la traduzione.</string>
     <string name="description_simultaneous">Ascolta l\'altra persona, traduce ogni frase e legge la traduzione.</string>
+    <string name="simultaneous_preparing">Preparazione del microfono e della traduzione. Parla quando compare il messaggio che puoi iniziare.</string>
+    <string name="simultaneous_ready">Ora puoi parlare. Ogni frase viene tradotta e letta ad alta voce.</string>
+    <string name="voice_loading_microphone">Apertura del microfono\u2026</string>
     <string name="dialog_select_source_language">Seleziona la lingua dell\'altra persona</string>
     <string name="dialog_select_target_language">Seleziona la tua lingua</string>
     <string name="simultaneous_mode_running">L\'interpretazione simultanea è in esecuzione...</string>
@@ -255,6 +258,13 @@
     <string name="preference_description_speech_timeout">Seleziona il tempo che deve trascorrere dopo aver smesso di parlare per inviare il testo trascritto</string>
     <string name="preference_description_prev_voice_duration">Seleziona la durata della registrazione precedente a quando si inizia a parlare che verrà inclusa nel riconoscimento vocale</string>
     <string name="preference_description_beam_size">Imposta la beam size dell\'algoritmo di beam search, per migliorare la qualità della traduzione a discapito delle performance (solo per la traduzione testuale)</string>
+    <string name="preference_title_gemma_thinking">Ragionamento di TranslateGemma</string>
+    <string name="preference_description_gemma_thinking">Spento per impostazione predefinita. Se lo accendi, TranslateGemma scrive una breve nota prima della traduzione. Gli altri modelli lo ignorano.</string>
+    <string name="preference_title_gemma_thinking_level">Livello di ragionamento</string>
+    <string name="preference_description_gemma_thinking_level">Quanto può essere lunga la nota. Basso è il più corto. Attuale: %s</string>
+    <string name="gemma_thinking_low">Basso</string>
+    <string name="gemma_thinking_medium">Medio</string>
+    <string name="gemma_thinking_high">Alto</string>
     <string name="preference_description_models_manager">Scegli il modello che vuoi usare per la traduzione e gestisci le altre opzioni di traduzione</string>
 
     <string name="preference_title_simultaneous_auto_speak">Lettura automatica</string>

@@ -89,6 +89,23 @@ public final class SileroClauseVad {
         }
     }
 
+    /**
+     * Runs one silent frame so the first real {@link #probability(short[])}
+     * is not the session's cold start. That first run is slow enough to stall
+     * the audio thread and overrun {@code AudioRecord}. Call this before
+     * capture starts, then the state is cleared so the silence is not context.
+     */
+    public void warmup() {
+        short[] silence = new short[ClauseVadSegmenter.FRAME_SAMPLES];
+        try {
+            probability(silence);
+        } catch (Exception e) {
+            Log.w(TAG, "clause VAD warmup failed", e);
+        } finally {
+            resetState();
+        }
+    }
+
     public void resetState() {
         for (int i = 0; i < state.length; i++) {
             state[i] = 0f;

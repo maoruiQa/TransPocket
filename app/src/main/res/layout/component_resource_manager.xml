@@ -102,6 +102,18 @@
         app:layout_constraintBottom_toBottomOf="@+id/titleResource"
         app:layout_constraintEnd_toStartOf="@+id/buttonDownload"
         app:layout_constraintHorizontal_bias="1.0"
+        app:layout_constraintStart_toEndOf="@+id/quantSpinner"
+        app:layout_constraintTop_toTopOf="@+id/titleResource" />
+
+    <Spinner
+        android:id="@+id/quantSpinner"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="4dp"
+        android:minWidth="56dp"
+        android:spinnerMode="dropdown"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/titleResource"
         app:layout_constraintStart_toEndOf="@+id/titleResource"
         app:layout_constraintTop_toTopOf="@+id/titleResource" />
 
@@ -139,7 +151,7 @@
         app:layout_constraintBottom_toBottomOf="@+id/titleResource"
         app:layout_constraintEnd_toStartOf="@+id/textDownload"
         app:layout_constraintHorizontal_bias="1.0"
-        app:layout_constraintStart_toEndOf="@+id/titleResource"
+        app:layout_constraintStart_toEndOf="@+id/quantSpinner"
         app:layout_constraintTop_toTopOf="@+id/titleResource"
         android:src="@drawable/error_icon"
         android:tint="@color/red"

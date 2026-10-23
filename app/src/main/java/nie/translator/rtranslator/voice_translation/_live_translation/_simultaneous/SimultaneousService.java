@@ -49,6 +49,8 @@ public class SimultaneousService extends VoiceTranslationService {
     public static final int CHANGE_TARGET_LANGUAGE = 31;
 
     public static boolean isRunning = false;
+    /** AudioRecord capacity. The first clause detector run can stall; this keeps those samples. */
+    private static final int CAPTURE_BUFFER_MILLIS = 4000;
 
     private Global global;
     private Translator translator;
@@ -67,11 +69,28 @@ public class SimultaneousService extends VoiceTranslationService {
     private String previousTranslation;
     private long nextMessageId = System.currentTimeMillis();
     private boolean ttsForTarget;
+    /**
+     * The input stays deaf for about two seconds after capture starts and again
+     * when this screen comes back, including a return from settings. Speech in
+     * that window is not recognized, so the bar stays up until it has passed.
+     */
+    private static final int PREPARE_MAX = 100;
+    private static final int SPEECH_PROGRESS = 34;
+    private static final int MIC_PROGRESS = 67;
+    private static final int MIC_SETTLE_MILLIS = 2000;
+    private static final int SETTLE_TICK_MILLIS = 100;
+    private boolean languagesReady;
+    private boolean captureReady;
+    private boolean capturingSettled;
+    private int prepareGeneration;
+    private int settleGeneration;
 
     @Override
     public void onCreate() {
         super.onCreate();
         isRunning = true;
+        // The base class starts with the microphone marked on. This mode cannot hear yet.
+        isMicActivated = false;
         global = (Global) getApplication();
         // The setting picks the state for this session. The toolbar button overrides it and is not saved.
         SharedPreferences sharedPreferences = getSharedPreferences("default", Context.MODE_PRIVATE);
@@ -84,7 +103,7 @@ public class SimultaneousService extends VoiceTranslationService {
         mVoiceCallback = new Recorder.Callback() {
             @Override
             public void onVoiceStart() {
-                if (speechRecognizer != null) {
+                if (speechRecognizer != null && capturingSettled) {
                     super.onVoiceStart();
                     SimultaneousService.super.notifyVoiceStart();
                 }
@@ -92,6 +111,9 @@ public class SimultaneousService extends VoiceTranslationService {
 
             @Override
             public void onVoice(@NonNull float[] data, int size) {
+                if (!capturingSettled) {
+                    return;
+                }
                 if (speechRecognizer != null) {
                     super.onVoice(data, size);
                     int sampleRate = getVoiceRecorderSampleRate();
@@ -109,7 +131,7 @@ public class SimultaneousService extends VoiceTranslationService {
 
             @Override
             public void onVoiceEnd() {
-                if (speechRecognizer != null) {
+                if (speechRecognizer != null && capturingSettled) {
                     super.onVoiceEnd();
                     SimultaneousService.super.notifyVoiceEnd();
                 }
@@ -225,13 +247,42 @@ public class SimultaneousService extends VoiceTranslationService {
 
     private void reloadLanguages() {
         if (translator == null || sourceLanguage == null || targetLanguage == null) {
-            initializeVoiceRecorder();
+            languagesReady = true;
+            beginCapture();
             return;
         }
+        final boolean opening = !captureReady;
+        if (opening) {
+            languagesReady = false;
+            notifyModelLoading(0, PREPARE_MAX);
+        }
+        final int generation = ++prepareGeneration;
         translator.loadLanguageResources(sourceLanguage, targetLanguage, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.GeneralListener() {
             @Override
             public void onSuccess() {
-                initializeVoiceRecorder();
+                if (generation != prepareGeneration) {
+                    return;
+                }
+                if (!opening) {
+                    languagesReady = true;
+                    return;
+                }
+                notifyModelLoading(SPEECH_PROGRESS, PREPARE_MAX);
+                new Thread(() -> {
+                    try {
+                        if (speechRecognizer != null) {
+                            speechRecognizer.warmup();
+                        }
+                    } finally {
+                        mainHandler.post(() -> {
+                            if (generation != prepareGeneration) {
+                                return;
+                            }
+                            languagesReady = true;
+                            beginCapture();
+                        });
+                    }
+                }, "speech-warmup").start();
             }
 
             @Override
@@ -239,6 +290,109 @@ public class SimultaneousService extends VoiceTranslationService {
                 notifyError(reasons, value);
             }
         });
+    }
+
+    /**
+     * Opens the microphone only after translation resources and the clause detector are ready.
+     * Audio from before that point cannot be recognized, so the screen stays on the waiting message.
+     */
+    private void beginCapture() {
+        if (!languagesReady || captureReady) {
+            return;
+        }
+        if (!Tools.hasPermissions(this, Global.REQUIRED_PERMISSIONS_VOICE)) {
+            return;
+        }
+        initializeVoiceRecorder();
+        if (mVoiceRecorder == null) {
+            return;
+        }
+        captureReady = true;
+        if (isMicMute) {
+            notifyMicActivated();
+            return;
+        }
+        ensureRecording();
+        beginMicSettle();
+    }
+
+    /**
+     * Opens the input, then holds recognition until {@link #MIC_SETTLE_MILLIS} of
+     * capture has passed. A screen that comes back here starts this again.
+     */
+    private void beginMicSettle() {
+        if (!captureReady || isMicMute || mVoiceRecorder == null) {
+            return;
+        }
+        final int generation = ++settleGeneration;
+        capturingSettled = false;
+        isMicActivated = false;
+        ensureRecording();
+        mVoiceRecorder.discardPendingSpeech();
+        publishSettle(generation, SystemClock.elapsedRealtime());
+    }
+
+    private void publishSettle(int generation, long started) {
+        mainHandler.post(() -> {
+            if (generation != settleGeneration) {
+                return;
+            }
+            long elapsed = SystemClock.elapsedRealtime() - started;
+            if (elapsed >= MIC_SETTLE_MILLIS) {
+                capturingSettled = true;
+                if (mVoiceRecorder != null) {
+                    mVoiceRecorder.discardPendingSpeech();
+                }
+                notifyModelLoading(PREPARE_MAX, PREPARE_MAX);
+                notifyMicActivated();
+                return;
+            }
+            int progress = MIC_PROGRESS + (int) ((PREPARE_MAX - MIC_PROGRESS) * elapsed / MIC_SETTLE_MILLIS);
+            if (progress >= PREPARE_MAX) {
+                progress = PREPARE_MAX - 1;
+            }
+            notifyModelLoading(progress, PREPARE_MAX);
+            mainHandler.postDelayed(() -> publishSettle(generation, started), SETTLE_TICK_MILLIS);
+        });
+    }
+
+    private void ensureRecording() {
+        if (isMicMute) {
+            return;
+        }
+        if (mVoiceRecorder == null) {
+            initializeVoiceRecorder();
+        }
+        if (mVoiceRecorder != null && !mVoiceRecorder.isSessionActive()) {
+            super.startVoiceRecorder();
+        }
+    }
+
+    @Override
+    public void startVoiceRecorder() {
+        if (!languagesReady) {
+            return;
+        }
+        if (!captureReady) {
+            beginCapture();
+            return;
+        }
+        if (isMicMute || (mVoiceRecorder != null && mVoiceRecorder.isSessionActive())) {
+            return;
+        }
+        ensureRecording();
+        beginMicSettle();
+    }
+
+    @Override
+    protected boolean executeCommand(int command, Bundle data) {
+        boolean handled = super.executeCommand(command, data);
+        if (command == STOP_MIC) {
+            settleGeneration++;
+        } else if (command == INITIALIZE_COMMUNICATION && captureReady && !isMicMute) {
+            beginMicSettle();
+        }
+        return handled;
     }
 
     private void clearClauseContext() {
@@ -355,13 +509,29 @@ public class SimultaneousService extends VoiceTranslationService {
             return;
         }
         String pending = translation.substring(clause.spoken.length());
-        String chunk = SimultaneousText.takeSpeakable(pending, isFinal);
-        if (chunk == null || chunk.trim().isEmpty()) {
+        java.util.ArrayList<String> pieces = SimultaneousText.speakablePieces(pending, isFinal);
+        int audible = 0;
+        for (String piece : pieces) {
+            if (piece.trim().length() > 0) {
+                audible++;
+            }
+        }
+        if (audible == 0) {
+            if (isFinal) {
+                speakPiece(new GuiMessage(new Message("", SimultaneousService.this, ""), targetLanguage, targetLanguage, clause.id, false, true), targetLanguage, true);
+            }
             return;
         }
-        clause.spoken = clause.spoken + chunk;
-        GuiMessage spoken = new GuiMessage(new Message("", SimultaneousService.this, chunk), targetLanguage, targetLanguage, clause.id, false, true);
-        speakPiece(spoken, targetLanguage, isFinal);
+        int spokenAudible = 0;
+        for (String piece : pieces) {
+            clause.spoken = clause.spoken + piece;
+            if (piece.trim().isEmpty()) {
+                continue;
+            }
+            spokenAudible++;
+            GuiMessage spoken = new GuiMessage(new Message("", SimultaneousService.this, piece), targetLanguage, targetLanguage, clause.id, false, true);
+            speakPiece(spoken, targetLanguage, isFinal && spokenAudible == audible);
+        }
     }
 
     private static final class PendingClause {
@@ -381,13 +551,14 @@ public class SimultaneousService extends VoiceTranslationService {
             return;
         }
         if (Tools.hasPermissions(this, Global.REQUIRED_PERMISSIONS_VOICE)) {
-            mVoiceRecorder = new Recorder(global, true, mVoiceCallback, null, global.getVad());
+            mVoiceRecorder = new Recorder(global, true, mVoiceCallback, null, global.getVad(), CAPTURE_BUFFER_MILLIS);
             mVoiceRecorder.setClauseSegmentation(true);
             if (global.isSimultaneousVadSegmentation()) {
                 SileroClauseVad clauseVad = SileroClauseVad.open(global.getSileroVadFile());
                 if (clauseVad == null) {
                     android.util.Log.i("simultaneous", "VAD segmentation unavailable, using pause and punctuation");
                 } else {
+                    clauseVad.warmup();
                     mVoiceRecorder.setClauseVad(clauseVad);
                 }
             }
@@ -417,6 +588,7 @@ public class SimultaneousService extends VoiceTranslationService {
 
     @Override
     public void onDestroy() {
+        settleGeneration++;
         if (speechRecognizer != null && speechRecognizerCallback != null) {
             speechRecognizer.removeCallback(speechRecognizerCallback);
             speechRecognizer.stop();

@@ -28,15 +28,14 @@ import ai.onnxruntime.OrtSession;
 
 /**
  * Qwen3-ASR ONNX runner (encoder + decoder_init + decoder_step).
- * CPU quantization from the andrewleech export: decoder weights are int4
- * MatMulNBits (RTN, accuracy_level 4), token embeddings stay float16, and the
- * encoder stays float32. An int8 encoder costs about one point of word error on
- * this export, and a float16 encoder adds cast nodes that slow CPU inference.
+ * andrewleech export. int4 keeps decoder weights in MatMulNBits and the encoder
+ * in float32. fp32 uses the same graphs with decoder_weights.data. Embeddings
+ * stay float16 in both packages.
  * The graph contract matches transcribe-rs: encoder input "mel" [1, 128, T];
  * decoder_init takes input_ids, position_ids, audio_features and audio_offset;
  * decoder_step takes input_embeds plus the KV cache.
  */
-class Qwen3AsrEngine {
+public class Qwen3AsrEngine {
     static final int VARIANT_06 = 1;
     static final int VARIANT_17 = 2;
 
@@ -66,16 +65,20 @@ class Qwen3AsrEngine {
     private final float[] sinTable;
     private final float[][] melBank;
 
-    Qwen3AsrEngine(File modelDir) throws IOException, OrtException {
-        File encoderFile = new File(modelDir, "encoder.int4.onnx");
-        File initFile = new File(modelDir, "decoder_init.int4.onnx");
-        File stepFile = new File(modelDir, "decoder_step.int4.onnx");
+    public Qwen3AsrEngine(File modelDir, boolean fp32) throws IOException, OrtException {
+        String encoderName = fp32 ? "encoder.onnx" : "encoder.int4.onnx";
+        String initName = fp32 ? "decoder_init.onnx" : "decoder_init.int4.onnx";
+        String stepName = fp32 ? "decoder_step.onnx" : "decoder_step.int4.onnx";
+        String weightsName = fp32 ? "decoder_weights.data" : "decoder_weights.int4.data";
+        File encoderFile = new File(modelDir, encoderName);
+        File initFile = new File(modelDir, initName);
+        File stepFile = new File(modelDir, stepName);
         embedFile = new File(modelDir, "embed_tokens.bin");
-        File weightsFile = new File(modelDir, "decoder_weights.int4.data");
+        File weightsFile = new File(modelDir, weightsName);
         File configFile = new File(modelDir, "config.json");
         File tokenizerFile = new File(modelDir, "tokenizer.json");
         if (!encoderFile.isFile() || !initFile.isFile() || !stepFile.isFile() || !weightsFile.isFile() || !embedFile.isFile() || !configFile.isFile() || !tokenizerFile.isFile()) {
-            throw new IOException("Qwen3-ASR int4 files are missing");
+            throw new IOException("Qwen3-ASR files are missing");
         }
         try {
             JSONObject config = new JSONObject(readUtf8(configFile));
@@ -109,13 +112,25 @@ class Qwen3AsrEngine {
         decoderStep = env.createSession(stepFile.getAbsolutePath(), options);
     }
 
-    void close() {
+    public void close() {
         closeSession(encoder);
         closeSession(decoderInit);
         closeSession(decoderStep);
     }
 
-    Transcript transcribe(float[] samples) throws OrtException, IOException {
+    public Transcript transcribe(float[] samples) throws OrtException, IOException {
+        return transcribe(samples, Integer.MAX_VALUE);
+    }
+
+    /**
+     * One short silent pass. The first real execution loads the session and is slow
+     * enough to stall capture, so it runs before the microphone opens.
+     */
+    public void warmup() throws OrtException, IOException {
+        transcribe(new float[SAMPLE_RATE], 2);
+    }
+
+    private Transcript transcribe(float[] samples, int decoderSteps) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcript("", null);
         }
@@ -135,29 +150,17 @@ class Qwen3AsrEngine {
         }
 
         int[] roles = roleIds();
-        int promptLen = 15 + audioTokens;
-        long[] prompt = new long[promptLen];
-        int cursor = 0;
-        prompt[cursor++] = IM_START;
-        prompt[cursor++] = roles[0];
-        prompt[cursor++] = roles[1];
-        prompt[cursor++] = IM_END;
-        prompt[cursor++] = roles[1];
-        prompt[cursor++] = IM_START;
-        prompt[cursor++] = roles[2];
-        prompt[cursor++] = roles[1];
-        prompt[cursor++] = AUDIO_START;
-        int audioOffset = cursor;
-        for (int i = 0; i < audioTokens; i++) {
-            prompt[cursor++] = AUDIO_PAD;
+        // Empty system turn, then the user audio turn. The ONNX decoder scatters
+        // encoder features at the first <|audio_pad|>, so the offset is that index.
+        long[] prompt = buildPrompt(audioTokens, roles[0], roles[1], roles[2], roles[3]);
+        int promptLen = prompt.length;
+        int audioOffset = 0;
+        for (int i = 0; i < promptLen; i++) {
+            if (prompt[i] == AUDIO_PAD) {
+                audioOffset = i;
+                break;
+            }
         }
-        prompt[cursor++] = AUDIO_END;
-        prompt[cursor++] = IM_END;
-        prompt[cursor++] = roles[1];
-        prompt[cursor++] = IM_START;
-        prompt[cursor++] = roles[3];
-        prompt[cursor++] = roles[1];
-
         long[] positions = new long[promptLen];
         for (int i = 0; i < promptLen; i++) {
             positions[i] = i;
@@ -190,7 +193,8 @@ class Qwen3AsrEngine {
         int cap = tokenCap(samples.length);
         long position = promptLen;
         boolean eos = isEos(token);
-        for (int step = 1; step < cap && !eos; step++) {
+        int stepLimit = Math.min(cap, Math.max(1, decoderSteps));
+        for (int step = 1; step < stepLimit && !eos; step++) {
             float[] embed = lookupEmbed(token);
             OnnxTensor embedTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(embed), new long[]{1, 1, hiddenSize});
             OnnxTensor stepPos = OnnxTensor.createTensor(env, LongBuffer.wrap(new long[]{position}), new long[]{1, 1});
@@ -260,15 +264,31 @@ class Qwen3AsrEngine {
                 pieces.append(piece);
             }
         }
-        byte[] bytes = new byte[pieces.length()];
-        int n = 0;
-        for (int i = 0; i < pieces.length(); i++) {
-            Integer b = unicodeToByte.get((int) pieces.charAt(i));
-            if (b != null && n < bytes.length) {
-                bytes[n++] = (byte) (b & 0xff);
+        // Byte-level BPE pieces map back to UTF-8. A raw character that is not in
+        // that map (some Qwen vocab entries) is already text and must be kept.
+        java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream();
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < pieces.length(); ) {
+            int codePoint = pieces.codePointAt(i);
+            i += Character.charCount(codePoint);
+            Integer b = codePoint <= 0xffff ? unicodeToByte.get(codePoint) : null;
+            if (b != null) {
+                raw.write(b);
+            } else {
+                flushUtf8(raw, text);
+                text.appendCodePoint(codePoint);
             }
         }
-        return new String(bytes, 0, n, StandardCharsets.UTF_8);
+        flushUtf8(raw, text);
+        return text.toString();
+    }
+
+    private static void flushUtf8(java.io.ByteArrayOutputStream raw, StringBuilder text) {
+        if (raw.size() == 0) {
+            return;
+        }
+        text.append(new String(raw.toByteArray(), StandardCharsets.UTF_8));
+        raw.reset();
     }
 
     private String languageCode(String name) {
@@ -436,20 +456,42 @@ class Qwen3AsrEngine {
         return minLogHz * Math.exp(logstep * (mel - minLogMel));
     }
 
-    private int[] roleIds() throws IOException {
-        int system = tokenId("system");
-        int user = tokenId("user");
-        int assistant = tokenId("assistant");
-        int newline = tokenToId.containsKey("Ċ") ? tokenToId.get("Ċ") : tokenId("\n");
-        return new int[]{system, newline, user, assistant};
+    private int[] roleIds() {
+        int system = tokenOr("system", 8948);
+        int user = tokenOr("user", 872);
+        int assistant = tokenOr("assistant", 77091);
+        int newline = tokenToId.containsKey("Ċ") ? tokenToId.get("Ċ") : 198;
+        return new int[]{system, user, newline, assistant};
     }
 
-    private int tokenId(String token) throws IOException {
-        Integer id = tokenToId.get(token);
-        if (id == null) {
-            throw new IOException("Qwen3-ASR tokenizer has no token " + token);
+    /** Empty system turn plus the user audio turn. The first pad is index 9. */
+    static long[] buildPrompt(int audioTokens, int systemId, int userId, int newlineId, int assistantId) {
+        long[] prompt = new long[15 + audioTokens];
+        int cursor = 0;
+        prompt[cursor++] = IM_START;
+        prompt[cursor++] = systemId;
+        prompt[cursor++] = newlineId;
+        prompt[cursor++] = IM_END;
+        prompt[cursor++] = newlineId;
+        prompt[cursor++] = IM_START;
+        prompt[cursor++] = userId;
+        prompt[cursor++] = newlineId;
+        prompt[cursor++] = AUDIO_START;
+        for (int i = 0; i < audioTokens; i++) {
+            prompt[cursor++] = AUDIO_PAD;
         }
-        return id;
+        prompt[cursor++] = AUDIO_END;
+        prompt[cursor++] = IM_END;
+        prompt[cursor++] = newlineId;
+        prompt[cursor++] = IM_START;
+        prompt[cursor++] = assistantId;
+        prompt[cursor++] = newlineId;
+        return prompt;
+    }
+
+    private int tokenOr(String token, int fallback) {
+        Integer id = tokenToId.get(token);
+        return id == null ? fallback : id;
     }
 
     private void loadVocab(File tokenizerFile) throws IOException {
@@ -602,9 +644,9 @@ class Qwen3AsrEngine {
         return Float.intBitsToFloat(sign | ((exp + (127 - 15)) << 23) | (mant << 13));
     }
 
-    static final class Transcript {
-        final String text;
-        final String languageCode;
+    public static final class Transcript {
+        public final String text;
+        public final String languageCode;
 
         Transcript(String text, String languageCode) {
             this.text = text == null ? "" : text;

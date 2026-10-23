@@ -31,6 +31,7 @@ import android.widget.ProgressBar;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroupAdapter;
@@ -152,6 +153,8 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         // change microphone sensibility initialization
         SeekBarPreference micSensibilityPreference = (SeekBarPreference) findPreference("micSensibilitySetting");
         micSensibilityPreference.initialize(activity, SeekBarPreference.MIC_SENSIBILITY_MODE);
+        MicSensitivityExtendedPreference micSensitivityExtendedPreference = (MicSensitivityExtendedPreference) findPreference("micSensitivityExtended");
+        micSensitivityExtendedPreference.setFragment(this);
         EchoCancellationPreference echoCancellationPreference = (EchoCancellationPreference) findPreference("echoCancellation");
         echoCancellationPreference.setFragment(this);
 
@@ -203,6 +206,18 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         // change microphone sensibility initialization
         SeekBarPreference beamSizePreference = (SeekBarPreference) findPreference("BeamSizeSetting");
         beamSizePreference.initialize(activity, SeekBarPreference.BEAM_SIZE_MODE);
+
+        GemmaThinkingPreference gemmaThinkingPreference = (GemmaThinkingPreference) findPreference("gemmaThinking");
+        gemmaThinkingPreference.setFragment(this);
+        ListPreference gemmaThinkingLevel = (ListPreference) findPreference("gemmaThinkingLevel");
+        gemmaThinkingLevel.setValue(global.getGemmaThinkingLevel());
+        gemmaThinkingLevel.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setGemmaThinkingLevel((String) newValue);
+                return true;
+            }
+        });
 
         // change microphone sensibility initialization
         SeekBarPreference speechTimeoutPreference = (SeekBarPreference) findPreference("SpeechTimeoutSetting");

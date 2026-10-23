@@ -68,12 +68,16 @@ public class ConversationService extends VoiceTranslationService {
     private static Handler mHandler = new Handler();
     private Handler mainHandler;
     public static boolean isRunning = false;
+    private static final int PREPARE_MAX = 3;
+    /** Speech and translation resources are warm. Capture before this drops the opening words. */
+    private boolean hearingReady;
 
 
     @Override
     public void onCreate() {
         super.onCreate();
         isRunning = true;
+        isMicActivated = false;
         global = (Global) getApplication();
         mainHandler = new Handler(Looper.getMainLooper());
         SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
@@ -261,11 +265,25 @@ public class ConversationService extends VoiceTranslationService {
         mVoiceRecognizer.addCallback(mVoiceRecognizerCallback);
         //mBluetoothHelper.start();
 
+        notifyModelLoading(1, PREPARE_MAX);
         translator.loadTgtLangResourcesForConversation(global.getLanguage(true), new Translator.GeneralListener() {
             @Override
             public void onSuccess() {
-                //voice recorder initialization
-                initializeVoiceRecorder();
+                notifyModelLoading(2, PREPARE_MAX);
+                new Thread(() -> {
+                    try {
+                        if (mVoiceRecognizer != null) {
+                            mVoiceRecognizer.warmup();
+                        }
+                    } finally {
+                        mainHandler.post(() -> {
+                            initializeVoiceRecorder();
+                            notifyModelLoading(PREPARE_MAX, PREPARE_MAX);
+                            hearingReady = true;
+                            notifyMicActivated();
+                        });
+                    }
+                }, "speech-warmup").start();
             }
         });
     }
@@ -276,7 +294,7 @@ public class ConversationService extends VoiceTranslationService {
         }
         if (ttsEngine != null && ttsEngine.canStream(outputLanguage)) {
             boolean reset = false;
-            String chunk = null;
+            ArrayList<String> pieces = new ArrayList<>();
             synchronized (speechLock) {
                 if (resultID != spokenResultId) {
                     spokenResultId = resultID;
@@ -290,19 +308,35 @@ public class ConversationService extends VoiceTranslationService {
                     spokenPrefix = "";
                 }
                 String pending = translation.substring(spokenPrefix.length());
-                chunk = SimultaneousText.takeSpeakable(pending, isFinal);
-                if (chunk != null) {
-                    spokenPrefix = spokenPrefix + chunk;
+                pieces = SimultaneousText.speakablePieces(pending, isFinal);
+                for (String piece : pieces) {
+                    spokenPrefix = spokenPrefix + piece;
                 }
             }
             if (reset) {
                 ttsEngine.stop();
             }
-            if ((chunk == null || chunk.trim().isEmpty()) && !isFinal) {
+            int audible = 0;
+            for (String piece : pieces) {
+                if (piece.trim().length() > 0) {
+                    audible++;
+                }
+            }
+            if (audible == 0) {
+                if (!isFinal) {
+                    return;
+                }
+                speakPiece(new GuiMessage(new Message("", this, ""), outputLanguage, outputLanguage, resultID, false, true), outputLanguage, true);
                 return;
             }
-            GuiMessage spoken = new GuiMessage(new Message("", this, chunk == null ? "" : chunk), outputLanguage, outputLanguage, resultID, false, true);
-            speakPiece(spoken, outputLanguage, isFinal);
+            int spokenAudible = 0;
+            for (String piece : pieces) {
+                if (piece.trim().isEmpty()) {
+                    continue;
+                }
+                spokenAudible++;
+                speakPiece(new GuiMessage(new Message("", this, piece), outputLanguage, outputLanguage, resultID, false, true), outputLanguage, isFinal && spokenAudible == audible);
+            }
             return;
         }
         if (!isFinal) {
@@ -317,6 +351,14 @@ public class ConversationService extends VoiceTranslationService {
             String languageCode = conversationMessage.getPayload().getLanguage().getCode();
             global.getBluetoothCommunicator().sendMessage(new Message(global, conversationMessage.getPayload().getText() + languageCode + languageCode.length()));
         }
+    }
+
+    @Override
+    public void startVoiceRecorder() {
+        if (!hearingReady) {
+            return;
+        }
+        super.startVoiceRecorder();
     }
 
     public void initializeVoiceRecorder() {

@@ -84,11 +84,15 @@ public class WalkieTalkieService extends VoiceTranslationService {
     private long spokenResultId = -1;
     private boolean generationOpen = false;
     private boolean finalSpeechQueued = false;
+    private static final int PREPARE_MAX = 2;
+    /** The speech model has had its cold start. Capture before this drops the opening words. */
+    private boolean hearingReady;
 
 
     @Override
     public void onCreate() {
         super.onCreate();
+        isMicActivated = false;
         translator = ((Global) getApplication()).getTranslator();
         speechRecognizer = ((Global) getApplication()).getSpeechRecognizer();
         SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
@@ -360,6 +364,28 @@ public class WalkieTalkieService extends VoiceTranslationService {
         };
         //voice recorder initialization
         initializeVoiceRecorder();
+        notifyModelLoading(1, PREPARE_MAX);
+        new Thread(() -> {
+            try {
+                if (speechRecognizer != null) {
+                    speechRecognizer.warmup();
+                }
+            } finally {
+                mainHandler.post(() -> {
+                    notifyModelLoading(PREPARE_MAX, PREPARE_MAX);
+                    hearingReady = true;
+                    notifyMicActivated();
+                });
+            }
+        }, "speech-warmup").start();
+    }
+
+    @Override
+    public void startVoiceRecorder() {
+        if (!hearingReady) {
+            return;
+        }
+        super.startVoiceRecorder();
     }
 
     public void initializeVoiceRecorder(){
@@ -564,6 +590,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
         boolean speakChunk = false;
         boolean closeIfIdle = false;
         String chunk = null;
+        java.util.ArrayList<String> queuedPieces = new java.util.ArrayList<>();
         synchronized (speechLock) {
             if (resultID != spokenResultId) {
                 spokenResultId = resultID;
@@ -577,22 +604,41 @@ public class WalkieTalkieService extends VoiceTranslationService {
                 spokenPrefix = "";
             }
             String pending = translation.substring(spokenPrefix.length());
-            chunk = SimultaneousText.takeSpeakable(pending, isFinal);
-            speakChunk = chunk != null && !chunk.trim().isEmpty();
-            if (speakChunk) {
-                spokenPrefix = spokenPrefix + chunk;
+            java.util.ArrayList<String> pieces = SimultaneousText.speakablePieces(pending, isFinal);
+            for (String piece : pieces) {
+                spokenPrefix = spokenPrefix + piece;
+                if (piece.trim().length() > 0) {
+                    if (chunk == null) {
+                        chunk = piece;
+                    }
+                }
             }
+            speakChunk = chunk != null;
             if (isFinal) {
                 finalSpeechQueued = true;
                 closeIfIdle = !speakChunk;
             }
+            queuedPieces = pieces;
         }
         if (resetSpeech && ttsEngine != null) {
             ttsEngine.stop();
         }
         if (speakChunk) {
-            GuiMessage spoken = new GuiMessage(new Message("", WalkieTalkieService.this, chunk), outputLanguage, outputLanguage, resultID, isMine, true);
-            speakPiece(spoken, outputLanguage, isFinal);
+            int audible = 0;
+            for (String piece : queuedPieces) {
+                if (piece.trim().length() > 0) {
+                    audible++;
+                }
+            }
+            int spokenAudible = 0;
+            for (String piece : queuedPieces) {
+                if (piece.trim().isEmpty()) {
+                    continue;
+                }
+                spokenAudible++;
+                GuiMessage spoken = new GuiMessage(new Message("", WalkieTalkieService.this, piece), outputLanguage, outputLanguage, resultID, isMine, true);
+                speakPiece(spoken, outputLanguage, isFinal && spokenAudible == audible);
+            }
         } else if (isFinal) {
             speakPiece(new GuiMessage(new Message("", WalkieTalkieService.this, ""), outputLanguage, outputLanguage, resultID, isMine, true), outputLanguage, true);
         }

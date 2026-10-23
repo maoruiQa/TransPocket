@@ -18,11 +18,38 @@ public class LiveDraftStreamTest {
         buffer.add("Hel");
         assertNull(buffer.pull(false));
         assertEquals("Hel", buffer.pending());
-        buffer.add("lo, world");
-        assertEquals("Hello,", buffer.pull(false));
-        assertEquals(" world", buffer.pending());
-        assertEquals(" world", buffer.pull(true));
+        buffer.add("lo, world.");
+        assertEquals("Hello, world.", buffer.pull(false));
         assertEquals("", buffer.pending());
+        buffer.add(" Next");
+        assertNull(buffer.pull(false));
+        assertEquals(" Next", buffer.pull(true));
+        assertEquals("", buffer.pending());
+    }
+
+    @Test
+    public void bufferReleasesOneSentenceAtATime() {
+        LiveDraftBuffer buffer = new LiveDraftBuffer();
+        buffer.add("第一句。第二句。第三");
+        assertEquals("第一句。", buffer.pull(false));
+        assertEquals("第二句。", buffer.pull(false));
+        assertNull(buffer.pull(false));
+        assertEquals("第三", buffer.pull(true));
+    }
+
+    @Test
+    public void bufferCutsASentenceThatExceedsTheCap() {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            text.append('字');
+        }
+        text.append('。');
+        text.append("下一句。");
+        LiveDraftBuffer buffer = new LiveDraftBuffer();
+        buffer.add(text.toString());
+        String first = buffer.pull(false);
+        assertEquals(SimultaneousText.SPEAK_CHUNK_CHARS, first.length());
+        assertFalse(first.contains("下一"));
     }
 
     @Test

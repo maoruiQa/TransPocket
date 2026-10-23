@@ -15,7 +15,7 @@ public final class LiveDraftBuffer {
 
     /** The next piece that can be synthesized, or null while the rest should wait. */
     public String pull(boolean finished) {
-        String piece = SimultaneousText.takeSpeakable(pending.toString(), finished);
+        String piece = SimultaneousText.takeSpeakable(pending.toString(), finished, SimultaneousText.SPEAK_CHUNK_CHARS, true);
         if (piece == null) {
             return null;
         }

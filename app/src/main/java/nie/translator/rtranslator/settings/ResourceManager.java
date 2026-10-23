@@ -33,7 +33,7 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
     private boolean progressUnzipping = false;
     private boolean progressTesting = false;
     private int error = -1;
-    private final DownloadGroupInfo downloadInfo;
+    private DownloadGroupInfo downloadInfo;
     @Nullable
     private ResourceManagerView view;
     @Nullable
@@ -73,16 +73,16 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
             DownloadGroupInfo qwen17DownloadInfo = app.getQwen3Asr17DownloadInfo();
             if (downloadInfo.equals(whisperDownloadInfo) || downloadInfo.equals(whisperTurboDownloadInfo) || downloadInfo.equals(qwen06DownloadInfo) || downloadInfo.equals(qwen17DownloadInfo)) {
                 int asrAvailable = 0;
-                if (downloadManager.checkDownloadCompleted(whisperDownloadInfo) || app.groupFilesPresent(whisperDownloadInfo)) {
+                if (downloadManager.checkDownloadCompleted(whisperDownloadInfo) || app.asrReady(Global.ASR_WHISPER)) {
                     asrAvailable++;
                 }
-                if (downloadManager.checkDownloadCompleted(whisperTurboDownloadInfo) || app.groupFilesPresent(whisperTurboDownloadInfo)) {
+                if (downloadManager.checkDownloadCompleted(whisperTurboDownloadInfo) || app.asrReady(Global.ASR_WHISPER_TURBO)) {
                     asrAvailable++;
                 }
-                if (downloadManager.checkDownloadCompleted(qwen06DownloadInfo) || app.groupFilesPresent(qwen06DownloadInfo)) {
+                if (downloadManager.checkDownloadCompleted(qwen06DownloadInfo) || app.asrReady(Global.ASR_QWEN3_06)) {
                     asrAvailable++;
                 }
-                if (downloadManager.checkDownloadCompleted(qwen17DownloadInfo) || app.groupFilesPresent(qwen17DownloadInfo)) {
+                if (downloadManager.checkDownloadCompleted(qwen17DownloadInfo) || app.asrReady(Global.ASR_QWEN3_17)) {
                     asrAvailable++;
                 }
                 if (asrAvailable <= 1) {
@@ -183,6 +183,18 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
 
     public DownloadGroupInfo getDownloadInfo() {
         return downloadInfo;
+    }
+
+    public void replaceDownload(DownloadGroupInfo next) {
+        if (next == null || downloadInfo.equals(next)) {
+            return;
+        }
+        if (state == ResourceManagerView.State.DOWNLOADING) {
+            downloadManager.pauseDownload(downloadInfo);
+        }
+        downloadInfo = next;
+        setError(-1);
+        setState(ResourceManagerView.State.EMPTY, false);
     }
 
     public DownloadManager getDownloadManager() {

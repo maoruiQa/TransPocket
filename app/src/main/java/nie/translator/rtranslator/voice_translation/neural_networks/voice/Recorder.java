@@ -70,9 +70,9 @@ public class Recorder {
     private static final int CHANNEL = AudioFormat.CHANNEL_IN_MONO;
     private static int ENCODING;
     private static int VAD_FRAME_SIZE = 512;
-    public static final int MAX_AMPLITUDE_THRESHOLD = 15000;
-    public static final int DEFAULT_AMPLITUDE_THRESHOLD = 1500; //old: 2000
-    public static final int MIN_AMPLITUDE_THRESHOLD = 400;
+    public static final int MAX_AMPLITUDE_THRESHOLD = MicSensitivity.MAX_AMPLITUDE_THRESHOLD;
+    public static final int DEFAULT_AMPLITUDE_THRESHOLD = MicSensitivity.DEFAULT_AMPLITUDE_THRESHOLD; //old: 2000
+    public static final int MIN_AMPLITUDE_THRESHOLD = MicSensitivity.MIN_AMPLITUDE_THRESHOLD;
     public static final int MAX_SPEECH_TIMEOUT_MILLIS = 5000;
     public static final int DEFAULT_SPEECH_TIMEOUT_MILLIS = 1300; //original: 2000
     public static final int MIN_SPEECH_TIMEOUT_MILLIS = 100;
@@ -135,7 +135,11 @@ public class Recorder {
     private int clauseEmittedUntil = -1;
     private boolean clauseVadFailureLogged;
     private volatile boolean ttsPlaying;
+    /** Hardware echo control stays off until the first spoken translation. Enabling it with no playback reference suppresses the opening speech. */
+    private volatile boolean echoLatched;
     private volatile boolean echoControlActive;
+    /** Extra AudioRecord capacity, in milliseconds. 0 keeps the platform minimum. Capacity only: reads stay the same size. */
+    private final int captureBufferMillis;
     private boolean echoListenerRegistered;
     @Nullable
     private AcousticEchoCanceler echoCanceler;
@@ -153,6 +157,11 @@ public class Recorder {
 
 
     public Recorder(Global global, boolean useBluetoothHeadset, @NonNull Callback callback, @Nullable ConversationService.BluetoothHeadsetCallback bluetoothHeadsetCallback, VadSilero vad) {
+        this(global, useBluetoothHeadset, callback, bluetoothHeadsetCallback, vad, 0);
+    }
+
+    public Recorder(Global global, boolean useBluetoothHeadset, @NonNull Callback callback, @Nullable ConversationService.BluetoothHeadsetCallback bluetoothHeadsetCallback, VadSilero vad, int captureBufferMillis) {
+        this.captureBufferMillis = Math.max(0, captureBufferMillis);
         this.useBluetoothHeadset = useBluetoothHeadset;
         this.global = global;
         headIndex = 0;
@@ -323,6 +332,14 @@ public class Recorder {
         post(this::executeEnd);
     }
 
+    /**
+     * Drops an utterance that is still open. Used when the input path is deaf,
+     * so the samples from that window are not recognized later.
+     */
+    public void discardPendingSpeech() {
+        post(this::executeDiscardPendingSpeech);
+    }
+
     public boolean isManualMode() {
         return isManualMode;
     }
@@ -386,6 +403,10 @@ public class Recorder {
     /** True while this app's TTS is speaking, so speaker echo can be gated. */
     public void setTtsPlaying(boolean playing) {
         ttsPlaying = playing;
+        if (playing) {
+            echoLatched = true;
+            refreshEchoState();
+        }
     }
 
     private void registerEchoListener() {
@@ -400,7 +421,9 @@ public class Recorder {
         synchronized (echoLock) {
             boolean preferenceOn = global.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("echoCancellation", true);
             echoControlActive = clauseSegmentation && preferenceOn && !detectHeadphones();
-            if (echoControlActive) {
+            // The canceler and noise suppressor need a few seconds to adapt. Before any
+            // translation is spoken they have no echo to remove, and they drop the opening speech.
+            if (echoControlActive && echoLatched) {
                 attachEchoEffects();
             } else {
                 releaseEchoEffects();
@@ -501,6 +524,13 @@ public class Recorder {
 
     public boolean isRecording() {
         return isRecording;
+    }
+
+    /** True while a capture session is running or already queued to start. A session that is stopping is not active. */
+    public boolean isSessionActive() {
+        synchronized (lifecycleLock) {
+            return running || pendingStart;
+        }
     }
 
     /**
@@ -619,6 +649,22 @@ public class Recorder {
     }
 
     /**
+     * Bytes kept by {@link AudioRecord} so a slow first read does not discard the opening speech.
+     * A larger value does not delay the samples that are read on time.
+     */
+    private int captureBufferSize(int minSizeInBytes, int sampleRate) {
+        if (captureBufferMillis <= 0 || minSizeInBytes <= 0) {
+            return minSizeInBytes;
+        }
+        int bytesPerSample = ENCODING == AudioFormat.ENCODING_PCM_FLOAT ? 4 : 2;
+        int wanted = sampleRate * bytesPerSample * captureBufferMillis / 1000;
+        if (wanted <= minSizeInBytes) {
+            return minSizeInBytes;
+        }
+        return ((wanted + minSizeInBytes - 1) / minSizeInBytes) * minSizeInBytes;
+    }
+
+    /**
      * Creates a new {@link AudioRecord}.
      *
      * @return A newly created {@link AudioRecord}, or null if it cannot be created (missing
@@ -631,7 +677,13 @@ public class Recorder {
                 continue;
             }
             this.sampleRate = sampleRate;
-            AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, CHANNEL, ENCODING, minSizeInBytes);   //the option MIC produce better results than the option VOICE_RECOGNITION
+            int bufferSize = captureBufferSize(minSizeInBytes, sampleRate);
+            AudioRecord audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, CHANNEL, ENCODING, bufferSize);   //the option MIC produce better results than the option VOICE_RECOGNITION
+            if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED && bufferSize != minSizeInBytes) {
+                audioRecord.release();
+                bufferSize = minSizeInBytes;
+                audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, sampleRate, CHANNEL, ENCODING, bufferSize);
+            }
             //audioRecord.setPreferredDevice()
             if (audioRecord.getState() == AudioRecord.STATE_INITIALIZED) {
                 int minReadSize = (minSizeInBytes/4)*2;
@@ -802,6 +854,24 @@ public class Recorder {
         mCallback.onVoice(data, voiceLength);
         isRecording = false;
         mCallback.onVoiceEnd();
+    }
+
+    /** Audio thread only. */
+    private void executeDiscardPendingSpeech() {
+        clauseFrameFill = 0;
+        clauseEmittedUntil = tailIndex;
+        mLastVoiceHeardMillis = Long.MAX_VALUE;
+        startVoiceIndex = tailIndex;
+        if (clauseSegmenter != null) {
+            clauseSegmenter.reset();
+        }
+        if (clauseVad != null) {
+            clauseVad.resetState();
+        }
+        if (isRecording) {
+            isRecording = false;
+            mCallback.onVoiceEnd();
+        }
     }
 
     /** Audio thread only. Hands the current clause to recognition and keeps listening. */

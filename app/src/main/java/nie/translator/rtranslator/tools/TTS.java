@@ -36,6 +36,24 @@ public class TTS {
     private final Context appContext;
     private UtteranceProgressListener progressListener;
     private CustomLocale currentLocale;
+    private boolean cosyStream;
+    private final Object streamLock = new Object();
+    private final StringBuilder systemPending = new StringBuilder();
+    private final android.os.Handler mainHandler = new android.os.Handler(Looper.getMainLooper());
+    private final ArrayDeque<String> systemPieces = new ArrayDeque<>();
+    private int systemGeneration;
+    private int systemTicket;
+    private int systemPieceIndex;
+    private String systemUtteranceId = "";
+    private String systemWaitingId = "";
+    private boolean systemOpen;
+    private boolean systemFinished;
+    private boolean systemStarted;
+    private boolean systemInFlight;
+    private boolean systemForceFlush;
+    private boolean systemApplied;
+    private int systemQueueMode = TextToSpeech.QUEUE_ADD;
+    private Runnable systemWatch;
 
     //Attributes used for getting the supported languages
     private static Thread getSupportedLanguageThread;
@@ -81,6 +99,7 @@ public class TTS {
                             listener.onInit();
                         }
                         return;*/
+                        installBridge();
                         listener.onInit();
                         return; // Set TTS to the default TTS directly.
                     }
@@ -93,16 +112,15 @@ public class TTS {
     }
 
     public boolean isActive() {
-        return tts != null || anyLiveDraftReady();
+        return tts != null || LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_COSYVOICE);
     }
 
-    private boolean anyLiveDraftReady() {
-        return LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_KOKORO)
-                || LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_COSYVOICE);
-    }
-
+    /**
+     * Incremental speech is available for CosyVoice and for the system engine.
+     * The system engine cannot accept partial text, so sentences are queued instead.
+     */
     public boolean canStream(CustomLocale locale) {
-        return locale != null && LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage());
+        return locale != null && (LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage()) || tts != null);
     }
 
     private float speechRate() {
@@ -114,40 +132,421 @@ public class TTS {
         if (locale == null) {
             return false;
         }
-        return LiveDraftSpeaker.start(appContext, locale.getLanguage(), speechRate(), progressListener, utteranceId);
+        cosyStream = false;
+        if (LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage())
+                && LiveDraftSpeaker.start(appContext, locale.getLanguage(), speechRate(), progressListener, utteranceId)) {
+            cosyStream = true;
+            return true;
+        }
+        return beginSystem(locale, utteranceId, TextToSpeech.QUEUE_FLUSH);
     }
 
     public void appendStream(String text) {
-        LiveDraftSpeaker.append(text);
+        if (cosyStream) {
+            LiveDraftSpeaker.append(text);
+            return;
+        }
+        appendSystem(text, false);
     }
 
     public void finishStream() {
-        LiveDraftSpeaker.finish();
+        if (cosyStream) {
+            LiveDraftSpeaker.finish();
+            return;
+        }
+        finishSystem();
     }
 
     public int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
         float rate = speechRate();
+        String spoken = text == null ? "" : text.toString();
         if (currentLocale != null && LiveDraftSpeaker.canSpeak(appContext, currentLocale.getLanguage())) {
-            int result = LiveDraftSpeaker.speak(appContext, text == null ? "" : text.toString(), currentLocale.getLanguage(), rate, queueMode, progressListener, utteranceId);
+            cosyStream = true;
+            int result = LiveDraftSpeaker.speak(appContext, spoken, currentLocale.getLanguage(), rate, queueMode, progressListener, utteranceId);
             if (result == TextToSpeech.SUCCESS) {
                 return result;
             }
+            cosyStream = false;
         }
-        if (tts != null) {
-            if (rate < 0.5f) {
-                rate = 0.5f;
-            } else if (rate > 2f) {
-                rate = 2f;
+        if (tts == null || currentLocale == null) {
+            return TextToSpeech.ERROR;
+        }
+        if (!beginSystem(currentLocale, utteranceId, queueMode)) {
+            return TextToSpeech.ERROR;
+        }
+        if (!appendSystem(spoken, true)) {
+            return TextToSpeech.ERROR;
+        }
+        return TextToSpeech.SUCCESS;
+    }
+
+    private boolean beginSystem(CustomLocale locale, String utteranceId, int queueMode) {
+        if (tts == null || locale == null) {
+            return false;
+        }
+        disarmWatch();
+        synchronized (streamLock) {
+            systemGeneration++;
+            systemTicket++;
+            systemPending.setLength(0);
+            systemPieces.clear();
+            systemPieceIndex = 0;
+            systemUtteranceId = utteranceId == null ? "" : utteranceId;
+            systemWaitingId = "";
+            systemOpen = true;
+            systemFinished = false;
+            systemStarted = false;
+            systemInFlight = false;
+            systemForceFlush = false;
+            systemApplied = false;
+            systemQueueMode = queueMode;
+        }
+        return true;
+    }
+
+    private boolean appendSystem(String text, boolean finished) {
+        String doneId = null;
+        synchronized (streamLock) {
+            if (!systemOpen) {
+                return false;
             }
-            tts.setSpeechRate(rate);
-            return tts.speak(text, queueMode, params, utteranceId);
+            if (text != null && text.length() > 0) {
+                systemPending.append(text);
+            }
+            if (finished) {
+                systemFinished = true;
+            }
+            collectSystemPieces();
+            if (systemPieces.isEmpty() && !systemInFlight && systemFinished && systemPending.length() == 0) {
+                doneId = systemUtteranceId;
+                systemOpen = false;
+            }
         }
-        return TextToSpeech.ERROR;
+        if (doneId != null) {
+            postDone(doneId);
+            return true;
+        }
+        pumpSystem();
+        return true;
+    }
+
+    private void collectSystemPieces() {
+        while (true) {
+            String piece = SimultaneousText.takeSpeakable(systemPending.toString(), systemFinished);
+            if (piece == null) {
+                break;
+            }
+            systemPending.delete(0, piece.length());
+            if (!SimultaneousText.isAudible(piece)) {
+                continue;
+            }
+            systemPieces.addLast(piece);
+        }
+    }
+
+    /**
+     * The system engine stalls when several utterances are queued before the first
+     * one starts. One sentence is submitted at a time, on the main thread, and the
+     * next is submitted only after that sentence finishes.
+     */
+    private void pumpSystem() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    pumpSystem();
+                }
+            });
+            return;
+        }
+        String piece;
+        String pieceId;
+        int queue;
+        int ticket;
+        CustomLocale locale;
+        int max = tts == null ? 0 : tts.getMaxSpeechInputLength();
+        synchronized (streamLock) {
+            if (!systemOpen || systemInFlight || systemPieces.isEmpty()) {
+                return;
+            }
+            piece = systemPieces.removeFirst();
+            if (max > 1 && piece.length() > max) {
+                systemPieces.addFirst(piece.substring(max));
+                piece = piece.substring(0, max);
+            }
+            systemInFlight = true;
+            ticket = systemTicket;
+            pieceId = systemGeneration + ":" + systemPieceIndex;
+            systemPieceIndex++;
+            systemWaitingId = pieceId;
+            queue = systemPieceIndex == 1 || systemForceFlush ? systemQueueMode : TextToSpeech.QUEUE_ADD;
+            if (systemForceFlush) {
+                queue = TextToSpeech.QUEUE_FLUSH;
+                systemForceFlush = false;
+            }
+            locale = currentLocale;
+        }
+        if (tts == null) {
+            failSystem(ticket);
+            return;
+        }
+        boolean apply;
+        synchronized (streamLock) {
+            apply = !systemApplied;
+            systemApplied = true;
+        }
+        float rate = speechRate();
+        if (rate < 0.5f) {
+            rate = 0.5f;
+        } else if (rate > 2f) {
+            rate = 2f;
+        }
+        if (apply) {
+            tts.setSpeechRate(rate);
+            if (locale != null) {
+                tts.setLanguage(new Locale(locale.getLanguage()));
+            }
+        }
+        android.os.Bundle params = new android.os.Bundle();
+        params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, pieceId);
+        int result = tts.speak(piece, queue, params, pieceId);
+        if (result == TextToSpeech.ERROR) {
+            failSystem(ticket);
+            return;
+        }
+        armWatch(ticket, pieceId, piece.length(), rate);
+    }
+
+    private void armWatch(final int ticket, final String pieceId, int chars, float rate) {
+        disarmWatch();
+        float safeRate = rate <= 0f ? 1f : rate;
+        final long budget = Math.max(8000L, (long) (chars * 700L / safeRate) + 4000L);
+        systemWatch = new Runnable() {
+            @Override
+            public void run() {
+                postPieceFinished(ticket, pieceId, true);
+            }
+        };
+        mainHandler.postDelayed(systemWatch, budget);
+    }
+
+    private void disarmWatch() {
+        if (systemWatch != null) {
+            mainHandler.removeCallbacks(systemWatch);
+            systemWatch = null;
+        }
+    }
+
+    private void postPieceFinished(final int ticket, final String pieceId, final boolean forceFlush) {
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                onPieceFinished(ticket, pieceId, forceFlush);
+            }
+        });
+    }
+
+    private void onPieceFinished(int ticket, String pieceId, boolean forceFlush) {
+        String doneId = null;
+        synchronized (streamLock) {
+            if (!systemOpen || ticket != systemTicket || pieceId == null || !pieceId.equals(systemWaitingId)) {
+                return;
+            }
+            systemWaitingId = "";
+            systemInFlight = false;
+            if (forceFlush) {
+                systemForceFlush = true;
+            }
+            if (systemPieces.isEmpty() && systemFinished && systemPending.length() == 0) {
+                doneId = systemUtteranceId;
+                systemOpen = false;
+            }
+        }
+        disarmWatch();
+        if (doneId != null) {
+            postDone(doneId);
+            return;
+        }
+        pumpSystem();
+    }
+
+    private void failSystem(int ticket) {
+        String id;
+        synchronized (streamLock) {
+            if (ticket != systemTicket || !systemOpen) {
+                return;
+            }
+            id = systemUtteranceId;
+            systemOpen = false;
+            systemInFlight = false;
+            systemWaitingId = "";
+            systemPieces.clear();
+        }
+        disarmWatch();
+        postError(id);
+    }
+
+    private void finishSystem() {
+        appendSystem("", true);
+    }
+
+    private void installBridge() {
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override
+            public void onStart(String utteranceId) {
+                UtteranceProgressListener forward = null;
+                String id = utteranceId;
+                synchronized (streamLock) {
+                    if (isSystemPiece(utteranceId)) {
+                        if (!systemStarted) {
+                            systemStarted = true;
+                            forward = progressListener;
+                            id = systemUtteranceId;
+                        }
+                    } else if (!isSystemId(utteranceId)) {
+                        forward = progressListener;
+                    }
+                }
+                if (forward != null) {
+                    forward.onStart(id);
+                }
+            }
+
+            @Override
+            public void onDone(String utteranceId) {
+                if (isWaitingPiece(utteranceId)) {
+                    int ticket;
+                    synchronized (streamLock) {
+                        ticket = systemTicket;
+                    }
+                    postPieceFinished(ticket, utteranceId, false);
+                    return;
+                }
+                if (!isSystemId(utteranceId) && progressListener != null) {
+                    progressListener.onDone(utteranceId);
+                }
+            }
+
+            @Override
+            public void onError(String utteranceId) {
+                deliverError(utteranceId);
+            }
+
+            @Override
+            public void onStop(String utteranceId, boolean interrupted) {
+                if (isWaitingPiece(utteranceId)) {
+                    if (interrupted) {
+                        UtteranceProgressListener forward;
+                        String id;
+                        synchronized (streamLock) {
+                            systemOpen = false;
+                            systemInFlight = false;
+                            systemWaitingId = "";
+                            systemPieces.clear();
+                            forward = progressListener;
+                            id = systemUtteranceId;
+                        }
+                        disarmWatch();
+                        if (forward != null) {
+                            forward.onStop(id, true);
+                        }
+                        return;
+                    }
+                    int ticket;
+                    synchronized (streamLock) {
+                        ticket = systemTicket;
+                    }
+                    postPieceFinished(ticket, utteranceId, false);
+                    return;
+                }
+                if (!isSystemId(utteranceId) && progressListener != null) {
+                    progressListener.onStop(utteranceId, interrupted);
+                }
+            }
+        });
+    }
+
+    private boolean isWaitingPiece(String utteranceId) {
+        synchronized (streamLock) {
+            return isSystemPiece(utteranceId);
+        }
+    }
+
+    private boolean isSystemPiece(String utteranceId) {
+        return systemOpen && utteranceId != null && utteranceId.equals(systemWaitingId);
+    }
+
+    /** Ids queued by {@link #appendSystem}. Stale ones must not be forwarded. */
+    private static boolean isSystemId(String utteranceId) {
+        if (utteranceId == null) {
+            return false;
+        }
+        int colon = utteranceId.indexOf(':');
+        if (colon <= 0) {
+            return false;
+        }
+        for (int i = 0; i < colon; i++) {
+            if (!Character.isDigit(utteranceId.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void deliverError(String utteranceId) {
+        UtteranceProgressListener forward = null;
+        String id = utteranceId;
+        boolean ours = false;
+        synchronized (streamLock) {
+            if (isSystemPiece(utteranceId)) {
+                systemOpen = false;
+                systemInFlight = false;
+                systemWaitingId = "";
+                systemPieces.clear();
+                forward = progressListener;
+                id = systemUtteranceId;
+                ours = true;
+            } else if (!isSystemId(utteranceId)) {
+                forward = progressListener;
+            }
+        }
+        if (ours) {
+            disarmWatch();
+        }
+        if (forward != null) {
+            forward.onError(id);
+        }
+    }
+
+    private void postDone(final String id) {
+        final UtteranceProgressListener forward = progressListener;
+        if (forward == null) {
+            return;
+        }
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                forward.onDone(id);
+            }
+        });
+    }
+
+    private void postError(final String id) {
+        final UtteranceProgressListener forward = progressListener;
+        if (forward == null) {
+            return;
+        }
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                forward.onError(id);
+            }
+        });
     }
 
     @Nullable
     public Voice getVoice() {
-        if (isActive()) {
+        if (tts != null) {
             return tts.getVoice();
         }
         return null;
@@ -155,7 +554,7 @@ public class TTS {
 
     @Nullable
     public Set<Voice> getVoices() {
-        if (isActive()) {
+        if (tts != null) {
             return tts.getVoices();
         }
         return null;
@@ -163,9 +562,6 @@ public class TTS {
 
     public int setOnUtteranceProgressListener(UtteranceProgressListener listener) {
         progressListener = listener;
-        if (tts != null) {
-            return tts.setOnUtteranceProgressListener(listener);
-        }
         return TextToSpeech.SUCCESS;
     }
 
@@ -178,7 +574,17 @@ public class TTS {
     }
 
     public int stop() {
+        cosyStream = false;
         LiveDraftSpeaker.stop();
+        disarmWatch();
+        synchronized (streamLock) {
+            systemOpen = false;
+            systemInFlight = false;
+            systemWaitingId = "";
+            systemPending.setLength(0);
+            systemPieces.clear();
+            systemTicket++;
+        }
         if (tts != null) {
             return tts.stop();
         }

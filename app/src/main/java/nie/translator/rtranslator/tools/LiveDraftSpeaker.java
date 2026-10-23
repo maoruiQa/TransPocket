@@ -7,45 +7,36 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
-import com.k2fsa.sherpa.onnx.OfflineTts;
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsKittenModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsMatchaModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsPocketModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsSupertonicModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig;
-import com.k2fsa.sherpa.onnx.OfflineTtsZipVoiceModelConfig;
-
 import java.io.File;
 import java.util.ArrayDeque;
 
-import kotlin.jvm.functions.Function1;
-
 /**
- * Speaks with the selected Live Draft engine. Text is committed a piece at a time
- * and audio is played as each piece is synthesized.
+ * Speaks with Fun-CosyVoice 3. Text is committed one sentence at a time
+ * and audio plays while the next sentence is synthesized.
+ * One worker owns the native session, so a new utterance waits until the
+ * current native call returns instead of entering it twice.
  */
 public final class LiveDraftSpeaker {
     private static final String TAG = "live_draft";
     private static final Object LOCK = new Object();
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ArrayDeque<String> PIECES = new ArrayDeque<>();
-    private static OfflineTts kokoro;
-    private static CosyVoiceEngine cosyvoice;
+    private static CosyVoiceQuant.Session cosyvoice;
     private static String loadedEngine;
     private static PcmStreamPlayer player;
     private static LiveDraftBuffer buffer = new LiveDraftBuffer();
     private static UtteranceProgressListener listener;
     private static String utteranceId = "";
     private static String language = "";
-    private static String engineId;
+    private static String gender = LiveDraftVoices.GENDER_FEMALE;
+    private static String preparedVoice = "";
     private static float speed = 1f;
-    private static int voiceId;
     private static int generation;
     private static boolean inputDone;
     private static boolean failed;
+    private static boolean released;
+    private static Context appContext;
+    private static Thread worker;
 
     private LiveDraftSpeaker() {
     }
@@ -79,16 +70,18 @@ public final class LiveDraftSpeaker {
         } else if (rate > 2f) {
             rate = 2f;
         }
-        int voice = LiveDraftVoices.voiceId(app, engine, code);
         int sampleRate;
+        PcmStreamPlayer previous;
+        boolean started = false;
         synchronized (LOCK) {
-            stopLocked();
+            released = false;
+            appContext = app;
+            previous = stopLocked();
             listener = progressListener;
             utteranceId = id == null ? "" : id;
             language = code;
-            engineId = engine;
+            gender = LiveDraftVoices.gender(app);
             speed = rate;
-            voiceId = voice;
             failed = false;
             inputDone = false;
             buffer = new LiveDraftBuffer();
@@ -97,39 +90,34 @@ public final class LiveDraftSpeaker {
             } catch (Throwable error) {
                 Log.e(TAG, "Live Draft model failed to load", error);
                 closeEnginesLocked();
-                return false;
+                sampleRate = 0;
             }
-            if (sampleRate <= 0) {
-                return false;
-            }
-            final int token = generation;
-            player = new PcmStreamPlayer(sampleRate, new PcmStreamPlayer.Listener() {
-                @Override
-                public void onStarted() {
-                    notifyStart(token);
-                }
+            if (sampleRate > 0) {
+                final int token = generation;
+                player = new PcmStreamPlayer(app, sampleRate, new PcmStreamPlayer.Listener() {
+                    @Override
+                    public void onStarted() {
+                        notifyStart(token);
+                    }
 
-                @Override
-                public void onDrained() {
-                    notifyDone(token);
+                    @Override
+                    public void onDrained() {
+                        notifyDone(token);
+                    }
+                });
+                try {
+                    player.start();
+                    ensureWorkerLocked();
+                    LOCK.notifyAll();
+                    started = true;
+                } catch (Throwable error) {
+                    Log.e(TAG, "AudioTrack failed", error);
+                    player = null;
                 }
-            });
-            try {
-                player.start();
-            } catch (Throwable error) {
-                Log.e(TAG, "AudioTrack failed", error);
-                player = null;
-                return false;
             }
-            Thread thread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    synthesize(app, token);
-                }
-            }, "live-draft-tts");
-            thread.start();
         }
-        return true;
+        releasePlayer(previous);
+        return started;
     }
 
     public static void append(String text) {
@@ -155,94 +143,224 @@ public final class LiveDraftSpeaker {
     }
 
     public static void stop() {
+        PcmStreamPlayer previous;
         synchronized (LOCK) {
-            stopLocked();
+            previous = stopLocked();
         }
+        releasePlayer(previous);
     }
 
     public static void release() {
-        stop();
+        Thread current;
+        PcmStreamPlayer previous;
         synchronized (LOCK) {
+            released = true;
+            previous = stopLocked();
             closeEnginesLocked();
+            current = worker;
+            LOCK.notifyAll();
+        }
+        releasePlayer(previous);
+        if (current != null) {
+            try {
+                current.join(500);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
-    private static void synthesize(Context context, int token) {
-        try {
-            while (true) {
-                String piece;
-                synchronized (LOCK) {
-                    while (PIECES.isEmpty() && !inputDone && token == generation) {
-                        LOCK.wait(200);
-                    }
-                    if (token != generation) {
+    private static void ensureWorkerLocked() {
+        if (worker != null && worker.isAlive()) {
+            return;
+        }
+        worker = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                runWorker();
+            }
+        }, "live-draft-tts");
+        worker.start();
+    }
+
+    private static void runWorker() {
+        while (true) {
+            int token;
+            Context context;
+            synchronized (LOCK) {
+                while (player == null && !released) {
+                    try {
+                        LOCK.wait();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
                         return;
                     }
-                    piece = PIECES.pollFirst();
-                    if (piece == null) {
-                        break;
+                }
+                if (released && player == null) {
+                    return;
+                }
+                token = generation;
+                context = appContext;
+            }
+            try {
+                synthesize(context, token);
+            } catch (Throwable error) {
+                Log.e(TAG, "Live Draft synthesis failed", error);
+                synchronized (LOCK) {
+                    if (token == generation) {
+                        failed = true;
                     }
                 }
-                speakPiece(context, piece, token);
-                if (token != generation) {
+                notifyError(token);
+            }
+            synchronized (LOCK) {
+                while (!released && player != null && generation == token) {
+                    try {
+                        LOCK.wait();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                if (released && player == null) {
                     return;
                 }
             }
-        } catch (Throwable error) {
-            Log.e(TAG, "Live Draft synthesis failed", error);
+        }
+    }
+
+    private static void synthesize(Context context, int token) throws Exception {
+        while (true) {
+            String piece;
             synchronized (LOCK) {
-                if (token == generation) {
-                    failed = true;
+                while (PIECES.isEmpty() && !inputDone && token == generation && !released) {
+                    LOCK.wait(200);
+                }
+                if (token != generation || released) {
+                    return;
+                }
+                piece = PIECES.pollFirst();
+                if (piece == null) {
+                    break;
                 }
             }
-            notifyError(token);
-        } finally {
-            PcmStreamPlayer current;
-            synchronized (LOCK) {
-                current = token == generation ? player : null;
+            speakPiece(context, piece, token);
+            if (token != currentGeneration()) {
+                return;
             }
+            PcmStreamPlayer current = playerFor(token);
             if (current != null) {
-                current.finish();
+                current.sentenceReady();
             }
+        }
+        PcmStreamPlayer current;
+        synchronized (LOCK) {
+            current = token == generation ? player : null;
+        }
+        if (current != null) {
+            current.finish();
         }
     }
 
     private static void speakPiece(Context context, String text, final int token) throws Exception {
-        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engineId)) {
-            CosyVoiceEngine engine;
-            LiveDraftVoices.Speaker voice;
-            synchronized (LOCK) {
-                engine = cosyvoice;
-                voice = LiveDraftVoices.speaker(LiveDraftVoices.ENGINE_COSYVOICE, voiceId);
-            }
-            if (engine == null || voice == null) {
-                throw new IllegalStateException("CosyVoice is not loaded");
-            }
-            engine.synthesize(text, voice, new CosyVoiceEngine.PcmSink() {
-                @Override
-                public boolean onSamples(float[] samples) {
-                    return writeSamples(samples, token);
-                }
-            });
+        if (!SimultaneousText.isAudible(text)) {
             return;
         }
-        final OfflineTts tts;
-        final int speaker;
-        final float rate;
+        int produced = synthesizeOnce(context, text, token);
+        if (produced > 0 || token != currentGeneration()) {
+            return;
+        }
+        Log.w(TAG, "CosyVoice produced no audio, reopening the session");
+        reopenEngine(context, token);
+        if (token != currentGeneration()) {
+            return;
+        }
+        synthesizeOnce(context, text, token);
+    }
+
+    private static int synthesizeOnce(Context context, String text, final int token) throws Exception {
+        final int[] produced = new int[1];
+        PcmSink sink = new PcmSink() {
+            @Override
+            public boolean onSamples(float[] samples) {
+                if (samples != null) {
+                    produced[0] += samples.length;
+                }
+                return writeSamples(speedUp(samples), token);
+            }
+        };
+        CosyVoiceQuant.Session engine;
+        String code;
+        String voiceGender;
         synchronized (LOCK) {
-            tts = kokoro;
-            speaker = voiceId;
+            if (token != generation) {
+                return produced[0];
+            }
+            engine = cosyvoice;
+            code = language;
+            voiceGender = gender;
+        }
+        if (engine == null) {
+            throw new IllegalStateException("CosyVoice is not loaded");
+        }
+        prepareVoice(context, engine, code, voiceGender);
+        engine.synthesize(text, sink);
+        return produced[0];
+    }
+
+    /** Reloading the voice between sentences resets the decoder and stalls the next sentence. */
+    private static void prepareVoice(Context context, CosyVoiceQuant.Session engine, String code, String voiceGender) {
+        File upload = LiveDraftVoices.uploadFile(context, voiceGender);
+        long uploadLength = upload.isFile() ? upload.length() : 0L;
+        String key = code + "\n" + voiceGender + "\n" + uploadLength;
+        synchronized (LOCK) {
+            if (key.equals(preparedVoice)) {
+                return;
+            }
+        }
+        engine.prepare(code, voiceGender);
+        if (uploadLength > 0) {
+            engine.useUpload(upload);
+        }
+        synchronized (LOCK) {
+            preparedVoice = key;
+        }
+    }
+
+    private static void reopenEngine(Context context, int token) throws Exception {
+        synchronized (LOCK) {
+            if (token != generation) {
+                return;
+            }
+            closeEnginesLocked();
+            openEngine(context, LiveDraftVoices.ENGINE_COSYVOICE);
+        }
+    }
+
+    private static PcmStreamPlayer playerFor(int token) {
+        synchronized (LOCK) {
+            return token == generation ? player : null;
+        }
+    }
+
+    private static float[] speedUp(float[] samples) {
+        float rate;
+        synchronized (LOCK) {
             rate = speed;
         }
-        if (tts == null) {
-            throw new IllegalStateException("Kokoro is not loaded");
+        if (samples == null || samples.length == 0 || rate == 1f) {
+            return samples;
         }
-        tts.generateWithCallback(text, speaker, rate, new Function1<float[], Integer>() {
-            @Override
-            public Integer invoke(float[] samples) {
-                return writeSamples(samples, token) ? 1 : 0;
-            }
-        });
+        int out = Math.max(1, Math.round(samples.length / rate));
+        float[] scaled = new float[out];
+        for (int i = 0; i < out; i++) {
+            float position = i * rate;
+            int left = Math.min((int) position, samples.length - 1);
+            int right = Math.min(left + 1, samples.length - 1);
+            float mix = position - left;
+            scaled[i] = samples[left] * (1f - mix) + samples[right] * mix;
+        }
+        return scaled;
     }
 
     private static boolean writeSamples(float[] samples, int token) {
@@ -266,114 +384,33 @@ public final class LiveDraftSpeaker {
     }
 
     private static int openEngine(Context context, String engine) throws Exception {
-        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
-            if (kokoro != null) {
-                kokoro.release();
-                kokoro = null;
+        if (!LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
+            throw new IllegalStateException("CosyVoice is not selected");
+        }
+        if (!CosyVoiceQuant.available()) {
+            throw new IllegalStateException("CosyVoice runtime is not available");
+        }
+        if (cosyvoice == null || !LiveDraftVoices.ENGINE_COSYVOICE.equals(loadedEngine)) {
+            if (cosyvoice != null) {
+                cosyvoice.close();
             }
-            if (cosyvoice == null || !LiveDraftVoices.ENGINE_COSYVOICE.equals(loadedEngine)) {
-                if (cosyvoice != null) {
-                    cosyvoice.close();
-                }
-                cosyvoice = new CosyVoiceEngine(LiveDraftVoices.modelDir(context, LiveDraftVoices.ENGINE_COSYVOICE));
-                loadedEngine = LiveDraftVoices.ENGINE_COSYVOICE;
-            }
-            return CosyVoiceEngine.SAMPLE_RATE;
+            cosyvoice = new CosyVoiceQuant.Session(LiveDraftVoices.modelDir(context, LiveDraftVoices.ENGINE_COSYVOICE));
+            loadedEngine = LiveDraftVoices.ENGINE_COSYVOICE;
         }
-        if (cosyvoice != null) {
-            cosyvoice.close();
-            cosyvoice = null;
-        }
-        if (kokoro == null || !LiveDraftVoices.ENGINE_KOKORO.equals(loadedEngine)) {
-            if (kokoro != null) {
-                kokoro.release();
-                kokoro = null;
-            }
-            kokoro = loadKokoro(context);
-            loadedEngine = LiveDraftVoices.ENGINE_KOKORO;
-        }
-        return kokoro.sampleRate();
-    }
-
-    private static OfflineTts loadKokoro(Context context) {
-        File dir = LiveDraftVoices.modelDir(context, LiveDraftVoices.ENGINE_KOKORO);
-        File model = LiveDraftVoices.findNamed(dir, "model.int8.onnx");
-        if (model == null) {
-            model = LiveDraftVoices.findNamed(dir, "model.onnx");
-        }
-        File voices = LiveDraftVoices.findNamed(dir, "voices.bin");
-        File tokens = LiveDraftVoices.findNamed(dir, "tokens.txt");
-        File dataDir = LiveDraftVoices.findDirectory(dir, "espeak-ng-data");
-        File dict = LiveDraftVoices.findDirectory(dir, "dict");
-        if (model == null || voices == null || tokens == null) {
-            throw new IllegalStateException("Kokoro files are incomplete");
-        }
-        StringBuilder lexicon = new StringBuilder();
-        File us = LiveDraftVoices.findNamed(dir, "lexicon-us-en.txt");
-        File zh = LiveDraftVoices.findNamed(dir, "lexicon-zh.txt");
-        if (us != null) {
-            lexicon.append(us.getAbsolutePath());
-        }
-        if (zh != null) {
-            if (lexicon.length() > 0) {
-                lexicon.append(',');
-            }
-            lexicon.append(zh.getAbsolutePath());
-        }
-        OfflineTtsKokoroModelConfig kokoroConfig = new OfflineTtsKokoroModelConfig();
-        kokoroConfig.setModel(model.getAbsolutePath());
-        kokoroConfig.setVoices(voices.getAbsolutePath());
-        kokoroConfig.setTokens(tokens.getAbsolutePath());
-        kokoroConfig.setDataDir(dataDir == null ? "" : dataDir.getAbsolutePath());
-        kokoroConfig.setLexicon(lexicon.toString());
-        kokoroConfig.setDictDir(dict == null ? "" : dict.getAbsolutePath());
-        kokoroConfig.setLengthScale(1f);
-        OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
-        modelConfig.setVits(new OfflineTtsVitsModelConfig());
-        modelConfig.setMatcha(new OfflineTtsMatchaModelConfig());
-        modelConfig.setKokoro(kokoroConfig);
-        modelConfig.setZipvoice(new OfflineTtsZipVoiceModelConfig());
-        modelConfig.setKitten(new OfflineTtsKittenModelConfig());
-        modelConfig.setPocket(new OfflineTtsPocketModelConfig());
-        modelConfig.setSupertonic(new OfflineTtsSupertonicModelConfig());
-        modelConfig.setNumThreads(2);
-        modelConfig.setDebug(false);
-        modelConfig.setProvider("cpu");
-        OfflineTtsConfig config = new OfflineTtsConfig();
-        config.setModel(modelConfig);
-        config.setRuleFsts(ruleFsts(dir));
-        config.setRuleFars("");
-        config.setMaxNumSentences(1);
-        config.setSilenceScale(0.2f);
-        return new OfflineTts(null, config);
-    }
-
-    private static String ruleFsts(File dir) {
-        StringBuilder rules = new StringBuilder();
-        String[] names = new String[]{"date-zh.fst", "phone-zh.fst", "number-zh.fst"};
-        for (String name : names) {
-            File file = LiveDraftVoices.findNamed(dir, name);
-            if (file == null) {
-                continue;
-            }
-            if (rules.length() > 0) {
-                rules.append(',');
-            }
-            rules.append(file.getAbsolutePath());
-        }
-        return rules.toString();
+        return CosyVoiceQuant.SAMPLE_RATE;
     }
 
     private static void pullLocked(boolean finished) {
         String piece;
         while ((piece = buffer.pull(finished)) != null) {
-            if (piece.trim().length() > 0) {
+            if (SimultaneousText.isAudible(piece)) {
                 PIECES.addLast(piece);
             }
         }
     }
 
-    private static void stopLocked() {
+    /** Drops the current utterance. The caller releases the returned player outside {@link #LOCK}. */
+    private static PcmStreamPlayer stopLocked() {
         generation++;
         PIECES.clear();
         buffer = new LiveDraftBuffer();
@@ -384,24 +421,22 @@ public final class LiveDraftSpeaker {
         }
         PcmStreamPlayer current = player;
         player = null;
+        return current;
+    }
+
+    private static void releasePlayer(PcmStreamPlayer current) {
         if (current != null) {
             current.release();
         }
     }
 
     private static void closeEnginesLocked() {
-        if (kokoro != null) {
-            try {
-                kokoro.release();
-            } catch (Throwable ignored) {
-            }
-            kokoro = null;
-        }
         if (cosyvoice != null) {
             cosyvoice.close();
             cosyvoice = null;
         }
         loadedEngine = null;
+        preparedVoice = "";
     }
 
     private static int currentGeneration() {

@@ -127,7 +127,7 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
         leftMicLanguage = view.findViewById(R.id.textButton1);
         rightMicLanguage = view.findViewById(R.id.textButton2);
         settingsButton = view.findViewById(R.id.settingsButton);
-        description.setText(R.string.description_walkie_talkie);
+        showModelLoading(1, 2);
         deactivateInputs(DeactivableButton.DEACTIVATED);
         //container.setVisibility(View.INVISIBLE);  //we make the UI invisible until the restore of the attributes from the service (to avoid instant changes of the UI).
         Global globalApp = (Global) requireActivity().getApplication();
@@ -462,9 +462,11 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
                 Log.d("restore_attributes", "sound");
 
                 if(!Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)){
+                    hideModelLoading();
                     deactivateInputs(DeactivableButton.DEACTIVATED_FOR_MISSING_MIC_PERMISSION);
                 } else {
                     if (isMicActivated) {
+                        showWalkieIdle();
                         if (!microphone.isMute()) {
                             if(GuiTools.isTalkBackActive(global)) {
                                 // if talkBack is used we delay the inputs and mic activations to have the time to read the initial brief.
@@ -478,11 +480,21 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
                             activateInputs(false);
                         }
                     } else {
+                        showModelLoading(1, 2);
                         deactivateInputs(DeactivableButton.DEACTIVATED);
                     }
                 }
             }
         });
+    }
+
+    private void showWalkieIdle() {
+        finishModelLoading();
+        if (description == null || (mAdapter != null && mAdapter.getItemCount() > 0)) {
+            return;
+        }
+        description.setText(R.string.description_walkie_talkie);
+        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.light_gray));
     }
 
 
@@ -759,8 +771,16 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
         }
 
         @Override
+        public void onModelLoading(int progress, int max) {
+            if (Tools.hasPermissions(activity, Global.REQUIRED_PERMISSIONS_VOICE)) {
+                showModelLoading(progress, max);
+            }
+        }
+
+        @Override
         public void onMicActivated() {
             super.onMicActivated();
+            showWalkieIdle();
             Log.d("mic", "onMicActivated");
             if(!microphone.isActivated()) {
                 microphone.activate(false);

@@ -1,7 +1,10 @@
 package nie.translator.rtranslator.tools;
 
+import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.SystemClock;
 
@@ -15,36 +18,36 @@ final class PcmStreamPlayer {
         void onDrained();
     }
 
+    private final Context appContext;
     private final PcmQueue queue;
     private final int sampleRate;
     private final Listener listener;
+    private final AudioAttributes attributes;
     private AudioTrack track;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
     private Thread thread;
     private volatile boolean cancelled;
     private int written;
 
-    PcmStreamPlayer(int sampleRate, Listener listener) {
+    PcmStreamPlayer(Context context, int sampleRate, Listener listener) {
+        this.appContext = context.getApplicationContext();
         this.sampleRate = sampleRate;
         this.listener = listener;
         this.queue = new PcmQueue(sampleRate);
+        this.attributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+    }
+
+    /** A sentence has finished synthesizing. Playback may start even when the clip is shorter than the prime. */
+    void sentenceReady() {
+        queue.sentenceReady();
     }
 
     void start() {
-        int minBuffer = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        int bytes = Math.max(minBuffer, sampleRate * 2 / 5);
-        track = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build())
-                .setAudioFormat(new AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build())
-                .setBufferSizeInBytes(Math.max(bytes, minBuffer))
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build();
+        track = buildTrack();
         thread = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -108,82 +111,146 @@ final class PcmStreamPlayer {
         }
     }
 
+    private AudioTrack buildTrack() {
+        int minBuffer = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        int bytes = Math.max(minBuffer, sampleRate * 2 / 5);
+        return new AudioTrack.Builder()
+                .setAudioAttributes(attributes)
+                .setAudioFormat(new AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build())
+                .setBufferSizeInBytes(Math.max(bytes, minBuffer))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build();
+    }
+
     private void play() {
-        AudioTrack audio = track;
-        if (audio == null) {
-            return;
-        }
-        boolean playing = false;
+        requestFocus();
         boolean started = false;
-        boolean resume = false;
         short[] buffer = new short[Math.max(1, sampleRate / 10)];
         try {
             while (!cancelled) {
-                boolean finished = queue.isFinished();
-                int queued = queue.queued();
-                if (!playing) {
-                    if (!PcmPlayback.shouldStart(queued, sampleRate, finished)) {
+                if (!started) {
+                    boolean finished = queue.isFinished();
+                    int queued = queue.queued();
+                    if (!canPlay(queued, finished, queue.isSentenceReady())) {
                         if (finished && queued == 0) {
                             break;
                         }
                         sleep();
                         continue;
                     }
-                    audio.play();
-                    playing = true;
-                    if (!started) {
-                        started = true;
-                        if (listener != null) {
-                            listener.onStarted();
-                        }
+                    AudioTrack opening = track;
+                    if (opening == null || opening.getState() != AudioTrack.STATE_INITIALIZED) {
+                        opening = replaceTrack();
                     }
-                } else if (PcmPlayback.shouldPause(queued, sampleRate, finished)) {
-                    audio.pause();
-                    playing = false;
-                    resume = true;
-                    sleep();
-                    continue;
+                    if (opening == null) {
+                        sleep();
+                        continue;
+                    }
+                    opening.play();
+                    started = true;
+                    if (listener != null) {
+                        listener.onStarted();
+                    }
                 }
-                int count = queue.read(buffer);
+                int count = queue.readWaiting(buffer);
                 if (count < 0 || cancelled) {
                     break;
                 }
                 if (count == 0) {
-                    if (queue.isFinished()) {
-                        break;
-                    }
-                    sleep();
-                    continue;
+                    break;
                 }
-                if (resume) {
-                    PcmPlayback.fadeIn(buffer, count, sampleRate);
-                    resume = false;
-                }
-                int offset = 0;
-                while (offset < count && !cancelled) {
-                    int wrote = audio.write(buffer, offset, count - offset);
-                    if (wrote <= 0) {
-                        break;
+                AudioTrack audio = track;
+                if (audio == null || !writeAll(audio, buffer, count)) {
+                    AudioTrack replaced = replaceTrack();
+                    if (replaced != null) {
+                        replaced.play();
+                        writeAll(replaced, buffer, count);
                     }
-                    offset += wrote;
-                    written += wrote;
                 }
             }
-            if (!cancelled && audio.getPlayState() == AudioTrack.PLAYSTATE_PAUSED && written > 0) {
-                audio.play();
-            }
-            if (!cancelled) {
+            AudioTrack audio = track;
+            if (!cancelled && audio != null && written > 0) {
+                if (audio.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
+                    audio.play();
+                }
                 waitForHead(audio);
             }
         } catch (Throwable ignored) {
         } finally {
-            try {
-                audio.pause();
-            } catch (Throwable ignored) {
+            AudioTrack audio = track;
+            if (audio != null) {
+                try {
+                    audio.pause();
+                } catch (Throwable ignored) {
+                }
             }
+            abandonFocus();
             if (!cancelled && listener != null) {
                 listener.onDrained();
             }
+        }
+    }
+
+    /** Opening audio waits for a short prime. A finished sentence plays as soon as it has samples. */
+    private boolean canPlay(int queued, boolean finished, boolean sentenceReady) {
+        if (PcmPlayback.shouldStart(queued, sampleRate, finished)) {
+            return true;
+        }
+        return sentenceReady && queued > 0;
+    }
+
+    private boolean writeAll(AudioTrack audio, short[] buffer, int count) {
+        int offset = 0;
+        while (offset < count && !cancelled) {
+            int wrote = audio.write(buffer, offset, count - offset);
+            if (wrote <= 0) {
+                return false;
+            }
+            offset += wrote;
+            written += wrote;
+        }
+        return true;
+    }
+
+    private AudioTrack replaceTrack() {
+        AudioTrack previous = track;
+        track = null;
+        if (previous != null) {
+            try {
+                previous.pause();
+                previous.flush();
+                previous.release();
+            } catch (Throwable ignored) {
+            }
+        }
+        try {
+            AudioTrack created = buildTrack();
+            track = created;
+            return created;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void requestFocus() {
+        audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager == null) {
+            return;
+        }
+        focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(attributes)
+                .build();
+        audioManager.requestAudioFocus(focusRequest);
+    }
+
+    private void abandonFocus() {
+        if (audioManager != null && focusRequest != null) {
+            audioManager.abandonAudioFocusRequest(focusRequest);
+            focusRequest = null;
         }
     }
 

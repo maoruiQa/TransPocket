@@ -33,6 +33,7 @@ import java.util.Locale;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.voice_translation._text_translation.TranslationFragment;
+import nie.translator.rtranslator.voice_translation.neural_networks.voice.MicSensitivity;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recorder;
 
 
@@ -81,7 +82,7 @@ public class SeekBarPreference extends Preference {
             public void onValueChange(Slider seekBar, float seekBarValue, boolean b) {
                 switch (mode) {
                     case MIC_SENSIBILITY_MODE:
-                        value.setText(String.format(Locale.US, "%d", (int) seekBarValue));
+                        value.setText(String.format(Locale.US, "%d%%", (int) seekBarValue));
                         break;
                     case SPEECH_TIMEOUT_MODE:
                         value.setText(String.format(Locale.US, "%.2f s", seekBarValue));
@@ -134,9 +135,10 @@ public class SeekBarPreference extends Preference {
         if (slider != null) {  //if onBindViewHolder was run before (and therefore failed to execute the code inside if(global!=null){} )
             switch (mode) {
                 case MIC_SENSIBILITY_MODE:
-                    defaultValue = 100;
+                    defaultValue = MicSensitivity.DEFAULT;
                     slider.setStepSize(1);
-                    slider.setValueTo(100);
+                    slider.setValueFrom(0);
+                    slider.setValueTo(global.isMicSensitivityExtended() ? MicSensitivity.EXTENDED_MAX : MicSensitivity.STANDARD_MAX);
                     title.setText(R.string.preference_title_mic_sensitivity);
                     summary.setText(R.string.preference_description_mic_sensitivity);
                     break;
@@ -181,8 +183,7 @@ public class SeekBarPreference extends Preference {
     public void setSeekBarValue() {
         switch (mode) {
             case MIC_SENSIBILITY_MODE: {
-                int value = global.getMicSensitivity();
-                slider.setValue(value);
+                slider.setValue(MicSensitivity.clamp(global.getMicSensitivity(), global.isMicSensitivityExtended()));
             }
             break;
 
@@ -210,12 +211,29 @@ public class SeekBarPreference extends Preference {
         }
     }
 
+    /**
+     * Extended sensitivity changes the upper end of this slider.
+     * The value is lowered before the upper end, because the slider rejects a value past that end.
+     */
+    public void applyMicSensitivityRange(boolean extended) {
+        if (slider == null || mode != MIC_SENSIBILITY_MODE) {
+            return;
+        }
+        float max = extended ? MicSensitivity.EXTENDED_MAX : MicSensitivity.STANDARD_MAX;
+        if (slider.getValue() > max) {
+            slider.setValue(max);
+        }
+        if (slider.getValueTo() != max) {
+            slider.setValueTo(max);
+        }
+    }
+
     private void saveValue() {
         if (global != null) {
             // saving the value of the textView value
             switch (mode) {
                 case MIC_SENSIBILITY_MODE:
-                    global.setMicSensitivity(Integer.parseInt(value.getText().toString()));
+                    global.setMicSensitivity(Math.round(slider.getValue()));
                     break;
                 case SPEECH_TIMEOUT_MODE:
                     global.setSpeechTimeout((int) (Float.parseFloat(value.getText().toString().replace(" s", "")) * 1000));

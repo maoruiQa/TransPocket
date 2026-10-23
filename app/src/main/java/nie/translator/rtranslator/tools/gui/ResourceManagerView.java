@@ -8,7 +8,10 @@ import android.icu.text.DecimalFormatSymbols;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.ImageView;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -50,6 +53,7 @@ public class ResourceManagerView extends ConstraintLayout {
     private ImageView playIcon;
     private ImageView pauseIcon;
     private ImageView errorIcon;
+    private Spinner quantSpinner;
     private CustomAnimator animator = new CustomAnimator();
     private Animator animation;
 
@@ -83,6 +87,7 @@ public class ResourceManagerView extends ConstraintLayout {
         playIcon = findViewById(R.id.playImage);
         pauseIcon = findViewById(R.id.pauseImage);
         errorIcon = findViewById(R.id.errorIcon);
+        quantSpinner = findViewById(R.id.quantSpinner);
 
         //initialize buttonDelete reduced measures
         ConstraintLayout.LayoutParams layoutParams = (ConstraintLayout.LayoutParams) buttonDelete.getLayoutParams();
@@ -298,6 +303,32 @@ public class ResourceManagerView extends ConstraintLayout {
 
     public int getModelSizeMb() {
         return modelSizeMb;
+    }
+
+    public void setQuantChoices(String[] labels, int selectedIndex, QuantListener listener) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), R.layout.item_asr_quant, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        quantSpinner.setOnItemSelectedListener(null);
+        quantSpinner.setAdapter(adapter);
+        quantSpinner.setSelection(Math.max(0, Math.min(selectedIndex, labels.length - 1)));
+        quantSpinner.setContentDescription(getContext().getString(R.string.asr_quantization));
+        quantSpinner.setVisibility(VISIBLE);
+        quantSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (listener != null) {
+                    listener.onQuantSelected(position);
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+    }
+
+    public interface QuantListener {
+        void onQuantSelected(int index);
     }
 
     public void setModelSize(float modelSizeMb) {
