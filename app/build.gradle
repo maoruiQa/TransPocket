@@ -157,7 +157,8 @@ dependencies {
     //JWS parser
     implementation group: 'com.nimbusds', name: 'nimbus-jose-jwt', version: '5.1'
     implementation files('libs/sqlite4java-android-release.aar')
-    // Live Draft voices. The AAR's libonnxruntime.so is removed so the app keeps onnxruntime-android 1.30.
+    // Live Draft voices. Sherpa's ONNX Runtime 1.28.2 is stored as libort_sherpa.so
+    // so it does not replace onnxruntime-android 1.30 used by recognition and translation.
     implementation files('libs/sherpa-onnx-1.13.8.aar')
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.24'
     implementation 'org.apache.commons:commons-compress:1.27.1'

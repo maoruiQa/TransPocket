@@ -127,7 +127,12 @@ public final class LiveDraftSpeaker {
             notifyError(request);
             return;
         }
-        if (samples == null || samples.length == 0 || request.generation != currentGeneration()) {
+        if (request.generation != currentGeneration()) {
+            return;
+        }
+        if (samples == null || samples.length == 0 || sampleRate <= 0) {
+            Log.e(TAG, "Live Draft produced no audio for " + request.code);
+            notifyError(request);
             return;
         }
         short[] pcm = new short[samples.length];
@@ -140,22 +145,15 @@ public final class LiveDraftSpeaker {
             }
             pcm[i] = (short) (sample * 32767f);
         }
-        int minBuffer = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
         AudioTrack audio;
+        boolean streaming;
         try {
-            audio = new AudioTrack.Builder()
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build())
-                    .setAudioFormat(new AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build())
-                    .setBufferSizeInBytes(Math.max(minBuffer, sampleRate))
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build();
+            audio = openStatic(sampleRate, pcm);
+            streaming = false;
+            if (audio == null) {
+                audio = openStream(sampleRate);
+                streaming = true;
+            }
         } catch (Throwable error) {
             Log.e(TAG, "AudioTrack failed", error);
             notifyError(request);
@@ -169,21 +167,35 @@ public final class LiveDraftSpeaker {
             track = audio;
         }
         try {
-            audio.play();
-            notifyStart(request);
-            int offset = 0;
-            while (offset < pcm.length && request.generation == currentGeneration()) {
-                int wrote = audio.write(pcm, offset, Math.min(pcm.length - offset, 4096));
+            if (streaming) {
+                // Write before play. An empty stream leaves PLAYSTATE_PLAYING on some phones,
+                // and the clip is released before it is heard.
+                int priming = Math.min(pcm.length, 4096);
+                int wrote = audio.write(pcm, 0, priming);
                 if (wrote <= 0) {
-                    break;
+                    notifyError(request);
+                    return;
                 }
-                offset += wrote;
+                audio.play();
+                if (audio.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) {
+                    notifyError(request);
+                    return;
+                }
+                notifyStart(request);
+                int offset = wrote;
+                while (offset < pcm.length && request.generation == currentGeneration()) {
+                    wrote = audio.write(pcm, offset, Math.min(pcm.length - offset, 4096));
+                    if (wrote <= 0) {
+                        break;
+                    }
+                    offset += wrote;
+                }
+            } else {
+                audio.play();
+                notifyStart(request);
             }
-            long deadline = SystemClock.elapsedRealtime() + (pcm.length * 1000L / Math.max(sampleRate, 1)) + 800L;
-            while (request.generation == currentGeneration()
-                    && audio.getPlayState() == AudioTrack.PLAYSTATE_PLAYING
-                    && audio.getPlaybackHeadPosition() < pcm.length
-                    && SystemClock.elapsedRealtime() < deadline) {
+            long deadline = SystemClock.elapsedRealtime() + (pcm.length * 1000L / sampleRate) + 200L;
+            while (request.generation == currentGeneration() && SystemClock.elapsedRealtime() < deadline) {
                 try {
                     Thread.sleep(20);
                 } catch (InterruptedException interrupted) {
@@ -211,6 +223,56 @@ public final class LiveDraftSpeaker {
         if (request.generation == currentGeneration()) {
             notifyDone(request);
         }
+    }
+
+    /** Whole clip is written before play. Returns null when the clip is too long for a static buffer. */
+    private static AudioTrack openStatic(int sampleRate, short[] pcm) {
+        int bytes = pcm.length * 2;
+        if (bytes <= 0 || bytes > 2 * 1024 * 1024) {
+            return null;
+        }
+        AudioTrack audio = null;
+        try {
+            audio = track(sampleRate, bytes, AudioTrack.MODE_STATIC);
+            if (audio.write(pcm, 0, pcm.length) != pcm.length) {
+                audio.release();
+                return null;
+            }
+            return audio;
+        } catch (Throwable error) {
+            Log.w(TAG, "MODE_STATIC unavailable", error);
+            if (audio != null) {
+                try {
+                    audio.release();
+                } catch (Throwable ignored) {
+                }
+            }
+            return null;
+        }
+    }
+
+    private static AudioTrack openStream(int sampleRate) {
+        int minBuffer = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        if (minBuffer < 1) {
+            minBuffer = sampleRate;
+        }
+        return track(sampleRate, Math.max(minBuffer, sampleRate), AudioTrack.MODE_STREAM);
+    }
+
+    private static AudioTrack track(int sampleRate, int bytes, int mode) {
+        return new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build())
+                .setAudioFormat(new AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build())
+                .setBufferSizeInBytes(bytes)
+                .setTransferMode(mode)
+                .build();
     }
 
     private static OfflineTts engine(Context context, String code) {

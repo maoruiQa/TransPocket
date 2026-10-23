@@ -643,6 +643,14 @@ public class TranslationFragment extends Fragment {
 
             @Override
             public void onError(String s) {
+                if(((int) ttsInputButton.getTag()) == R.drawable.stop_icon){
+                    ttsInputButton.setImageResource(R.drawable.sound_icon);
+                    ttsInputButton.setTag(R.drawable.sound_icon);
+                }
+                if(((int) ttsOutputButton.getTag()) == R.drawable.stop_icon){
+                    ttsOutputButton.setImageResource(R.drawable.sound_icon);
+                    ttsOutputButton.setTag(R.drawable.sound_icon);
+                }
             }
         };
         initializeTTS();
