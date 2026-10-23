@@ -305,6 +305,8 @@ public class DownloadFragment extends Fragment {
             groups.add(global.getMadladDownloadInfo());
         } else if (mode == nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator.TRANSLATEGEMMA) {
             groups.add(global.getTranslateGemmaDownloadInfo());
+        } else if (mode == nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator.QWEN35) {
+            groups.add(global.getQwen35DownloadInfo());
         }
         if (global.isUseTatoeba()) {
             groups.add(global.getTatoebaDownloadInfo());

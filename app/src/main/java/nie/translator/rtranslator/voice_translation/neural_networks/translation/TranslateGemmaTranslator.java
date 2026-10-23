@@ -7,51 +7,40 @@ import nie.translator.rtranslator.tools.CustomLocale;
 
 /**
  * Prompt for google/translategemma-4b-it. The weights are the community Q4_K_M GGUF.
- * Generation goes through the native llama.cpp bridge when that library is loaded.
+ * The raw prompt is sent to the shared GGUF runtime. The file's chat template is not applied.
  */
 public final class TranslateGemmaTranslator {
-    private static boolean libraryLoaded;
-    private static boolean libraryFailed;
-
     private TranslateGemmaTranslator() {
     }
 
-    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage) throws Exception {
+    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage) {
         File model = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
         if (!model.isFile()) {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
-        String source = inputLanguage.getDisplayNameWithoutTTS();
-        String target = outputLanguage.getDisplayNameWithoutTTS();
-        String prompt = "<start_of_turn>user\n"
+        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage), 512);
+    }
+
+    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage) {
+        String source = GgufTranslator.languageLabel(inputLanguage);
+        String target = GgufTranslator.languageLabel(outputLanguage);
+        String sourceName = languageName(source);
+        String targetName = languageName(target);
+        return "<bos><start_of_turn>user\n"
                 + "You are a professional " + source + " to " + target + " translator. "
-                + "Translate the following " + source + " text into " + target + ". "
-                + "Output only the translation.\n"
+                + "Your goal is to accurately convey the meaning and nuances of the original " + sourceName + " text "
+                + "while adhering to " + targetName + " grammar, vocabulary, and cultural sensitivities.\n"
+                + "Produce only the " + targetName + " translation, without any additional explanations or commentary. "
+                + "Please translate the following " + sourceName + " text into " + targetName + ":\n\n"
                 + text
                 + "<end_of_turn>\n<start_of_turn>model\n";
-        ensureLibrary();
-        String generated = nativeTranslate(model.getAbsolutePath(), prompt, 512);
-        if (generated == null) {
-            throw new IllegalStateException("TranslateGemma returned no text");
-        }
-        return generated.trim();
     }
 
-    private static void ensureLibrary() {
-        if (libraryLoaded || libraryFailed) {
-            if (libraryFailed) {
-                throw new IllegalStateException("TranslateGemma native runtime is not available");
-            }
-            return;
+    private static String languageName(String label) {
+        int split = label.lastIndexOf(" (");
+        if (split > 0) {
+            return label.substring(0, split);
         }
-        try {
-            System.loadLibrary("gguf_translator");
-            libraryLoaded = true;
-        } catch (UnsatisfiedLinkError error) {
-            libraryFailed = true;
-            throw new IllegalStateException("TranslateGemma native runtime is not available", error);
-        }
+        return label;
     }
-
-    private static native String nativeTranslate(String modelPath, String prompt, int maxTokens);
 }

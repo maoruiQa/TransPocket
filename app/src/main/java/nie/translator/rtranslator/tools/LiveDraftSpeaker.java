@@ -51,11 +51,13 @@ public final class LiveDraftSpeaker {
         if (text == null || text.length() == 0 || !canSpeak(context, language)) {
             return TextToSpeech.ERROR;
         }
-        float rate = speed;
-        if (rate < 0.5f) {
-            rate = 0.5f;
-        } else if (rate > 2f) {
-            rate = 2f;
+        // Piper at length scale 1 is slower than system TTS at the same slider position.
+        // sherpa 1.13.8 also ignores speed when it is exactly 1 and keeps length_scale.
+        float rate = speed * 1.25f;
+        if (rate < 0.55f) {
+            rate = 0.55f;
+        } else if (rate > 2.5f) {
+            rate = 2.5f;
         }
         Context app = context.getApplicationContext();
         synchronized (LOCK) {

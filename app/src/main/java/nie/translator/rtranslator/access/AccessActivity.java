@@ -217,6 +217,7 @@ public class AccessActivity extends GeneralActivity {
                 global.getHyMtDownloadInfo(),
                 global.getMadladDownloadInfo(),
                 global.getTranslateGemmaDownloadInfo(),
+                global.getQwen35DownloadInfo(),
                 global.getQwen3Asr06DownloadInfo(),
                 global.getQwen3Asr17DownloadInfo(),
                 global.getWhisperTurboDownloadInfo(),

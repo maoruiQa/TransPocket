@@ -552,10 +552,7 @@ class Qwen3AsrEngine {
 
     private static TensorCopy copy(OnnxTensor tensor) throws OrtException {
         long[] shape = tensor.getInfo().getShape();
-        FloatBuffer buffer = tensor.getFloatBuffer();
-        float[] data = new float[buffer.remaining()];
-        buffer.get(data);
-        return new TensorCopy(shape, data);
+        return new TensorCopy(shape, OnnxFloats.toFloats(tensor));
     }
 
     private static void closeSession(OrtSession session) {

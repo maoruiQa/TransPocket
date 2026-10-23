@@ -81,6 +81,7 @@ public class Translator extends NeuralNetworkApi {
     public static final int MOZILLA = 7;
     public static final int HY_MT = 8;
     public static final int TRANSLATEGEMMA = 11;
+    public static final int QWEN35 = 12;
     private int mode = -1;
     private Tokenizer tokenizer;
     private OrtEnvironment onnxEnv;
@@ -131,11 +132,12 @@ public class Translator extends NeuralNetworkApi {
                     if (hyLanguagesInfo.isEmpty()) {
                         initializeHyLanguagesInfo(global);
                     }
+                    int oldMode = Translator.this.mode;
+                    // getLanguages reads translator.getMode(). That value stays -1 until this assignment.
+                    Translator.this.mode = modelMode;
                     if (languageResourcesManager == null) {
                         global.getLanguages(Global.RTranslatorMode.TEXT_TRANSLATION_MODE, false);
                     }
-                    int oldMode = Translator.this.mode;
-                    Translator.this.mode = modelMode;
                     if(oldMode != modelMode) {
                         /** CLEANUP **/
                         if (oldMode != -1) {
@@ -145,13 +147,19 @@ public class Translator extends NeuralNetworkApi {
 
                         /** INITIALIZATION **/
                         // translation onnx model initialization
-                        if (mode != MOZILLA && mode != TRANSLATEGEMMA) {
+                        if (mode != MOZILLA && !isGgufMode(mode)) {
                             onnxTranslationModelInitialization();
                         }
                         if (mode == TRANSLATEGEMMA) {
                             File gemmaFile = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
                             if (!gemmaFile.isFile()) {
                                 throw new IOException("TranslateGemma file is missing");
+                            }
+                        }
+                        if (mode == QWEN35) {
+                            File qwenFile = new File(global.getFilesDir(), "Translation/Qwen35/Qwen3.5-0.8B-Q4_K_M.gguf");
+                            if (!qwenFile.isFile()) {
+                                throw new IOException("Qwen3.5 file is missing");
                             }
                         }
                     }
@@ -200,7 +208,20 @@ public class Translator extends NeuralNetworkApi {
             }
         } else if(mode == HY_MT) {
             decoderSession.close();
+        } else if (isGgufMode(mode)) {
+            GgufTranslator.release();
         }
+    }
+
+    private static boolean isGgufMode(int mode) {
+        return mode == TRANSLATEGEMMA || mode == QWEN35;
+    }
+
+    private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode) {
+        if (performMode == QWEN35) {
+            return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage);
+        }
+        return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage);
     }
 
     private void onnxTranslationModelInitialization() throws OrtException, IOException {
@@ -736,15 +757,15 @@ public class Translator extends NeuralNetworkApi {
                 return;
             }
 
-            if (performMode == TRANSLATEGEMMA) {
+            if (isGgufMode(performMode)) {
                 try {
-                    String translated = TranslateGemmaTranslator.translate(global, textToTranslate, inputLanguage, outputLanguage);
+                    String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode);
                     final String resultText = translated;
                     if (responseListener != null) {
                         mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, resultText, null, incrementCurrentResultID(), true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
                     }
                 } catch (Exception gemmaError) {
-                    android.util.Log.e("translation_error", "TranslateGemma failed", gemmaError);
+                    android.util.Log.e("translation_error", "GGUF translation failed", gemmaError);
                     if (responseListener != null) {
                         mainHandler.post(() -> responseListener.onFailure(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0));
                     } else {
@@ -902,8 +923,8 @@ public class Translator extends NeuralNetworkApi {
         }
         String hyContext = performMode == HY_MT ? contextSource : null;
         String finalResult;
-        if (performMode == TRANSLATEGEMMA) {
-            finalResult = TranslateGemmaTranslator.translate(global, modelText, inputLanguage, outputLanguage);
+        if (isGgufMode(performMode)) {
+            finalResult = translateWithGguf(modelText, inputLanguage, outputLanguage, performMode);
         } else if (performMode == MOZILLA) {
             synchronized (langResourcesLock) {
                 finalResult = BergamotTranslator.translateMultiple(new String[]{modelText}, inputLanguage, outputLanguage)[0];
@@ -1914,10 +1935,13 @@ public class Translator extends NeuralNetworkApi {
                 } else {
                     document = documentBuilder.parse(context.getResources().openRawResource(R.raw.nllb_supported_languages_all));
                 }
-            }else if (mode == HY_MT || mode == TRANSLATEGEMMA) {
+            }else if (mode == HY_MT || mode == TRANSLATEGEMMA || mode == QWEN35) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.hy_mt_supported_languages));
             }else if (mode == MOZILLA) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.mozilla_supported_languages));
+            }
+            if (document == null) {
+                return languages;
             }
             NodeList list = document.getElementsByTagName("code");
             for (int i = 0; i < list.getLength(); i++) {

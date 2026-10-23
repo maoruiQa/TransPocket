@@ -287,10 +287,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
         // recycleResult is false
         SharedPreferences sharedPreferences = getSharedPreferences("default", Context.MODE_PRIVATE);
-        int mode;
-        if(translator != null){
-            mode = translator.getMode();
-        }else{
+        int mode = translator != null ? translator.getMode() : -1;
+        if (mode < 0) {
             mode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
         }
         boolean qualityLow = sharedPreferences.getBoolean("languagesNNQualityLow", false);
@@ -440,6 +438,19 @@ public class Global extends Application implements DefaultLifecycleObserver {
                         "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q4_K_M.gguf",
                         downloadFolder,
                         2431600,
+                        false,
+                        false)
+        });
+    }
+
+    public DownloadGroupInfo getQwen35DownloadInfo() {
+        String downloadFolder = getFilesDir().getAbsolutePath() + "/Translation/Qwen35";
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo(
+                        "Qwen3.5-0.8B-Q4_K_M.gguf",
+                        "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
+                        downloadFolder,
+                        545792,
                         false,
                         false)
         });
@@ -1069,7 +1080,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public int getMicSensitivity() {
         if (micSensitivity == -1) {
             final SharedPreferences sharedPreferences = this.getSharedPreferences("default", Context.MODE_PRIVATE);
-            micSensitivity = sharedPreferences.getInt("micSensibility", 50);
+            micSensitivity = sharedPreferences.getInt("micSensibility", 100);
             setAmplitudeThreshold(micSensitivity);
         }
         return micSensitivity;

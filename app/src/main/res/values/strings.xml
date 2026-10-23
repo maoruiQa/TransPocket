@@ -232,6 +232,10 @@
     <string name="title_model_gemma">TranslateGemma</string>
     <string name="description_model_gemma">Google TranslateGemma 4B instruction model, Q4_K_M GGUF of google/translategemma-4b-it. Highest quality of the on-device choices, and it needs about 4 GB of memory. Gemma terms apply.</string>
     <string name="error_missing_gemma">Download TranslateGemma before selecting it.</string>
+    <string name="model_recommendation_qwen35">Recommended: Qwen3.5 0.8B. This phone has about %1$s GB of memory and %2$s GB free, so the smaller Qwen3.5 0.8B fits.</string>
+    <string name="title_model_qwen35">Qwen3.5 0.8B</string>
+    <string name="description_model_qwen35">Qwen3.5 0.8B instruction model, Q4_K_M GGUF. Smaller than TranslateGemma, and it needs about 1.4 GB of memory.</string>
+    <string name="error_missing_qwen35">Download Qwen3.5 0.8B before selecting it.</string>
     <string name="asr_model">Speech recognition</string>
     <string name="title_live_draft">Live Draft</string>
     <string name="description_live_draft">Optional. Choose a language to download an on-device voice. When that language\'s Live Draft model is on the phone, RTranslator speaks it instead of the system text-to-speech engine.</string>

@@ -200,6 +200,10 @@
     <string name="model_recommendation_hy">Рекомендовано: якість. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож HY-MT вміщується разом із розпізнаванням мовлення.</string>
     <string name="description_model_gemma">Інструкційна модель Google TranslateGemma 4B, GGUF Q4_K_M з google/translategemma-4b-it. Найвища якість серед варіантів на пристрої, потрібно близько 4 ГБ пам\'яті. Діють умови Gemma.</string>
     <string name="error_missing_gemma">Спершу завантажте TranslateGemma, потім виберіть її.</string>
+    <string name="model_recommendation_qwen35">Рекомендовано: Qwen3.5 0.8B. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож вміщується менша Qwen3.5 0.8B.</string>
+    <string name="title_model_qwen35">Qwen3.5 0.8B</string>
+    <string name="description_model_qwen35">Інструкційна модель Qwen3.5 0.8B, GGUF Q4_K_M. Менша за TranslateGemma, потрібно близько 1,4 ГБ пам\'яті.</string>
+    <string name="error_missing_qwen35">Спершу завантажте Qwen3.5 0.8B, потім виберіть її.</string>
     <string name="model_recommendation_madlad">Рекомендовано: Madlad. HY-MT затісно для цього телефона. Madlad вміщується і охоплює більше мов. Близько %1$s ГБ пам\'яті, %2$s ГБ вільно.</string>
     <string name="model_recommendation_mozilla">Рекомендовано: швидкодія. Пам\'яті або вільного місця мало (близько %1$s ГБ пам\'яті, %2$s ГБ вільно), тож легкі моделі Mozilla безпечніші. Перед продовженням завантажте принаймні одну мову.</string>
     <string name="model_recommendation_whisper_reduced"> Розпізнавання мовлення увімкнено в режимі меншої пам\'яті.</string>

@@ -210,6 +210,10 @@
     <string name="model_recommendation_hy">推薦：品質優先。這部手機大約有 %1$s GB 記憶體、%2$s GB 可用空間，可以同時跑 HY-MT 和語音辨識。</string>
     <string name="description_model_gemma">Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 Q4_K_M GGUF。裝置上品質最高的選項，大約需要 4 GB 記憶體。須遵守 Gemma 條款。</string>
     <string name="error_missing_gemma">請先下載 TranslateGemma，再選擇它。</string>
+    <string name="model_recommendation_qwen35">推薦：Qwen3.5 0.8B。這部手機大約有 %1$s GB 記憶體、%2$s GB 可用空間，放得下較小的 Qwen3.5 0.8B。</string>
+    <string name="title_model_qwen35">Qwen3.5 0.8B</string>
+    <string name="description_model_qwen35">Qwen3.5 0.8B 指令模型，Q4_K_M GGUF。比 TranslateGemma 小，大約需要 1.4 GB 記憶體。</string>
+    <string name="error_missing_qwen35">請先下載 Qwen3.5 0.8B，再選擇它。</string>
     <string name="asr_model">語音辨識</string>
     <string name="title_live_draft">Live Draft</string>
     <string name="description_live_draft">可選。勾選一種語言就會下載對應的本地語音。手機上已有這種語言的 Live Draft 模型時，朗讀會用它，不再用系統文字轉語音。</string>

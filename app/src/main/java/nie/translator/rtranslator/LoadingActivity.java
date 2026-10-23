@@ -390,6 +390,11 @@ public class LoadingActivity extends GeneralActivity {
                     return false;
                 }
                 break;
+            case Translator.QWEN35:
+                if(!DownloadManager.isDownloadCompleted(saved, global.getQwen35DownloadInfo())){
+                    return false;
+                }
+                break;
         }
         // check of Mozilla for voice translation modes preference
         if(translationMode != Translator.MOZILLA && global.isUseMozillaForVoiceTranslation() && !checkMozillaModelsPresence(saved)){
@@ -435,6 +440,9 @@ public class LoadingActivity extends GeneralActivity {
         if(DownloadManager.isDownloadCompleted(saved, global.getTranslateGemmaDownloadInfo())){
             availableModels.add(Translator.TRANSLATEGEMMA);
         }
+        if(DownloadManager.isDownloadCompleted(saved, global.getQwen35DownloadInfo())){
+            availableModels.add(Translator.QWEN35);
+        }
         if(!availableModels.contains(translationMode)){
             int newTranslationMode = -1;
             if(availableModels.contains(Translator.MOZILLA)){
@@ -443,6 +451,8 @@ public class LoadingActivity extends GeneralActivity {
                 newTranslationMode = Translator.HY_MT;
             }else if(availableModels.contains(Translator.TRANSLATEGEMMA)){
                 newTranslationMode = Translator.TRANSLATEGEMMA;
+            }else if(availableModels.contains(Translator.QWEN35)){
+                newTranslationMode = Translator.QWEN35;
             }else if(availableModels.contains(Translator.MADLAD_CACHE)){
                 newTranslationMode = Translator.MADLAD_CACHE;
             }

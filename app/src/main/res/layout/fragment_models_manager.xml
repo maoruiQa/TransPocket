@@ -192,6 +192,39 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content">
                         <RadioButton
+                            android:id="@+id/radioQwen35"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:layout_marginBottom="16dp"
+                            android:contentDescription="@string/description_model_qwen35"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="0.0"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintVertical_bias="0.0" />
+
+                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
+                            android:id="@+id/modelQwen35"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginEnd="16dp"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toEndOf="@+id/radioQwen35"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:modelDescription="@string/description_model_qwen35"
+                            app:modelSize="533"
+                            app:modelTitle="@string/title_model_qwen35" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <RadioButton
                             android:id="@+id/radioGemma"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"

@@ -74,6 +74,7 @@ public class ModelManagerFragment extends Fragment {
     private static int HY_RAM_CONSUMPTION_MB = 1900;
     private static int MADLAD_RAM_CONSUMPTION_MB = 1800;
     private static int GEMMA_RAM_CONSUMPTION_MB = 3600;
+    private static int QWEN35_RAM_CONSUMPTION_MB = 1400;
     private static int TATOEBA_RAM_CONSUMPTION_MB = 5;    //todo: measure it better
     private static int VAD_RAM_CONSUMPTION_MB = 20;
     private static int DICT_RAM_CONSUMPTION_MB = 140;
@@ -88,6 +89,7 @@ public class ModelManagerFragment extends Fragment {
     private RadioButton radioHy;
     private RadioButton radioMadlad;
     private RadioButton radioGemma;
+    private RadioButton radioQwen35;
     private RadioGroupPlus asrRadioGroup;
     private RadioButton radioWhisper;
     private RadioButton radioWhisperTurbo;
@@ -96,6 +98,7 @@ public class ModelManagerFragment extends Fragment {
     private ResourceManagerView hyManagerView;
     private ResourceManagerView madladManagerView;
     private ResourceManagerView gemmaManagerView;
+    private ResourceManagerView qwen35ManagerView;
     private ResourceManagerView whisperManagerView;
     private ResourceManagerView whisperTurboManagerView;
     private ResourceManagerView qwen06ManagerView;
@@ -144,6 +147,7 @@ public class ModelManagerFragment extends Fragment {
         radioHy = view.findViewById(R.id.radioHY);
         radioMadlad = view.findViewById(R.id.radioMadlad);
         radioGemma = view.findViewById(R.id.radioGemma);
+        radioQwen35 = view.findViewById(R.id.radioQwen35);
         asrRadioGroup = view.findViewById(R.id.asr_radios);
         radioWhisper = view.findViewById(R.id.radioWhisper);
         radioWhisperTurbo = view.findViewById(R.id.radioWhisperTurbo);
@@ -156,6 +160,7 @@ public class ModelManagerFragment extends Fragment {
         hyManagerView = view.findViewById(R.id.modelHy);
         madladManagerView = view.findViewById(R.id.modelMadlad);
         gemmaManagerView = view.findViewById(R.id.modelGemma);
+        qwen35ManagerView = view.findViewById(R.id.modelQwen35);
         tatoebaManagerView = view.findViewById(R.id.resourceTatoeba);
         vadManagerView = view.findViewById(R.id.modelVad);
         applyButton = view.findViewById(R.id.buttonApply);
@@ -186,6 +191,7 @@ public class ModelManagerFragment extends Fragment {
         resourceManagers.put("hyManager", new ResourceManager(activity, global.getHyMtDownloadInfo(), hyManagerView, downloadManager));
         resourceManagers.put("madladManager", new ResourceManager(activity, global.getMadladDownloadInfo(), madladManagerView, downloadManager));
         resourceManagers.put("gemmaManager", new ResourceManager(activity, global.getTranslateGemmaDownloadInfo(), gemmaManagerView, downloadManager));
+        resourceManagers.put("qwen35Manager", new ResourceManager(activity, global.getQwen35DownloadInfo(), qwen35ManagerView, downloadManager));
         resourceManagers.put("whisperManager", new ResourceManager(activity, global.getWhisperDownloadInfo(), whisperManagerView, downloadManager));
         resourceManagers.put("whisperTurboManager", new ResourceManager(activity, global.getWhisperTurboDownloadInfo(), whisperTurboManagerView, downloadManager));
         resourceManagers.put("qwen06Manager", new ResourceManager(activity, global.getQwen3Asr06DownloadInfo(), qwen06ManagerView, downloadManager));
@@ -374,6 +380,9 @@ public class ModelManagerFragment extends Fragment {
             case Translator.TRANSLATEGEMMA:
                 radioGroup.check(R.id.radioGemma);
                 break;
+            case Translator.QWEN35:
+                radioGroup.check(R.id.radioQwen35);
+                break;
         }
         // switches initialization
         switchMozillaForVoiceModes.setChecked(sharedPreferences.contains("useMozillaForVoiceTranslation") ? global.isUseMozillaForVoiceTranslation() : recommendation.useMozillaForVoice);
@@ -555,11 +564,12 @@ public class ModelManagerFragment extends Fragment {
         final DownloadGroupInfo hyDownload = downloadOf("hyManager");
         final DownloadGroupInfo madladDownload = downloadOf("madladManager");
         final DownloadGroupInfo gemmaDownload = downloadOf("gemmaManager");
+        final DownloadGroupInfo qwen35Download = downloadOf("qwen35Manager");
         final DownloadGroupInfo tatoebaDownload = downloadOf("tatoebaManager");
         final DownloadGroupInfo vadDownload = downloadOf("vadManager");
         new Thread(() -> {
             ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
-            ApplyPlan plan = validateApply(saved, firstLaunch, translationRadio, asrRadio, mozillaVoice, tatoeba, vad, hyDownload, madladDownload, gemmaDownload, tatoebaDownload, vadDownload);
+            ApplyPlan plan = validateApply(saved, firstLaunch, translationRadio, asrRadio, mozillaVoice, tatoeba, vad, hyDownload, madladDownload, gemmaDownload, qwen35Download, tatoebaDownload, vadDownload);
             activity.runOnUiThread(() -> {
                 if (!isAdded()) {
                     return;
@@ -669,6 +679,9 @@ public class ModelManagerFragment extends Fragment {
                             case Translator.TRANSLATEGEMMA:
                                 textView.setText(getString(R.string.error_missing_gemma));
                                 break;
+                            case Translator.QWEN35:
+                                textView.setText(getString(R.string.error_missing_qwen35));
+                                break;
                         }
                         break;
                     case MOZILLA_FOR_VOICE:
@@ -701,7 +714,7 @@ public class ModelManagerFragment extends Fragment {
         }
     }
 
-    private ApplyPlan validateApply(ArrayList<DownloadGroupInfo> saved, boolean firstLaunch, int translationRadio, int asrRadio, boolean mozillaVoice, boolean tatoeba, boolean vad, DownloadGroupInfo hyDownload, DownloadGroupInfo madladDownload, DownloadGroupInfo gemmaDownload, DownloadGroupInfo tatoebaDownload, DownloadGroupInfo vadDownload) {
+    private ApplyPlan validateApply(ArrayList<DownloadGroupInfo> saved, boolean firstLaunch, int translationRadio, int asrRadio, boolean mozillaVoice, boolean tatoeba, boolean vad, DownloadGroupInfo hyDownload, DownloadGroupInfo madladDownload, DownloadGroupInfo gemmaDownload, DownloadGroupInfo qwen35Download, DownloadGroupInfo tatoebaDownload, DownloadGroupInfo vadDownload) {
         ApplyPlan plan = new ApplyPlan();
         plan.translationModel = Translator.MOZILLA;
         if (translationRadio == R.id.radioMozilla) {
@@ -726,6 +739,12 @@ public class ModelManagerFragment extends Fragment {
             plan.translationModel = Translator.TRANSLATEGEMMA;
             if (!DownloadManager.isDownloadCompleted(saved, gemmaDownload) && !firstLaunch) {
                 plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.TRANSLATEGEMMA);
+                return plan;
+            }
+        } else if (translationRadio == R.id.radioQwen35) {
+            plan.translationModel = Translator.QWEN35;
+            if (!DownloadManager.isDownloadCompleted(saved, qwen35Download) && !firstLaunch) {
+                plan.failure = new ApplyFailure(ApplySettingsStage.TRANSLATION_MODEL, ErrorCodes.NO_DOWNLOADED_RESOURCE, Translator.QWEN35);
                 return plan;
             }
         }
@@ -836,6 +855,12 @@ public class ModelManagerFragment extends Fragment {
                 ramUsed += MOZILLA_RAM_CONSUMPTION_MB;
             }
             setRamUsageTranslation(ramUsed);
+        } else if(checkRadioId == R.id.radioQwen35) {
+            int ramUsed = QWEN35_RAM_CONSUMPTION_MB;
+            if (switchMozillaForVoiceModes.isChecked()) {
+                ramUsed += MOZILLA_RAM_CONSUMPTION_MB;
+            }
+            setRamUsageTranslation(ramUsed);
         }
     }
 
@@ -920,6 +945,9 @@ public class ModelManagerFragment extends Fragment {
             return true;
         }
         if (mode == Translator.TRANSLATEGEMMA && !isGroupDownloaded(global.getTranslateGemmaDownloadInfo())) {
+            return true;
+        }
+        if (mode == Translator.QWEN35 && !isGroupDownloaded(global.getQwen35DownloadInfo())) {
             return true;
         }
         if (switchTatoeba.isChecked() && !isGroupDownloaded(global.getTatoebaDownloadInfo())) {

@@ -134,7 +134,7 @@ public class SeekBarPreference extends Preference {
         if (slider != null) {  //if onBindViewHolder was run before (and therefore failed to execute the code inside if(global!=null){} )
             switch (mode) {
                 case MIC_SENSIBILITY_MODE:
-                    defaultValue = 50;
+                    defaultValue = 100;
                     slider.setStepSize(1);
                     slider.setValueTo(100);
                     title.setText(R.string.preference_title_mic_sensitivity);

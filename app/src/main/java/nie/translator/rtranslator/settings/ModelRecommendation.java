@@ -39,6 +39,7 @@ public class ModelRecommendation {
         float redLine = 100f - (global.getRamThreshold() * 100f) / totalMb;
 
         boolean gemmaFits = fits(usedBase + 3600, totalMb, redLine) && freeMb > 4200;
+        boolean qwenFits = fits(usedBase + 1400, totalMb, redLine) && freeMb > 1200;
         boolean hyFits = fits(usedBase + 1900, totalMb, redLine) && freeMb > 2600;
         boolean madladFits = fits(usedBase + 1800, totalMb, redLine) && freeMb > 2200;
         int model;
@@ -48,6 +49,10 @@ public class ModelRecommendation {
             model = Translator.TRANSLATEGEMMA;
             modelMb = 3600;
             message = R.string.model_recommendation_gemma;
+        } else if (qwenFits) {
+            model = Translator.QWEN35;
+            modelMb = 1400;
+            message = R.string.model_recommendation_qwen35;
         } else if (hyFits) {
             model = Translator.HY_MT;
             modelMb = 1900;

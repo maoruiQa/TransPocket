@@ -216,6 +216,10 @@
     <string name="model_recommendation_hy">Consigliato: Qualità. Questo telefono ha circa %1$s GB di memoria e %2$s GB liberi, quindi HY-MT sta insieme al riconoscimento vocale.</string>
     <string name="description_model_gemma">Modello TranslateGemma 4B di Google, GGUF Q4_K_M di google/translategemma-4b-it. La qualità più alta tra le scelte sul dispositivo; servono circa 4 GB di memoria. Si applicano i termini Gemma.</string>
     <string name="error_missing_gemma">Scarica TranslateGemma prima di selezionarlo.</string>
+    <string name="model_recommendation_qwen35">Consigliato: Qwen3.5 0.8B. Questo telefono ha circa %1$s GB di memoria e %2$s GB liberi, quindi ci sta il più piccolo Qwen3.5 0.8B.</string>
+    <string name="title_model_qwen35">Qwen3.5 0.8B</string>
+    <string name="description_model_qwen35">Modello di istruzioni Qwen3.5 0.8B, GGUF Q4_K_M. Più piccolo di TranslateGemma; servono circa 1,4 GB di memoria.</string>
+    <string name="error_missing_qwen35">Scarica Qwen3.5 0.8B prima di selezionarlo.</string>
     <string name="model_recommendation_madlad">Consigliato: Madlad. HY-MT è stretto su questo telefono. Madlad ci sta e copre più lingue. Circa %1$s GB di memoria, %2$s GB liberi.</string>
     <string name="model_recommendation_mozilla">Consigliato: Prestazioni. Memoria o spazio libero limitati (circa %1$s GB di memoria, %2$s GB liberi): i modelli leggeri Mozilla sono la scelta sicura. Scarica almeno una lingua prima di continuare.</string>
     <string name="model_recommendation_whisper_reduced"> Il riconoscimento vocale è impostato sulla modalità a bassa memoria.</string>
