@@ -93,11 +93,11 @@
 
     <string name="notification_channel_name">背景通知</string>
 
-    <string name="privacy_check_box">我声明我已阅读 <a href="https://github.com/maoruiQa/Xtranslate/blob/main/privacy/Privacy_Policy_en.md">隐私政策</a></string>
+    <string name="privacy_check_box">我声明我已阅读 <a href="https://github.com/maoruiQa/TransPocket/blob/main/privacy/Privacy_Policy_en.md">隐私政策</a></string>
 
-    <string name="toast_working_background">Xtranslate 将在背景中运行</string>
+    <string name="toast_working_background">TransPocket 将在背景中运行</string>
     <string name="toast_download_completed">下载完成</string>
-    <string name="toast_download_error">下载时出现错误，请打开 Xtranslate 重试</string>
+    <string name="toast_download_error">下载时出现错误，请打开 TransPocket 重试</string>
     <string name="toast_missing_notification_permission">为确保此模式在后台正常运行，请启用通知</string>
 
 
@@ -129,7 +129,7 @@
     <string name="error_tts">TTS 初始化时出现错误，是否要在没有 TTS 的情况下继续？</string>
     <string name="error_missing_tts">此设备上没有 Google TTS 引擎，请下载以使用 TTS</string>
     <string name="error_missing_bluetooth_le">此设备不支持低功耗蓝牙，无法使用交互方式</string>
-    <string name="error_internet_lack_loading">启动 Xtranslate 需要网络连接，请检查您的网络</string>
+    <string name="error_internet_lack_loading">启动 TransPocket 需要网络连接，请检查您的网络</string>
     <string name="error_internet_lack_accessing">执行此操作需要网络连接，请检查您的网络</string>
     <string name="error_internet_lack_services">无法翻译消息，请检查网络连接</string>
     <string name="error_internet_lack_loading_languages">查看语言需要网络连接，请检查您的网络并重试</string>
@@ -180,7 +180,7 @@
     <string name="dialog_select_source_language">选择对方的语言</string>
     <string name="dialog_select_target_language">选择我的语言</string>
     <string name="simultaneous_mode_running">同声传译正在运行...</string>
-    <string name="description_permission_simultaneous">要使用同声传译，请允许 Xtranslate 使用麦克风。</string>
+    <string name="description_permission_simultaneous">要使用同声传译，请允许 TransPocket 使用麦克风。</string>
     <string name="title_fragment_notice">注意</string>
     <string name="title_fragment_user_data">输入您的数据</string>
     <string name="title_fragment_download">模型下载</string>
@@ -194,21 +194,21 @@
     <string name="header_found_peers">找到的</string>
     <string name="header_connected_peers">已连接</string>
 
-    <string name="description_discovery">此界面将搜寻其他设备，并使我们对其他使用 Xtranslate 的设备可见，以便能够与它们建立连接并开始对话</string>
+    <string name="description_discovery">此界面将搜寻其他设备，并使我们对其他使用 TransPocket 的设备可见，以便能够与它们建立连接并开始对话</string>
     <string name="description_fragment_user_data">您的名字将显示给所有附近的设备，而您的个人资料照片仅显示在您已经进行过配对的设备上</string>
-    <string name="description_fragment_download">现在 Xtranslate 将下载翻译和语音识别所需的神经网络模型，完成后您可以开始使用应用程序（即使是在没有网络的状态下）。</string>
-    <string name="description_conversation">对话模式是 Xtranslate 的主要功能，它允许您实时翻译多个人之间的对话，为了更好的体验，建议将手机连接到蓝牙耳机，此外应用程序在后台运行和手机待机时也会继续工作（然而，一些手机在后台运行应用程序时可能会有性能问题）</string>
-    <string name="description_walkie_talkie">对讲机模式是 Xtranslate 的次要功能，它不支持实时翻译，但只需要使用一部手机，它会自动检测并将语音从一种语言翻译成另一种语言，应用程序在后台运行和手机待机时也会继续工作</string>
-    <string name="description_notice">Xtranslate 使用 <a href="https://openai.com/index/whisper/">OpenAI 的 Whisper</a> 进行语音识别，使用 <a href="https://ai.meta.com/research/no-language-left-behind/">Meta 的 NLLB</a> 进行翻译，这些模型需要相当多的计算能力和至少 6GB 的内存来执行，所以请确保您使用的是现代智能手机，以避免速度变慢或崩溃。更多有关 Xtranslate 的信息，请访问应用程序的 GitHub 项目<a href="https://github.com/maoruiQa/Xtranslate">点击这里</a></string>
+    <string name="description_fragment_download">现在 TransPocket 将下载翻译和语音识别所需的神经网络模型，完成后您可以开始使用应用程序（即使是在没有网络的状态下）。</string>
+    <string name="description_conversation">对话模式是 TransPocket 的主要功能，它允许您实时翻译多个人之间的对话，为了更好的体验，建议将手机连接到蓝牙耳机，此外应用程序在后台运行和手机待机时也会继续工作（然而，一些手机在后台运行应用程序时可能会有性能问题）</string>
+    <string name="description_walkie_talkie">对讲机模式是 TransPocket 的次要功能，它不支持实时翻译，但只需要使用一部手机，它会自动检测并将语音从一种语言翻译成另一种语言，应用程序在后台运行和手机待机时也会继续工作</string>
+    <string name="description_notice">TransPocket 使用 <a href="https://openai.com/index/whisper/">OpenAI 的 Whisper</a> 进行语音识别，使用 <a href="https://ai.meta.com/research/no-language-left-behind/">Meta 的 NLLB</a> 进行翻译，这些模型需要相当多的计算能力和至少 6GB 的内存来执行，所以请确保您使用的是现代智能手机，以避免速度变慢或崩溃。更多有关 TransPocket 的信息，请访问应用程序的 GitHub 项目<a href="https://github.com/maoruiQa/TransPocket">点击这里</a></string>
     <string name="description_download">正在下载 %1$s</string>
     <string name="description_transfer">正在将 %1$s 传输到内部存储器</string>
     <string name="description_unzip">正在解压 %1$s</string>
     <string name="description_integrity_check">正在检查 %1$s 的完整性</string>
-    <string name="description_tts">要说话，Xtranslate 使用系统默认的 TTS 引擎，要选择您喜欢的引擎，请点击下面的按钮</string>
+    <string name="description_tts">要说话，TransPocket 使用系统默认的 TTS 引擎，要选择您喜欢的引擎，请点击下面的按钮</string>
     <string name="description_permission_notification">通知仅用于改善后台操作，例如下载或其他后台任务。本应用绝不会发送通知。</string>
-    <string name="description_permission_pairing">要使用对话模式，请允许 Xtranslate 使用蓝牙。</string>
-    <string name="description_permission_walkietalkie">要使用 WalkieTalkie 模式，请允许 Xtranslate 访问您的麦克风。</string>
-    <string name="description_permission_conversation">要在对话模式中翻译您的语音，请允许 Xtranslate 访问您的麦克风。若不授予此权限，该模式仍可使用，但您只能发送文字消息或接收并播放翻译。</string>
+    <string name="description_permission_pairing">要使用对话模式，请允许 TransPocket 使用蓝牙。</string>
+    <string name="description_permission_walkietalkie">要使用 WalkieTalkie 模式，请允许 TransPocket 访问您的麦克风。</string>
+    <string name="description_permission_conversation">要在对话模式中翻译您的语音，请允许 TransPocket 访问您的麦克风。若不授予此权限，该模式仍可使用，但您只能发送文字消息或接收并播放翻译。</string>
     <string name="model_recommendation_gemma">推荐：TranslateGemma 4B。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，可以跑 Google 的 TranslateGemma 4B。使用须遵守 Gemma 条款。</string>
     <string name="model_recommendation_hy">推荐：质量优先。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，可以同时跑 HY-MT 和语音识别。</string>
     <string name="description_model_gemma">Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 Q4_K_M GGUF。设备上质量最高的选项，大约需要 4 GB 内存。须遵守 Gemma 条款。</string>

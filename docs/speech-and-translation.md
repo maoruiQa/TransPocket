@@ -1,6 +1,6 @@
 # 语音识别、分句、翻译与发声
 
-本文描述 Xtranslate `0.1.0` 里从麦克风到译文朗读的实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。模型文件不在 git 里，首次启动后下到应用私有目录。`Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` 目前是 `false`，所以下面的路径都相对于 `context.getFilesDir()`。
+本文描述 TransPocket `0.1.0` 里从麦克风到译文朗读的实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。模型文件不在 git 里，首次启动后下到应用私有目录。`Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` 目前是 `false`，所以下面的路径都相对于 `context.getFilesDir()`。
 
 整条链路分四段，中间没有流式识别：
 

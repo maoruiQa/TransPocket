@@ -16,7 +16,7 @@
 
 
 <resources>
-    <string name="app_name" translatable="false">Xtranslate</string>
+    <string name="app_name" translatable="false">TransPocket</string>
 
     <string name="preference_header_appearance">Appearance</string>
     <string name="preference_title_color_palette">Color palette</string>
@@ -122,11 +122,11 @@
 
     <string name="notification_channel_name">use in background notification</string>
 
-    <string name="privacy_check_box">I declare that I have read the <a href="https://github.com/maoruiQa/Xtranslate/blob/main/privacy/Privacy_Policy_en.md">privacy policy</a></string>
+    <string name="privacy_check_box">I declare that I have read the <a href="https://github.com/maoruiQa/TransPocket/blob/main/privacy/Privacy_Policy_en.md">privacy policy</a></string>
 
-    <string name="toast_working_background">Xtranslate will work in background</string>
+    <string name="toast_working_background">TransPocket will work in background</string>
     <string name="toast_download_completed">Download completed</string>
-    <string name="toast_download_error">There was an error with the download, open Xtranslate to try again</string>
+    <string name="toast_download_error">There was an error with the download, open TransPocket to try again</string>
     <string name="toast_missing_notification_permission">To ensure this mode works properly in the background, enable notifications</string>
 
     <string name="dialog_confirm_delete">Confirm cancellation</string>
@@ -157,7 +157,7 @@
     <string name="error_tts">There was an error with the tts initialization, do you want to continue without tts?</string>
     <string name="error_missing_tts">In this device there is no google tts engine, download it to be able to use the tts</string>
     <string name="error_missing_bluetooth_le">It is not possible to use the Conversation mode because this device does not have Bluetooth Low Energy</string>
-    <string name="error_internet_lack_loading">To start Xtranslate an internet connection is required, check your connection</string>
+    <string name="error_internet_lack_loading">To start TransPocket an internet connection is required, check your connection</string>
     <string name="error_internet_lack_accessing">To perform the operation an internet connection is required, check your connection</string>
     <string name="error_internet_lack_services">Unable to translate message, check internet connection</string>
     <string name="error_internet_lack_loading_languages">To view the languages you need an internet connection, check your connection and try again</string>
@@ -208,7 +208,7 @@
     <string name="dialog_select_source_language">Select the other person\'s language</string>
     <string name="dialog_select_target_language">Select your language</string>
     <string name="simultaneous_mode_running">Simultaneous interpretation is running...</string>
-    <string name="description_permission_simultaneous">To use simultaneous interpretation, allow Xtranslate to access your microphone.</string>
+    <string name="description_permission_simultaneous">To use simultaneous interpretation, allow TransPocket to access your microphone.</string>
     <string name="title_fragment_notice">Notice</string>
     <string name="title_fragment_user_data">Insert your data</string>
     <string name="title_fragment_download">Download of models</string>
@@ -222,24 +222,24 @@
     <string name="header_found_peers">found</string>
     <string name="header_connected_peers">connected</string>
 
-    <string name="description_discovery">This screen will search and make us visible to other devices that use Xtranslate
+    <string name="description_discovery">This screen will search and make us visible to other devices that use TransPocket
         to be able to establish a connection with them and start the conversation</string>
     <string name="description_fragment_user_data">Your name will be displayed by all nearby devices, while your profile picture will only be shown on devices with which you have already had conversations</string>
-    <string name="description_fragment_download">Now Xtranslate will download the neural network models necessary for translation and speech recognition, once finished you can start using the app (even offline).</string>
-    <string name="description_conversation">The Conversation mode is the main feature of Xtranslate, it allows you to translate a conversation between several people in real time, for a better experience it is recommended to connect bluetooth headphones to the phone,
+    <string name="description_fragment_download">Now TransPocket will download the neural network models necessary for translation and speech recognition, once finished you can start using the app (even offline).</string>
+    <string name="description_conversation">The Conversation mode is the main feature of TransPocket, it allows you to translate a conversation between several people in real time, for a better experience it is recommended to connect bluetooth headphones to the phone,
         furthermore the application will continue to work also in background and with the phone on standby (however, some phones may have performance issues when the app runs in the background)</string>
-    <string name="description_walkie_talkie">WalkieTalkie mode is the secondary functionality of Xtranslate, it does not allow real-time translation but is designed to work with just one phone,
+    <string name="description_walkie_talkie">WalkieTalkie mode is the secondary functionality of TransPocket, it does not allow real-time translation but is designed to work with just one phone,
         it automatically detects and translates a speech in a language into another language, and the application will continue to work in background and with the phone on standby</string>
-    <string name="description_notice">Xtranslate uses <a href="https://openai.com/index/whisper/">OpenAi\'s Whisper</a> for speech recognition and <a href="https://ai.meta.com/research/no-language-left-behind/">Meta\'s NLLB</a> for translations, these models require quite a bit of power and at least 6GB of RAM to run, so make sure you\'re using a modern smartphone to avoid slowdowns or crashes. For more info on Xtranslate visit the GitHub project of the app <a href="https://github.com/maoruiQa/Xtranslate">here</a></string>
+    <string name="description_notice">TransPocket uses <a href="https://openai.com/index/whisper/">OpenAi\'s Whisper</a> for speech recognition and <a href="https://ai.meta.com/research/no-language-left-behind/">Meta\'s NLLB</a> for translations, these models require quite a bit of power and at least 6GB of RAM to run, so make sure you\'re using a modern smartphone to avoid slowdowns or crashes. For more info on TransPocket visit the GitHub project of the app <a href="https://github.com/maoruiQa/TransPocket">here</a></string>
     <string name="description_download">Downloading %1$s</string>
     <string name="description_transfer">Transferring %1$s in internal memory</string>
     <string name="description_unzip">Unzipping of %1$s</string>
     <string name="description_integrity_check">Checking integrity of %1$s</string>
-    <string name="description_tts">To speak, Xtranslate uses the system\'s default TTS engine, the recommended TTS is the <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>, but you can choose the one you prefer, to select it, click on the button below</string>
+    <string name="description_tts">To speak, TransPocket uses the system\'s default TTS engine, the recommended TTS is the <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>, but you can choose the one you prefer, to select it, click on the button below</string>
     <string name="description_permission_notification">Notifications will be used only to improve background operations like the downloads or other background tasks. This app will never send notifications.</string>
-    <string name="description_permission_pairing">To use Conversation mode, allow Xtranslate to use Bluetooth.</string>
-    <string name="description_permission_walkietalkie">To use WalkieTalkie mode, allow Xtranslate to access your microphone.</string>
-    <string name="description_permission_conversation">To translate your voice in Conversation mode, allow Xtranslate to access your microphone. If you don\'t grant this permission, the mode will still work, but you will only be able to send text messages or receive and play translations.</string>
+    <string name="description_permission_pairing">To use Conversation mode, allow TransPocket to use Bluetooth.</string>
+    <string name="description_permission_walkietalkie">To use WalkieTalkie mode, allow TransPocket to access your microphone.</string>
+    <string name="description_permission_conversation">To translate your voice in Conversation mode, allow TransPocket to access your microphone. If you don\'t grant this permission, the mode will still work, but you will only be able to send text messages or receive and play translations.</string>
     <string name="model_recommendation_gemma">Recommended: TranslateGemma 4B. This phone has about %1$s GB of memory and %2$s GB free, so Google\'s TranslateGemma 4B fits. It is used under the Gemma terms.</string>
     <string name="model_recommendation_hy">Recommended: Quality. This phone has about %1$s GB of memory and %2$s GB free, so HY-MT fits alongside speech recognition.</string>
     <string name="title_model_gemma">TranslateGemma</string>

@@ -1,10 +1,10 @@
-<img src="images/logo_beta_cut.png" width="280" alt="Xtranslate">
+<img src="images/icon.png" width="180" alt="TransPocket">
 
-# Xtranslate
+# TransPocket
 
-Xtranslate 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。语音识别、翻译和语言判断都在手机上运行。应用没有自己的服务器，也不会上传语音或文本。
+TransPocket 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。语音识别、翻译和语言判断都在手机上运行。应用没有自己的服务器，也不会上传语音或文本。
 
-**本仓库是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。** 上游作者是 Luca Martino（GitHub：[niedev](https://github.com/niedev)）。上游程序以 Apache License 2.0 授权。本 fork 把应用改名为 Xtranslate，并在上游 3.0.0-beta2 之上加入了同声传译、更多端侧模型和界面配色。Xtranslate 不代表上游，也不由上游维护。
+**本仓库是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。** 上游作者是 Luca Martino（GitHub：[niedev](https://github.com/niedev)）。上游程序以 Apache License 2.0 授权。本 fork 把应用改名为 TransPocket，并在上游 3.0.0-beta2 之上加入了同声传译、更多端侧模型和界面配色。TransPocket 不代表上游，也不由上游维护。
 
 ![对话模式](images/Conversation_image.png)
 
@@ -30,7 +30,7 @@ Xtranslate 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。�
 - 朗读使用手机上的系统文字转语音。一句结束就开始读这一句，下一句排队，不把整段合成一次提交。连着蓝牙耳机时，会先保持媒体通路，避免句首被耳机休眠吃掉。
 - 模型下载在应用离开前台后继续。加载和切换模型时显示阶段进度。
 - 五种配色：秋日金、竹青、靛蓝、樱粉、紫藤。切换配色会同时切换桌面图标和冷启动画面。
-- 界面显示名称为 Xtranslate。
+- 界面显示名称为 TransPocket。
 
 词典、Tatoeba 句库和波束搜索仍是文本翻译质量的一部分。语音模式里的波束宽度是 1。不要在没有质量对比的情况下改 `EOS_PENALTY`、`WORD_REWARD`、`LENGTH_ALPHA`、`SIBLING_PENALTY` 或波束宽度。
 
@@ -38,19 +38,19 @@ NLLB 仍留在代码里，作为旧路径，不是当前的默认模型。
 
 ## 下载与安装
 
-从本仓库的 [Releases](https://github.com/maoruiQa/Xtranslate/releases) 安装 `Xtranslate-0.1.0.apk`。只支持 **arm64-v8a**。`minSdk` 是 28。建议手机有大约 **6 GB** 内存。x86_64 模拟器不能安装这个包。
+从本仓库的 [Releases](https://github.com/maoruiQa/TransPocket/releases) 安装 `TransPocket-0.1.0.apk`。只支持 **arm64-v8a**。`minSdk` 是 28。建议手机有大约 **6 GB** 内存。x86_64 模拟器不能安装这个包。
 
 应用包名仍是 `nie.translator.rtranslator`，以便覆盖本机已经安装的同一应用。`versionCode` 是 28，高于上游 3.0.0-beta2 的 27。覆盖安装会保留原来的应用数据。
 
 首次打开需要联网下载所选模型。模型体积取决于选项，不是一个固定的 1.2 GB。下载完成后可以离线使用。模型来自各自的发布页（包括 Hugging Face），不在本 git 仓库里。
 
-[Sideloading.md](Sideloading.md) 保留的是上游 2.0 的手动放置步骤。那份附件不是 Xtranslate 0.1.0 的模型包。
+[Sideloading.md](Sideloading.md) 保留的是上游 2.0 的手动放置步骤。那份附件不是 TransPocket 0.1.0 的模型包。
 
 ## 语言与朗读
 
 可选语言取决于当前的识别模型和翻译模型。Madlad 覆盖面最宽。Mozilla 需要按语言下载。低质量语言可以在设置里打开。
 
-朗读语言和音质取决于系统里选中的文字转语音引擎。推荐安装 Google 文字转语音，也可以用别的引擎。更换系统引擎后，从最近任务划掉 Xtranslate 再打开。
+朗读语言和音质取决于系统里选中的文字转语音引擎。推荐安装 Google 文字转语音，也可以用别的引擎。更换系统引擎后，从最近任务划掉 TransPocket 再打开。
 
 ## 设备与构建
 
@@ -83,7 +83,7 @@ NLLB 仍留在代码里，作为旧路径，不是当前的默认模型。
 
 ## 隐私
 
-Xtranslate 不设账号，不加统计，也没有用于语音或文本的后端。联网用途是下载模型。隐私政策原文随上游保留，并注明本副本属于这个 fork：
+TransPocket 不设账号，不加统计，也没有用于语音或文本的后端。联网用途是下载模型。隐私政策原文随上游保留，并注明本副本属于这个 fork：
 
 - [privacy/Privacy_Policy_en.md](privacy/Privacy_Policy_en.md)
 - [privacy/Privacy_Policy_it.md](privacy/Privacy_Policy_it.md)
@@ -94,4 +94,4 @@ RTranslator 上游仓库：[https://github.com/niedev/RTranslator](https://githu
 
 上游的资助、捐赠和 Product Hunt 页面属于上游项目。本 fork 不接收指向那些页面的捐赠。使用上游代码的其他项目（WhisperIMEplus、WhisperJET）也属于上游生态。
 
-本仓库的缺陷请开在 [maoruiQa/Xtranslate](https://github.com/maoruiQa/Xtranslate) 的 Issues。不要把本 fork 的问题寄给上游维护者。贡献习惯见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+本仓库的缺陷请开在 [maoruiQa/TransPocket](https://github.com/maoruiQa/TransPocket) 的 Issues。不要把本 fork 的问题寄给上游维护者。贡献习惯见 [CONTRIBUTING.md](CONTRIBUTING.md)。

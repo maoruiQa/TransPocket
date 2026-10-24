@@ -1,6 +1,6 @@
 <h3 align="center">PRIVACY POLICY</h3> <br />
 
-Questa copia è distribuita con Xtranslate 0.1.0, un fork di RTranslator. Il testo che segue è quello upstream ed è conservato come pubblicato da quel progetto.
+Questa copia è distribuita con TransPocket 0.1.0, un fork di RTranslator. Il testo che segue è quello upstream ed è conservato come pubblicato da quel progetto.
 
 In ottemperanza agli obblighi derivanti dalla normativa comunitaria (Regolamento europeo per la protezione dei dati personali n. 679/2016, GDPR) e successive modifiche, la presente applicazione a dispositivo mobile (in seguito anche “App”) RTranslator rispetta e tutela la riservatezza dei visitatori e degli utenti, ponendo in essere misure proporzionatamente atte a non ledere i diritti degli utenti.<br /> 
 Questo documento tiene conto anche della Raccomandazione n. 2/2001 che le Autorità europee per la protezione dei dati personali hanno adottato per individuare i requisiti minimi per la raccolta di dati personali on line. <br />

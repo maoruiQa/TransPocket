@@ -1,4 +1,4 @@
-> 下面的步骤保留自上游 RTranslator 2.0。它指向 [niedev/RTranslator 2.0.0](https://github.com/niedev/RTranslator/releases/tag/2.0.0) 附带的 ONNX 文件。Xtranslate 0.1.0 的翻译和识别模型由应用内下载器按所选模型获取，那份 2.0.0 附件不是本版本的完整模型包。
+> 下面的步骤保留自上游 RTranslator 2.0。它指向 [niedev/RTranslator 2.0.0](https://github.com/niedev/RTranslator/releases/tag/2.0.0) 附带的 ONNX 文件。TransPocket 0.1.0 的翻译和识别模型由应用内下载器按所选模型获取，那份 2.0.0 附件不是本版本的完整模型包。
 
 **If you have trouble with the initial download of app's AI models and prefer to do it from a computer and manually insert the models into the app** (sideloading)**, starting with RTranslator version 2.0.3 you can do so by following these steps:**
 

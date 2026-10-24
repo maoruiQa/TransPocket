@@ -358,16 +358,13 @@ public final class ThemeManager {
     public static int getAppLogoResource(String palette) {
         switch (normalizePalette(palette)) {
             case PALETTE_BAMBOO:
-                return R.drawable.app_icon_vector_bamboo;
             case PALETTE_INDIGO:
-                return R.drawable.app_icon_vector_indigo;
             case PALETTE_SAKURA:
-                return R.drawable.app_icon_vector_sakura;
             case PALETTE_WISTERIA:
-                return R.drawable.app_icon_vector_wisteria;
+                return R.drawable.transpocket_mark_light;
             case PALETTE_GOLDEN:
             default:
-                return R.drawable.app_icon_vector;
+                return R.drawable.transpocket_mark_dark;
         }
     }
 

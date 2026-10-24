@@ -83,11 +83,11 @@
 
     <string name="notification_channel_name">використання у фоновому режимі</string>
 
-    <string name="privacy_check_box">Я підтверджую, що я прочитав <a href="https://github.com/maoruiQa/Xtranslate/blob/main/privacy/Privacy_Policy_en.md">політику конфіденційності</a></string>
+    <string name="privacy_check_box">Я підтверджую, що я прочитав <a href="https://github.com/maoruiQa/TransPocket/blob/main/privacy/Privacy_Policy_en.md">політику конфіденційності</a></string>
 
-    <string name="toast_working_background">Xtranslate буде працювати у фоновому режимі</string>
+    <string name="toast_working_background">TransPocket буде працювати у фоновому режимі</string>
     <string name="toast_download_completed">Завантаження завершено</string>
-    <string name="toast_download_error">Виникла помилка під час завантаження, відкрийте Xtranslate щоб спробувати ще раз</string>
+    <string name="toast_download_error">Виникла помилка під час завантаження, відкрийте TransPocket щоб спробувати ще раз</string>
     <string name="toast_missing_notification_permission">Для коректної роботи в фоновому режимі включіть сповіщення</string>
 
     <string name="dialog_confirm_delete">Підтвердіть відміну</string>
@@ -118,7 +118,7 @@
     <string name="error_tts">Виникла помилка при ініціалізації tts, хочете продовжити без tts?</string>
     <string name="error_missing_tts">На цьому пристрої відсутній голосовий двигун Google TTS, завантажте його, щоб мати змогу використовувати tts</string>
     <string name="error_missing_bluetooth_le">Неможливо використовувати режим Розмови, оскільки цей пристрій не має Bluetooth Low Energy</string>
-    <string name="error_internet_lack_loading">Для запуску Xtranslate потрібне підключення до Інтернету, перевірте ваше підключення</string>
+    <string name="error_internet_lack_loading">Для запуску TransPocket потрібне підключення до Інтернету, перевірте ваше підключення</string>
     <string name="error_internet_lack_accessing">Для виконання операції потрібне підключення до Інтернету, перевірте ваше підключення</string>
     <string name="error_internet_lack_services">Не вдалося перекласти повідомлення, перевірте підключення до Інтернету</string>
     <string name="error_internet_lack_loading_languages">Для перегляду мов потрібне підключення до Інтернету, перевірте ваше підключення і спробуйте ще раз</string>
@@ -168,7 +168,7 @@
     <string name="dialog_select_source_language">Оберіть мову співрозмовника</string>
     <string name="dialog_select_target_language">Оберіть свою мову</string>
     <string name="simultaneous_mode_running">Синхронний переклад працює...</string>
-    <string name="description_permission_simultaneous">Щоб користуватися синхронним перекладом, дозвольте Xtranslate доступ до мікрофона.</string>
+    <string name="description_permission_simultaneous">Щоб користуватися синхронним перекладом, дозвольте TransPocket доступ до мікрофона.</string>
     <string name="title_fragment_notice">Повідомлення</string>
     <string name="title_fragment_user_data">Введіть ваші дані</string>
     <string name="title_fragment_download">Завантаження моделей</string>
@@ -182,23 +182,23 @@
     <string name="header_found_peers">знайдені</string>
     <string name="header_connected_peers">підключені</string>
 
-    <string name="description_discovery">На цьому екрані буде виконано пошук та ми будемо видимі для інших пристроїв, які використовують Xtranslate, щоб зможемо встановити з\'єднання з ними та почати розмову</string>
+    <string name="description_discovery">На цьому екрані буде виконано пошук та ми будемо видимі для інших пристроїв, які використовують TransPocket, щоб зможемо встановити з\'єднання з ними та почати розмову</string>
     <string name="description_fragment_user_data">Ваше ім\'я буде відображено на всіх навколишніх пристроях, тоді як ваше фото профілю покажуть лише на пристроях, з якими ви вже мали розмови</string>
-    <string name="description_fragment_download">Тепер Xtranslate завантажить необхідні нейромережеві моделі для перекладу та розпізнавання мови, коли завершите, ви зможете почати використовувати додаток (навіть офлайн).</string>
-    <string name="description_conversation">Режим Розмови - основна функція Xtranslate, вона дозволяє перекладати розмову між кількома людьми в реальному часі, для кращого враження рекомендується підключити блютуз-гарнітуру до телефону,
+    <string name="description_fragment_download">Тепер TransPocket завантажить необхідні нейромережеві моделі для перекладу та розпізнавання мови, коли завершите, ви зможете почати використовувати додаток (навіть офлайн).</string>
+    <string name="description_conversation">Режим Розмови - основна функція TransPocket, вона дозволяє перекладати розмову між кількома людьми в реальному часі, для кращого враження рекомендується підключити блютуз-гарнітуру до телефону,
         крім того, програма буде продовжувати працювати в фоновому режимі і з телефоном у режимі очікування (однак деякі телефони можуть мати проблеми з продуктивністю, коли програма працює в фоновому режимі)</string>
-    <string name="description_walkie_talkie">Режим WalkieTalkie - це вторинна функціональність Xtranslate, він не дозволяє перекладати в реальному часі, але призначений для роботи з одним телефоном,
+    <string name="description_walkie_talkie">Режим WalkieTalkie - це вторинна функціональність TransPocket, він не дозволяє перекладати в реальному часі, але призначений для роботи з одним телефоном,
         він автоматично виявляє та перекладає мовлення на одній мові на іншу, а програма продовжуватиме працювати в фоновому режимі і з телефоном у режимі очікування</string>
-    <string name="description_notice">Xtranslate використовує <a href="https://openai.com/index/whisper/">Whisper від OpenAi</a> для розпізнавання мовлення та <a href="https://ai.meta.com/research/no-language-left-behind/">NLLB від Meta</a> для перекладів, ці моделі вимагають значної кількості потужності та принаймні 6 ГБ ОЗП для роботи, тому переконайтеся, що ви використовуєте сучасний смартфон, щоб уникнути сповільнень або аварій. Для отримання додаткової інформації про Xtranslate відвідайте проект додатка на GitHub <a href="https://github.com/maoruiQa/Xtranslate">тут</a></string>
+    <string name="description_notice">TransPocket використовує <a href="https://openai.com/index/whisper/">Whisper від OpenAi</a> для розпізнавання мовлення та <a href="https://ai.meta.com/research/no-language-left-behind/">NLLB від Meta</a> для перекладів, ці моделі вимагають значної кількості потужності та принаймні 6 ГБ ОЗП для роботи, тому переконайтеся, що ви використовуєте сучасний смартфон, щоб уникнути сповільнень або аварій. Для отримання додаткової інформації про TransPocket відвідайте проект додатка на GitHub <a href="https://github.com/maoruiQa/TransPocket">тут</a></string>
     <string name="description_download">Завантаження %1$s</string>
     <string name="description_transfer">Перенесення %1$s в пам\'ять</string>
     <string name="description_unzip">Розпакування %1$s</string>
     <string name="description_integrity_check">Перевірка цілісності %1$s</string>
-    <string name="description_tts">Щоб говорити, Xtranslate використовує систему TTS за замовчуванням, рекомендованим TTS є <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>, але ви можете вибрати той, який вам більше подобається, щоб вибрати його, натисніть кнопку нижче</string>
+    <string name="description_tts">Щоб говорити, TransPocket використовує систему TTS за замовчуванням, рекомендованим TTS є <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>, але ви можете вибрати той, який вам більше подобається, щоб вибрати його, натисніть кнопку нижче</string>
     <string name="description_permission_notification">Сповіщення використовуються лише для покращення фонових операцій, як-от завантажень та інших фонових задач. Цей застосунок ніколи не надсилатиме сповіщень.</string>
-    <string name="description_permission_pairing">Щоб використовувати режим Розмова, дозвольте Xtranslate використовувати Bluetooth.</string>
-    <string name="description_permission_walkietalkie">Щоб використовувати режим WalkieTalkie, надайте Xtranslate доступ до мікрофона.</string>
-    <string name="description_permission_conversation">Щоб перекладати ваш голос у режимі Розмова, надайте Xtranslate доступ до мікрофона. Якщо ви не надасте цей дозвіл, режим усе одно працюватиме, але ви зможете лише надсилати текстові повідомлення або отримувати та відтворювати переклади.</string>
+    <string name="description_permission_pairing">Щоб використовувати режим Розмова, дозвольте TransPocket використовувати Bluetooth.</string>
+    <string name="description_permission_walkietalkie">Щоб використовувати режим WalkieTalkie, надайте TransPocket доступ до мікрофона.</string>
+    <string name="description_permission_conversation">Щоб перекладати ваш голос у режимі Розмова, надайте TransPocket доступ до мікрофона. Якщо ви не надасте цей дозвіл, режим усе одно працюватиме, але ви зможете лише надсилати текстові повідомлення або отримувати та відтворювати переклади.</string>
     <string name="model_recommendation_gemma">Рекомендовано: TranslateGemma 4B. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож вміщується Google TranslateGemma 4B. Діють умови Gemma.</string>
     <string name="model_recommendation_hy">Рекомендовано: якість. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож HY-MT вміщується разом із розпізнаванням мовлення.</string>
     <string name="description_model_gemma">Інструкційна модель Google TranslateGemma 4B, GGUF Q4_K_M з google/translategemma-4b-it. Найвища якість серед варіантів на пристрої, потрібно близько 4 ГБ пам\'яті. Діють умови Gemma.</string>

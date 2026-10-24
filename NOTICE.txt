@@ -4,10 +4,10 @@ Copyright 2018-2020 The Apache Software Foundation
 This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
 
-Xtranslate
+TransPocket
 Copyright 2026 maoruiQa
 
-Xtranslate is a fork of RTranslator by Luca Martino (niedev):
+TransPocket is a fork of RTranslator by Luca Martino (niedev):
 https://github.com/niedev/RTranslator
 
 The upstream program is licensed under the Apache License, Version 2.0.
