@@ -1,8 +1,8 @@
 # Contributing
 
-TransPocket 是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。下面的正文是上游维护者 niedev 的贡献规则，原样保留，用来说明这个代码库的风格和审查习惯。
+TransPocket is a fork of [RTranslator](https://github.com/niedev/RTranslator). The text below is the upstream maintainer's contribution policy, kept as published, and it describes the review habits of this codebase.
 
-给本 fork 提问题或补丁时，请使用本仓库的 Issues 和 Pull Requests。不要把 TransPocket 的缺陷寄到 contact.niedev@gmail.com。Java 缩进以仓库里的现有文件为准，使用 4 个空格。不要整文件重排，也不要改上游源文件里的 Apache 2.0 声明。
+Report issues and send patches for this fork through this repository's Issues and Pull Requests. Do not send TransPocket bugs to contact.niedev@gmail.com. Java in this tree is indented with 4 spaces. Do not reformat a whole file, and do not rewrite the Apache 2.0 headers on upstream source files.
 
 I really appreciate the contributions to this project, so first of all thank you!
 

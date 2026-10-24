@@ -167,7 +167,7 @@
         <item name="windowSplashScreenBackground">@color/golden_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/golden_primary_very_lite</item>
         <!-- Set a background behind the splash screen icon. -->
-        <item name="windowSplashScreenIconBackgroundColor">@color/accent_white</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_plate</item>
         <!-- Use windowSplashScreenAnimatedIcon to add a drawable or an animated drawable. -->
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen</item>

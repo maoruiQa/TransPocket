@@ -2,96 +2,94 @@
 
 # TransPocket
 
-TransPocket 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。语音识别、翻译和语言判断都在手机上运行。应用没有自己的服务器，也不会上传语音或文本。
+[中文](README.zh-CN.md)
 
-**本仓库是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。** 上游作者是 Luca Martino（GitHub：[niedev](https://github.com/niedev)）。上游程序以 Apache License 2.0 授权。本 fork 把应用改名为 TransPocket，并在上游 3.0.0-beta2 之上加入了同声传译、更多端侧模型和界面配色。TransPocket 不代表上游，也不由上游维护。
+TransPocket is an offline Android app for real-time translation. The current version is **0.1.0**. Speech recognition, translation, and language detection all run on the phone. The app has no server of its own and does not upload speech or text.
 
-![对话模式](images/Conversation_image.png)
+**This repository is a fork of [RTranslator](https://github.com/niedev/RTranslator).** The upstream author is Luca Martino (GitHub: [niedev](https://github.com/niedev)). The upstream program is licensed under the Apache License 2.0. This fork renames the app to TransPocket and adds simultaneous interpretation, more on-device models, and color palettes on top of upstream 3.0.0-beta2. TransPocket is not the upstream project and is not maintained by upstream.
 
-![对讲机模式与文本翻译](images/TextTranslation_and_WalkieTalkie.png)
+## Four ways to use it
 
-## 四种用法
+**Text translation.** Type text and translate it on the device.
 
-**文本翻译。** 输入文字，在本机翻译。
+**Walkie-talkie.** One phone, two languages, taking turns. The app detects which language is being spoken, translates it into the other language, and reads it with the system text-to-speech engine.
 
-**对讲机（WalkieTalkie）。** 一台手机、两种语言、轮流说话。应用判断当前是哪种语言，译成另一种，再用系统语音朗读。
+**Conversation.** Several phones running this app connect over Bluetooth Low Energy. Each phone recognizes only its own side of the conversation, then sends the text and a language code to the other phones. The receiver translates and speaks on its own device. Audio does not leave the phone. More than two phones can be connected at once. Conversation and walkie-talkie can keep running in the background. Some systems limit background power use; leaving the app in the foreground is more reliable in that case.
 
-**对话（Conversation）。** 多台安装了本应用的手机通过蓝牙低功耗连接。每台手机只识别自己这一侧的话，把文字和语言码发给其他手机。接收方在自己的手机上翻译并朗读。音频不离开本机。可以同时连接多台手机。对话和对讲机可以在后台继续运行；有的系统会限制后台耗电，那种情况下把应用留在前台更稳。
+**Simultaneous interpretation.** One phone listens, translates sentence by sentence, and speaks the result. By default, Silero VAD splits speech on pauses. The Auto speak setting can turn speech on, turn it off, or follow the current playback device each time you enter the screen. The button on the screen affects only the current session.
 
-**同声传译。** 一台手机听对方说话，一句一句翻译并朗读。默认使用 Silero VAD 按停顿切句。设置里的「自动发音」可以每次进入时打开、关闭，或按当前播放设备决定。界面上的按钮只影响这一次。
+## What 0.1.0 already includes
 
-## 0.1.0 里已经有的能力
+These are the changes in this repository relative to upstream RTranslator 3.0.0-beta2:
 
-这些是相对上游 RTranslator 3.0.0-beta2 已经在本仓库里的改动：
+- Simultaneous interpretation. Silero VAD (about 2 MB) is downloaded and enabled by default and splits speech on pauses.
+- Translation models, in addition to Mozilla Bergamot, Madlad 400 3B (int4), and HY-MT 1.5 1.8B (int8): Google TranslateGemma 4B and Qwen3.5 0.8B. The last two are GGUF Q4_K_M and run on the phone with llama.cpp. TranslateGemma needs about 4 GB of memory and is covered by the Gemma terms. Qwen3.5 0.8B needs about 1.4 GB of memory.
+- Speech recognition can be Whisper Small, Whisper Large V3 Turbo, Qwen3-ASR 0.6B, or Qwen3-ASR 1.7B. The 1.7B model needs a phone with about 8 GB of memory.
+- Speech uses the phone's system text-to-speech engine. A sentence is spoken as soon as it is finished, and the next sentence waits in a queue. The whole passage is not synthesized in one request. With Bluetooth headphones, the media route is kept awake so the start of a sentence is not eaten by headphone sleep.
+- Model downloads continue after the app leaves the foreground. Loading and switching models show stage progress.
+- Five palettes: autumn gold, bamboo, indigo, sakura, and wisteria. Changing the palette also changes the launcher icon and the cold-start screen. Each icon has two marks. Light mode uses the dark mark. Dark mode uses the light mark. The palette color stays the background.
+- The displayed name is TransPocket.
 
-- 同声传译，默认下载并启用 Silero VAD（约 2 MB）按语音停顿断句。
-- 翻译模型除 Mozilla Bergamot、Madlad 400 3B（int4）、HY-MT 1.5 1.8B（int8）之外，可以选用 Google TranslateGemma 4B 和 Qwen3.5 0.8B。后两者是 GGUF Q4_K_M，在手机上用 llama.cpp 运行。TranslateGemma 大约需要 4 GB 内存，并适用 Gemma 条款。Qwen3.5 0.8B 大约需要 1.4 GB 内存。
-- 语音识别可以在 Whisper Small、Whisper Large V3 Turbo、Qwen3-ASR 0.6B、Qwen3-ASR 1.7B 之间选择。1.7B 需要大约 8 GB 内存的手机。
-- 朗读使用手机上的系统文字转语音。一句结束就开始读这一句，下一句排队，不把整段合成一次提交。连着蓝牙耳机时，会先保持媒体通路，避免句首被耳机休眠吃掉。
-- 模型下载在应用离开前台后继续。加载和切换模型时显示阶段进度。
-- 五种配色：秋日金、竹青、靛蓝、樱粉、紫藤。切换配色会同时切换桌面图标和冷启动画面。
-- 界面显示名称为 TransPocket。
+The dictionary, the Tatoeba sentence bank, and beam search remain part of text-translation quality. Voice modes use a beam width of 1. Do not change `EOS_PENALTY`, `WORD_REWARD`, `LENGTH_ALPHA`, `SIBLING_PENALTY`, or the beam width without a quality comparison.
 
-词典、Tatoeba 句库和波束搜索仍是文本翻译质量的一部分。语音模式里的波束宽度是 1。不要在没有质量对比的情况下改 `EOS_PENALTY`、`WORD_REWARD`、`LENGTH_ALPHA`、`SIBLING_PENALTY` 或波束宽度。
+NLLB remains in the code as a legacy path. It is not the current default model.
 
-NLLB 仍留在代码里，作为旧路径，不是当前的默认模型。
+## Download and install
 
-## 下载与安装
+Install `TransPocket-0.1.0.apk` from this repository's [Releases](https://github.com/maoruiQa/TransPocket/releases). Only **arm64-v8a** is supported. `minSdk` is 28. A phone with about **6 GB** of memory is recommended. An x86_64 emulator cannot install this package.
 
-从本仓库的 [Releases](https://github.com/maoruiQa/TransPocket/releases) 安装 `TransPocket-0.1.0.apk`。只支持 **arm64-v8a**。`minSdk` 是 28。建议手机有大约 **6 GB** 内存。x86_64 模拟器不能安装这个包。
+The application id is `io.github.maoruiqa.transpocket`. It does not replace an installed copy of RTranslator (`nie.translator.rtranslator`), and it does not replace an earlier TransPocket build that used that id. `versionCode` is 28. The two packages can sit side by side. Uninstall the old one from system settings if you do not want it.
 
-应用包名仍是 `nie.translator.rtranslator`，以便覆盖本机已经安装的同一应用。`versionCode` 是 28，高于上游 3.0.0-beta2 的 27。覆盖安装会保留原来的应用数据。
+The first launch needs a network connection to download the selected models. The download size depends on the chosen models. It is not a fixed 1.2 GB. After the download, the app can be used offline. Models come from their own release pages, including Hugging Face. They are not in this git repository.
 
-首次打开需要联网下载所选模型。模型体积取决于选项，不是一个固定的 1.2 GB。下载完成后可以离线使用。模型来自各自的发布页（包括 Hugging Face），不在本 git 仓库里。
+[Sideloading.md](Sideloading.md) keeps the upstream 2.0 steps for placing files by hand. That attachment is not the TransPocket 0.1.0 model pack.
 
-[Sideloading.md](Sideloading.md) 保留的是上游 2.0 的手动放置步骤。那份附件不是 TransPocket 0.1.0 的模型包。
+## Languages and speech
 
-## 语言与朗读
+The available languages depend on the current recognition model and translation model. Madlad covers the widest set. Mozilla models are downloaded per language. Low-quality languages can be enabled in settings.
 
-可选语言取决于当前的识别模型和翻译模型。Madlad 覆盖面最宽。Mozilla 需要按语言下载。低质量语言可以在设置里打开。
+Speech language and voice quality depend on the text-to-speech engine selected in the system. Google Text-to-speech is a good choice. Other engines work too. After changing the system engine, swipe TransPocket away from recents and open it again.
 
-朗读语言和音质取决于系统里选中的文字转语音引擎。推荐安装 Google 文字转语音，也可以用别的引擎。更换系统引擎后，从最近任务划掉 TransPocket 再打开。
+## Building
 
-## 设备与构建
-
-在仓库根目录用 PowerShell：
+From the repository root in PowerShell:
 
 ```
 .\gradlew.bat assembleDebug
 .\gradlew.bat assembleRelease
 ```
 
-发布包仍使用 Android 调试签名，这是上游的构建方式。不要把密钥库提交进仓库。工具链是 Android Gradle Plugin 8.2.2、Gradle 8.12、NDK `28.0.12674087`、CMake 3.22.1。原生代码只在 JNI 边界需要时才改。
+The release package still uses the Android debug signing config. That is the upstream build setup. Do not commit a keystore. The toolchain is Android Gradle Plugin 8.2.2, Gradle 8.12, NDK `28.0.12674087`, and CMake 3.22.1. Change native code only when the JNI boundary requires it.
 
-实现说明见 [docs/speech-and-translation.md](docs/speech-and-translation.md) 和 [docs/conversation.md](docs/conversation.md)。
+Implementation notes: [docs/speech-and-translation.md](docs/speech-and-translation.md) and [docs/conversation.md](docs/conversation.md). Chinese copies are `docs/speech-and-translation.zh-CN.md` and `docs/conversation.zh-CN.md`.
 
-## 许可证
+## License
 
-请同时阅读下面三份文件：
+Read these three files together:
 
-| 文件 | 作用 |
+| File | Role |
 | --- | --- |
-| [LICENSE.txt](LICENSE.txt) | 上游 RTranslator 的 Apache License 2.0 全文，未经修改 |
-| [LICENSE](LICENSE) | GNU General Public License v3 全文 |
-| [NOTICE.txt](NOTICE.txt) | 上游声明和本 fork 的许可说明 |
+| [LICENSE.txt](LICENSE.txt) | Upstream RTranslator Apache License 2.0, unmodified |
+| [LICENSE](LICENSE) | GNU General Public License v3, full text |
+| [NOTICE.txt](NOTICE.txt) | Upstream notice and the license note for this fork |
 
-上游 RTranslator 版权归 Luca Martino 及其他上游贡献者。源文件里原有的 Apache 2.0 文件头继续有效，本仓库没有把它们改写成 GPL 头。Apache License 2.0 与 GPLv3 兼容，因此本仓库把 **fork 中的修改** 以及 **从本仓库发行的组合程序** 放在 GPLv3 下分发。收到原 Apache 2.0 部分的人，仍须保留其中的署名、NOTICE 和该许可证中的专利授权。
+Upstream RTranslator is copyright Luca Martino and the other upstream contributors. Apache 2.0 file headers already present in source files stay in force. This repository does not rewrite them into GPL headers. The Apache License 2.0 is compatible with GPLv3, so **changes in this fork** and **combined works distributed from this repository** are distributed under GPLv3. Anyone who receives the original Apache 2.0 portions must still keep the attribution, the NOTICE, and the patent grant in that license.
 
-`app/src/main/cpp` 与 `app/libs` 里的第三方代码各自带有自己的许可证，包括 ONNX Runtime、SentencePiece、Bergamot、FastText、sherpa-onnx、sqlite4java 以及对话模式使用的蓝牙栈。模型权重适用发布者自己的条款。Gemma 模型适用 Gemma 条款。
+Third-party code under `app/src/main/cpp` and `app/libs` keeps its own licenses, including ONNX Runtime, SentencePiece, Bergamot, FastText, sherpa-onnx, sqlite4java, and the Bluetooth stack used by Conversation mode. Model weights follow the terms of their publishers. Gemma models follow the Gemma terms.
 
-向本仓库贡献的修改，以 GPLv3 授权。
+Contributions to this repository are licensed under GPLv3.
 
-## 隐私
+## Privacy
 
-TransPocket 不设账号，不加统计，也没有用于语音或文本的后端。联网用途是下载模型。隐私政策原文随上游保留，并注明本副本属于这个 fork：
+TransPocket has no accounts, no analytics, and no backend for speech or text. The network is used to download models. The privacy-policy text is kept from upstream, with a note that this copy belongs to this fork:
 
 - [privacy/Privacy_Policy_en.md](privacy/Privacy_Policy_en.md)
 - [privacy/Privacy_Policy_it.md](privacy/Privacy_Policy_it.md)
 
-## 上游项目
+## Upstream
 
-RTranslator 上游仓库：[https://github.com/niedev/RTranslator](https://github.com/niedev/RTranslator)
+Upstream repository: [https://github.com/niedev/RTranslator](https://github.com/niedev/RTranslator)
 
-上游的资助、捐赠和 Product Hunt 页面属于上游项目。本 fork 不接收指向那些页面的捐赠。使用上游代码的其他项目（WhisperIMEplus、WhisperJET）也属于上游生态。
+Upstream funding, donations, and the Product Hunt page belong to the upstream project. This fork does not take donations pointed at those pages. Other projects that use the upstream code (WhisperIMEplus, WhisperJET) belong to the upstream ecosystem.
 
-本仓库的缺陷请开在 [maoruiQa/TransPocket](https://github.com/maoruiQa/TransPocket) 的 Issues。不要把本 fork 的问题寄给上游维护者。贡献习惯见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+File bugs for this repository on [maoruiQa/TransPocket](https://github.com/maoruiQa/TransPocket) Issues. Do not send this fork's bugs to the upstream maintainer. Contribution habits are in [CONTRIBUTING.md](CONTRIBUTING.md).

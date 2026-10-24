@@ -6,7 +6,7 @@ Read `CONTRIBUTING.md` before a change that would be sent upstream. The maintain
 
 ## Project structure
 
-Single Gradle module `:app`. Application id and namespace: `nie.translator.rtranslator`. Java UI and services live under `app/src/main/java/nie/translator/rtranslator/`. Native code lives under `app/src/main/cpp/src/`. Layouts, strings, and language lists live under `app/src/main/res/`.
+Single Gradle module `:app`. Application id: `io.github.maoruiqa.transpocket`. The Java namespace stays `nie.translator.rtranslator`. Java UI and services live under `app/src/main/java/nie/translator/rtranslator/`. Native code lives under `app/src/main/cpp/src/`. Layouts, strings, and language lists live under `app/src/main/res/`.
 
 - `Global` is the `Application`. It owns shared preferences, language lists, the `Translator`, the `Recognizer`, TTS, Bluetooth, and download state. The three product modes are `TEXT_TRANSLATION_MODE`, `WALKIE_TALKIE_MODE`, and `CONVERSATION_MODE`.
 - `voice_translation/` is the product. `_text_translation`, `_walkie_talkie_mode`, and `_conversation_mode` are the three screens. The leading underscore is part of the package name; keep it.
@@ -29,7 +29,7 @@ Native libraries, loaded from Java:
 
 CMake root: `app/src/main/cpp/src/CMakeLists.txt`. Vendored native trees under `cpp/src/libs/` and `cpp/src/*/libs/` are third-party. Change them only when the JNI boundary requires it.
 
-ONNX models are not in git. The app downloads them into app storage (`Android/data/nie.translator.rtranslator/files`, then private storage). See `Sideloading.md`.
+ONNX models are not in git. The app downloads them into app storage (`Android/data/io.github.maoruiqa.transpocket/files`, then private storage). See `Sideloading.md`.
 
 ## Translation and speech pipeline
 

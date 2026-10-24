@@ -23,6 +23,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
@@ -397,7 +398,9 @@ public final class ThemeManager {
     }
 
     private static Bitmap taskIconBitmap(Context context, String palette, @DrawableRes int iconRes) {
-        String key = normalizePalette(palette) + "@" + context.getResources().getDisplayMetrics().density;
+        // The same mipmap id resolves to the dark mark or the light mark from uiMode.
+        int night = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        String key = normalizePalette(palette) + "@" + context.getResources().getDisplayMetrics().density + "@" + night;
         Bitmap cached = taskIcons.get(key);
         if (cached != null && !cached.isRecycled()) {
             return cached;
@@ -413,20 +416,6 @@ public final class ThemeManager {
         drawable.draw(canvas);
         taskIcons.put(key, bitmap);
         return bitmap;
-    }
-
-    @DrawableRes
-    public static int getAppLogoResource(String palette) {
-        switch (normalizePalette(palette)) {
-            case PALETTE_BAMBOO:
-            case PALETTE_INDIGO:
-            case PALETTE_SAKURA:
-            case PALETTE_WISTERIA:
-                return R.drawable.transpocket_mark_light;
-            case PALETTE_GOLDEN:
-            default:
-                return R.drawable.transpocket_mark_dark;
-        }
     }
 
     private static int getThemeResource(Activity activity, String palette) {

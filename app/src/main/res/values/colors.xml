@@ -105,6 +105,8 @@
     <color name="very_very_light_gray">#F5F5F5</color>
     <color name="white">#fafafa</color>
     <color name="accent_white">#ffffff</color>
+    <!-- Plate behind the splash and loading mark. Night overrides this to charcoal. -->
+    <color name="splash_icon_plate">#FFFFFF</color>
     <color name="red">#d50000</color>
     <color name="yellow">#FFD600</color>
     <color name="green">#00c853</color>

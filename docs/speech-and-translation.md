@@ -1,231 +1,233 @@
-# 语音识别、分句、翻译与发声
+# Speech recognition, segmentation, translation, and speech
 
-本文描述 TransPocket `0.1.0` 里从麦克风到译文朗读的实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。模型文件不在 git 里，首次启动后下到应用私有目录。`Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` 目前是 `false`，所以下面的路径都相对于 `context.getFilesDir()`。
+中文：[speech-and-translation.zh-CN.md](speech-and-translation.zh-CN.md)
 
-整条链路分四段，中间没有流式识别：
+This note describes how TransPocket `0.1.0` goes from the microphone to spoken translation. It is a fork of RTranslator `v3.00` (`3.0.0-beta2`). Model files are not in git. After the first launch they are downloaded into the app's private directory. `Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` is currently `false`, so the paths below are relative to `context.getFilesDir()`.
+
+The pipeline has four stages. There is no streaming recognition in the middle:
 
 ```
-麦克风 PCM
-  -> Silero VAD + 音量门限，切成一整句音频
-  -> Whisper Small（ONNX）整段识别
-  -> 翻译前按句切开，再按 token 预算合并
-  -> Bergamot / Madlad / HY-MT，可选词典和 Tatoeba
-  -> Android 系统 TTS 朗读
+microphone PCM
+  -> Silero VAD plus an amplitude gate, cut into one whole utterance
+  -> Whisper Small (ONNX) recognizes that whole utterance
+  -> split into sentences before translation, then merge by a token budget
+  -> Bergamot / Madlad / HY-MT, with an optional dictionary and Tatoeba
+  -> Android system TTS
 ```
 
-识别和翻译都在手机上。TTS 不是随应用打包的神经网络，用的是系统里已安装的 `TextToSpeech` 引擎。
+Recognition and translation run on the phone. TTS is not a neural model shipped with the app. It uses a `TextToSpeech` engine already installed on the system.
 
-## 1. 语音怎么被切成一句
+## 1. How speech is cut into one utterance
 
-切段在 `Recorder`，不在 Whisper 里。Whisper 只在一句结束时被调用一次，输入是这句的全部 PCM。
+Segmentation lives in `Recorder`, not in Whisper. Whisper is called once when an utterance ends. Its input is all of that utterance's PCM.
 
-采集参数：
+Capture parameters:
 
-- 采样率只试 16000 Hz，单声道。
-- 除 vivo 用 `PCM_16BIT` 外，其他机器用 `PCM_FLOAT`。源是 `AudioSource.MIC`。
-- 环形缓冲大约 30 秒：`(29s + 1s) * sampleRate`。float 缓冲送给识别，short 缓冲送给 VAD。float 转 short 是乘 32768。
-- 每次读取的样本数对齐到 512，也就是 Silero 的一帧（16 kHz 下 32 ms）。
+- The sample rate tried is 16000 Hz, mono.
+- vivo devices use `PCM_16BIT`. Other devices use `PCM_FLOAT`. The source is `AudioSource.MIC`.
+- The ring buffer is about 30 seconds: `(29s + 1s) * sampleRate`. The float buffer goes to recognition. The short buffer goes to VAD. Float-to-short conversion multiplies by 32768.
+- Each read is aligned to 512 samples, one Silero frame (32 ms at 16 kHz).
 
-VAD 在 `Global` 里创建，整个进程共用一个 `VadSilero`：16 kHz、帧长 512、`Mode.NORMAL`、最短语音 50 ms、静音 300 ms。这个 300 ms 是 Silero 库自己的内部参数。一句何时结束，由下面的 `speechTimeout` 决定，不是由这 300 ms 单独决定。
+VAD is created in `Global` and shared by the process: one `VadSilero` at 16 kHz, frame length 512, `Mode.NORMAL`, minimum speech 50 ms, silence 300 ms. That 300 ms is an internal parameter of the Silero library. When an utterance ends is decided by `speechTimeout` below, not by those 300 ms alone.
 
-自动模式下，一个读块被当成“有语音”必须同时满足两件事：
+In automatic mode a read counts as speech only when both of these are true:
 
-1. 块里至少 15 个采样的绝对值超过音量门限。门限默认 1500，范围 400 到 15000，存在设置 `amplitudeThreshold` 里，刻度是 16-bit 幅度。
-2. 这个读块切成的 512 点帧里，至少一帧 `vad.isSpeech()` 为 true。最后一帧如果没填满，剩余位置是 0，仍会送给 Silero。
+1. At least 15 samples in the block have an absolute value above the amplitude threshold. The default is 1500, the range is 400 to 15000, and the setting is `amplitudeThreshold` on a 16-bit scale.
+2. At least one 512-sample frame in the block returns true from `vad.isSpeech()`. A short final frame is padded with zeros and still sent to Silero.
 
-两个条件都过，才刷新“最后一次听到语音”的时间。否则，如果一句已经开始，并且静音持续超过 `speechTimeout`，这句结束。`speechTimeout` 默认 1300 ms，范围 100 到 5000 ms。
+Only when both pass is the "last time speech was heard" timestamp refreshed. Otherwise, if an utterance has already started and silence lasts longer than `speechTimeout`, the utterance ends. `speechTimeout` defaults to 1300 ms and ranges from 100 to 5000 ms.
 
-一句的起点会往前多带一段，避免吞掉起音。这段叫 `prevVoiceDuration`，默认也是 1300 ms，范围 100 到 1800 ms。从环形缓冲里取 `tailIndex - prevVoiceLength` 作为起点。
+The start of an utterance reaches backward so the attack is not clipped. That lead-in is `prevVoiceDuration`, also 1300 ms by default, ranging from 100 to 1800 ms. The start index is `tailIndex - prevVoiceLength` in the ring buffer.
 
-一句还有硬上限：从起点（含往前带的那段）算起超过 29 秒，立刻截断并送去识别。所以 Whisper 看到的最长音频大约是 29 秒，不是无限流。
+There is a hard cap: more than 29 seconds from the start, including the lead-in, is cut immediately and sent to recognition. The longest audio Whisper sees is about 29 seconds.
 
-手动模式（WalkieTalkie 按住说话）把 `isHearingVoice()` 固定成 true，`prevVoice` 缩成 0.1 秒，直到调用 `end()` 才出句。
+Manual mode (push-to-talk in WalkieTalkie) forces `isHearingVoice()` to true and shrinks `prevVoice` to 0.1 seconds until `end()` is called.
 
-一句结束时 `executeEnd()` 把环形缓冲里 `[startVoiceIndex, tailIndex)` 拷成一段 float，然后依次回调 `onVoice(data)` 和 `onVoiceEnd()`。识别发生在 `onVoice`，不是在说话过程中。界面上的音量条只在 `isRecording` 为 true 时更新，也就是这句已经开始之后。
+When the utterance ends, `executeEnd()` copies `[startVoiceIndex, tailIndex)` out of the ring buffer as a float array and then calls `onVoice(data)` and `onVoiceEnd()` in that order. Recognition happens in `onVoice`, not while the person is still talking. The on-screen level meter updates only while `isRecording` is true, which is after the utterance has started.
 
-TalkBack 正在播时，如果没有走蓝牙 SCO，`readAudio` 会把刚读到的样本清零，并且正在进行的一句会被立刻结束。连着 SCO 耳机时不做这个软件静音。
+While TalkBack is speaking, and the route is not Bluetooth SCO, `readAudio` zeroes the samples just read and ends the current utterance at once. That software mute is skipped when an SCO headset is connected.
 
-### 同声传译的断句
+### Segmentation for simultaneous interpretation
 
-对话模式和对讲机模式仍按上面的 `speechTimeout` 把一整段话交给识别。同声传译默认在这句话里面再切：静音满 420 ms 且已经说了至少 700 ms 就交一句，说满 7000 ms 也交一句，识别结果再用 `ClauseSplitter` 按标点切开。这一句交出去以后采集不停止。
+Conversation and WalkieTalkie still hand a whole stretch of speech to recognition using `speechTimeout` above. Simultaneous interpretation cuts again inside that stretch by default: 420 ms of silence after at least 700 ms of speech submits one sentence, 7000 ms of speech also submits one sentence, and the recognition text is then split on punctuation by `ClauseSplitter`. Capture does not stop after a sentence is submitted.
 
-首次进入时，模型设置里 Silero VAD v6.2.1（约 2 MB，`VAD/silero_vad.onnx`）默认打开，并跟其他已选模型一起下载。已经装过、又没下过这个文件的旧版本，冷启动时会把开关关掉，仍用 420 ms 和标点。打开且文件能加载时，同声传译改用这份模型自己的状态，不和上面那个打包的 `VadSilero` 共用。每一帧先带上前一帧末尾的 64 个采样点，模型看到的是 576 点。连续约 96 ms 概率达到 0.5，并且这一帧过了音量门限，才算开口。确认前的声音按「语音预期持续时间」一并送去识别，默认 1300 ms；已经交给上一句的采样不会再带上。已经说了至少约 250 ms 之后，连续约 320 ms 概率低于 0.35 就交一句并继续听。说满 7000 ms 仍在说也会切开。静音达到 `speechTimeout` 才结束这一轮采集，并把 LSTM 状态清零。这种情况下不再跑 `ClauseSplitter`。开关关闭、文件不在或会话打不开时，退回 420 ms 和标点。
+On first entry, Silero VAD v6.2.1 (about 2 MB, `VAD/silero_vad.onnx`) is on by default in the model settings and is downloaded with the other selected models. An install that already exists and never downloaded that file turns the switch off at cold start and keeps the 420 ms plus punctuation path. When the switch is on and the file loads, simultaneous interpretation uses that model's own state. It does not share the bundled `VadSilero` above. Each frame is prefixed with the last 64 samples of the previous frame, so the model sees 576 samples. Speech onset requires about 96 ms of probability at or above 0.5, and the frame must also pass the amplitude gate. Audio from before that confirmation is included up to the expected voice duration, 1300 ms by default. Samples already given to the previous sentence are not included again. After at least about 250 ms of speech, about 320 ms below a probability of 0.35 submits the sentence and listening continues. Reaching 7000 ms while speech is still going also cuts. Silence that reaches `speechTimeout` ends the capture round and clears the LSTM state. In that case `ClauseSplitter` does not run. If the switch is off, the file is missing, or the session cannot be opened, the path falls back to 420 ms and punctuation.
 
-## 2. Whisper 怎么转写这一句
+## 2. How Whisper transcribes one utterance
 
-实现在 `Recognizer`。模型是拆开的 Whisper Small ONNX，带 KV cache：
+The implementation is `Recognizer`. The model is a split Whisper Small ONNX graph with a KV cache:
 
-| 文件 | 作用 |
+| File | Role |
 | --- | --- |
-| `Whisper_initializer.onnx` | `audio_pcm` 做成编码器输入特征 |
-| `Whisper_encoder.onnx` | 编码。低内存模式关掉 CPU arena 和 memory pattern |
-| `Whisper_cache_initializer.onnx` | 用编码器输出填 encoder KV |
-| `Whisper_cache_initializer_batch.onnx` | 双语言时把同一份编码复制成 batch 2 |
-| `Whisper_decoder.onnx` | 逐 token 解码，12 层 decoder cache |
-| `Whisper_detokenizer.onnx` | token id 还原成字符串 |
+| `Whisper_initializer.onnx` | Turns `audio_pcm` into encoder input features |
+| `Whisper_encoder.onnx` | Encodes. Low-memory mode turns off the CPU arena and the memory pattern |
+| `Whisper_cache_initializer.onnx` | Fills encoder KV from the encoder output |
+| `Whisper_cache_initializer_batch.onnx` | Copies one encoding into batch 2 for two languages |
+| `Whisper_decoder.onnx` | Decodes token by token, 12 decoder-cache layers |
+| `Whisper_detokenizer.onnx` | Turns token ids back into a string |
 
-解码是贪心，不是 beam search。`recognize(..., beamSize, ...)` 把 `beamSize` 放进 `DataContainer`，后面的循环没有读它。Conversation 和 WalkieTalkie 传入的 `SPEECH_BEAM_SIZE = 4` 因此不影响结果。每步用 `Utils.getIndexOfLargest` 取 logits 最大的 id。
+Decoding is greedy, not beam search. `recognize(..., beamSize, ...)` stores `beamSize` in a `DataContainer`. The loop that follows does not read it. The `SPEECH_BEAM_SIZE = 4` passed by Conversation and WalkieTalkie therefore does not change the result. Each step takes the id with the largest logit through `Utils.getIndexOfLargest`.
 
-单语言时，解码器前四个固定 token 是：
+For one language, the first four decoder tokens are fixed:
 
 ```
-50258  起始
-50258 + 语言下标 + 1
+50258  start
+50258 + language index + 1
 50359  transcribe
-50363  不要时间戳
+50363  no timestamps
 ```
 
-语言下标来自 `Recognizer.LANGUAGES`，这是 Whisper 的全语言表，不是界面上那份“高质量语言”列表。界面列表在 `res/raw/whisper_supported_languages.xml`。设置里打开低质量语言后，才改用完整的 `LANGUAGES`。
+The language index comes from `Recognizer.LANGUAGES`, Whisper's full language list, not the "high quality" list shown in the UI. The UI list is `res/raw/whisper_supported_languages.xml`. Turning on low-quality languages in settings switches to the full `LANGUAGES` list.
 
-之后每步把上一个 id 作为 `input_ids`，并带上 12 层 `past_key_values.{i}.decoder/encoder.key/value`。结束符 `eos` 是 50257。
+Each later step feeds the previous id as `input_ids` together with 12 layers of `past_key_values.{i}.decoder/encoder.key/value`. The end token `eos` is 50257.
 
-token 上限是 `min(445, 音频秒数 * 30)`。秒数用 `data.length / 16000` 估算。碰到上限就强制写成 eos，并且**不把这段送进 detokenizer**，结果变成占位符 `[(und)]`。调用方会把 `[(und)]` 以及前三个字符里带 `[` 或 `(` 的文本当成元数据丢掉。
+The token cap is `min(445, seconds of audio * 30)`. Seconds are estimated as `data.length / 16000`. Hitting the cap forces eos and does **not** send that span to the detokenizer. The result becomes the placeholder `[(und)]`. Callers drop `[(und)]` and any text whose first three characters contain `[` or `(`, treating it as metadata.
 
-detokenizer 之后 `correctText()` 做四件事：删掉残留的 `<|...|> ` 时间戳、去掉两端空白、把首字母改成大写、删掉 `...`。
+After the detokenizer, `correctText()` does four things: strip leftover `<|...|>` timestamps, trim both ends, capitalize the first letter, and delete `...`.
 
-`notifyResult` 的 `isFinal` 在这条路径上永远是 `true`。Conversation 里“非 final 只显示、不发送”的分支，对当前 Whisper 实现不会走到。一次一句，一次最终结果。多个一句在 `Recognizer.lock` 上串行，`stop()` 会清空还没开始的队列。
+`isFinal` from `notifyResult` is always `true` on this path. The Conversation branch that shows a non-final result without sending it is not reached by the current Whisper implementation. One utterance, one final result. Utterances are serialized on `Recognizer.lock`. `stop()` clears the queue of work that has not started.
 
-## 3. WalkieTalkie 如何在两种语言里选一句
+## 3. How WalkieTalkie picks one of two languages
 
-WalkieTalkie 对同一段音频调用 `recognize(data, beam, lang1, lang2)`。编码只跑一次。编码器输出被复制成 batch 2，两个解码器头分别带 `lang1` 和 `lang2` 的语言 token，其余步骤并行。每步记录 `log(softmax(被选中的 logit))`，最后除以 token 数，得到两个平均对数概率。
+WalkieTalkie calls `recognize(data, beam, lang1, lang2)` on the same audio. Encoding runs once. The encoder output is copied to batch 2. The two decoder heads carry the language tokens for `lang1` and `lang2`. The remaining steps run in parallel. Each step records `log(softmax(chosen logit))`. Dividing by the token count gives two mean log probabilities.
 
-`WalkieTalkieService.compareResults()` 接着做语言判断，阈值默认 0.5：
+`WalkieTalkieService.compareResults()` then decides the language. The default threshold is 0.5:
 
-1. 只有一边是元数据时，留下另一边。
-2. 否则把两段文本交给 `Translator.detectLanguage`。两边都判成了各自对应的语言时，用平均对数概率高的那一边。只有一边判对，就用那一边。
-3. 语言判断失败时，同样退回比较平均对数概率。
+1. If only one side is metadata, keep the other side.
+2. Otherwise both texts go to `Translator.detectLanguage`. If both are judged to be their own target language, keep the side with the higher mean log probability. If only one side matches, keep that side.
+3. If language detection fails, fall back to comparing the mean log probabilities.
 
-`LanguageDetector` 的实际分支和注释不完全一样：
+The real `LanguageDetector` branch does not match its comment exactly:
 
-- 先做 NFC、小写，去掉 Whisper 的 `[...]` / `(...)`、标点、数字。词数用 ICU `BreakIterator.getWordInstance()`，只数以字母或数字开头的段。
-- 不足 7 个词时：若恰好一个词，先查写死的单词表（目前只有 `ciao` → 意大利语），再查词典里有没有这个词。然后用 Lingua。
-- FastText（`fasttext.ftz`，随包放在 assets，复制到 files）只在词数小于等于 1、而且 Lingua 没有给出结果时运行。
-- 7 个词及以上直接返回 `und`，不会跑 FastText。
+- NFC, lowercase, then strip Whisper `[...]` / `(...)`, punctuation, and digits. Word count uses ICU `BreakIterator.getWordInstance()` and counts only segments that start with a letter or a digit.
+- Under 7 words: a single word is checked against a hard-coded list (currently only `ciao` to Italian) and then against the dictionary. Then Lingua runs.
+- FastText (`fasttext.ftz`, shipped in assets and copied into files) runs only when the word count is 1 or less and Lingua returned nothing.
+- Seven words or more returns `und` immediately. FastText does not run.
 
-因此一句正常长度的话，WalkieTalkie 的语言选择经常落到 Whisper 的平均对数概率上，而不是 FastText。
+A normal-length utterance therefore often has its WalkieTalkie language chosen by Whisper's mean log probability, not by FastText.
 
-Conversation 不走双语言。它只用本机 `Global.getLanguage()` 做一次单语言识别，原文连同语言码发给对方，翻译在接收端做。
+Conversation does not use two languages. It runs one recognition pass in the local `Global.getLanguage()`, sends the original text with the language code, and translates on the receiving phone.
 
-## 4. 翻译前的分句
+## 4. Sentence splits before translation
 
-分句在 `Translator.performTextTranslation`，只对 **不是 Mozilla** 的后端做。Bergamot 自己在 native 层按句断开，Java 不再切。
+Splitting is in `Translator.performTextTranslation` and applies only to backends that are **not** Mozilla. Bergamot splits in native code. Java does not split that path again.
 
-非 Mozilla 的步骤：
+Steps for non-Mozilla backends:
 
-1. `BreakIterator.getSentenceInstance(inputLanguage.getLocale())` 按源语言的 ICU 规则切句。中文、日文和英文的边界规则不同，因为 locale 不同。
-2. 相邻片段如果 token 数之和小于预算，或者后一段不足 5 个 token，就拼回去。拼完再扫一遍，直到没有可拼的相邻对。
-3. 预算按模型写死：NLLB 和 Madlad 200 token，HY-MT 5000 token。源码里这两处都标了 TODO，不是测量过的最优值。
-4. 每一段单独翻译，再用一个空格接起来。
+1. `BreakIterator.getSentenceInstance(inputLanguage.getLocale())` splits on the ICU rules for the source language. Chinese, Japanese, and English boundaries differ because the locale differs.
+2. Neighboring pieces are joined when their token counts sum to less than the budget, or when the following piece has fewer than 5 tokens. The scan repeats until no neighboring pair can be joined.
+3. The budget is fixed per model: 200 tokens for NLLB and Madlad, 5000 tokens for HY-MT. Both sites are marked TODO in the source. They are not measured optima.
+4. Each piece is translated on its own and joined with a single space.
 
-5 token 这条规则会把被 ICU 拆得过碎的片段并回去，例如小数、缩写后面多切出来的一小段。它不保证语义完整，只保证不把极短片段单独送进模型。
+The 5-token rule merges fragments that ICU split too finely, such as a short piece after a decimal or an abbreviation. It does not promise a complete meaning. It only avoids sending a very short fragment to the model alone.
 
-每一段的翻译顺序是：词典整段命中，否则 Tatoeba 整句命中，否则神经网络。词典只在整段就是一个词条时返回译文。Tatoeba 把文本 NFC、统一引号、压空白、转小写后做 SHAKE-256 前 8 字节哈希，再核对原文，避免哈希碰撞。命中就直接用库里的译句，不跑模型。
+Each piece is translated in this order: a whole-piece dictionary hit, otherwise a whole-sentence Tatoeba hit, otherwise the neural network. The dictionary returns a translation only when the whole piece is one entry. Tatoeba normalizes with NFC, unified quotes, collapsed whitespace, and lowercase, hashes the first 8 bytes of SHAKE-256, then checks the original text so a hash collision is not accepted. A hit uses the stored translation and does not run the model.
 
-Mozilla 路径对整段文本调用 `BergamotTranslator.translateMultiple`。native 配置里的 `max-length-break: 256` 是 Bergamot 自己的断句长度，单位是它的词片，不是上面的 Java token 预算。
+The Mozilla path calls `BergamotTranslator.translateMultiple` on the whole text. `max-length-break: 256` in the native config is Bergamot's own break length, in its word pieces, not the Java token budget above.
 
-如果设置了“语音模式用 Mozilla”，Conversation 和 WalkieTalkie 会把 `performMode` 改成 `MOZILLA`，即使当前选中的是 Madlad 或 HY-MT。语言对不被 Mozilla 支持时，会退回当前选中的大模型再试一次。文本模式不用这个开关。
+If "use Mozilla in voice modes" is set, Conversation and WalkieTalkie change `performMode` to `MOZILLA` even when Madlad or HY-MT is selected. A language pair Mozilla does not support falls back to the selected large model and tries again. Text mode does not use this switch.
 
-## 5. 三个翻译后端
+## 5. Three translation backends
 
-模式整数存在偏好 `selectedTranslationModel` 里，默认 `MOZILLA`（7）。不要改这些数的含义。
+The mode integer is stored in the preference `selectedTranslationModel`. The default is `MOZILLA` (7). Do not change what these numbers mean.
 
-| 常量 | 值 | 运行时模型 | 词表 |
+| Constant | Value | Runtime model | Vocabulary |
 | --- | --- | --- | --- |
-| `NLLB` / `NLLB_CACHE` | 0 / 6 | 遗留 NLLB ONNX，12 层，hidden 1024，16 头，head 维 64 | `sentencepiece_bpe.model` |
-| `MADLAD_CACHE` | 5 | Madlad 400 3B，4-bit 权重 ONNX，32 层，hidden 1024，16 头，head 维 128 | `Translation/Madlad/spiece.model` |
-| `MOZILLA` | 7 | 每种语言一对 Bergamot 模型，经英语中转 | 模型目录里的 vocab |
-| `HY_MT` | 8 | HY-MT 1.5，`model_int8_final.onnx`，32 层，hidden 2048 | `Translation/HY-MT/tokenizer.json` |
+| `NLLB` / `NLLB_CACHE` | 0 / 6 | Legacy NLLB ONNX, 12 layers, hidden 1024, 16 heads, head dim 64 | `sentencepiece_bpe.model` |
+| `MADLAD_CACHE` | 5 | Madlad 400 3B, 4-bit weight ONNX, 32 layers, hidden 1024, 16 heads, head dim 128 | `Translation/Madlad/spiece.model` |
+| `MOZILLA` | 7 | One Bergamot pair per language, pivoting through English | vocab in the model directory |
+| `HY_MT` | 8 | HY-MT 1.5, `model_int8_final.onnx`, 32 layers, hidden 2048 | `Translation/HY-MT/tokenizer.json` |
 
-内部存储路径：
+Internal storage paths:
 
-- Madlad：`Translation/Madlad/Int4Acc4/madlad_{encoder,decoder,cache_initializer}_4bit.onnx`，外加 `madlad_embed_8bit.onnx`。
-- HY-MT：`Translation/HY-MT/model_int8_final.onnx`。它是一个解码器会话，没有单独的 encoder 文件。
-- Mozilla：`Translation/Mozilla/{lang}/{lang}en` 和 `{lang}/en{lang}`。每个目录要有 model、srcvocab、trgvocab（或一份共用 vocab）和 `lex.*` shortlist。
+- Madlad: `Translation/Madlad/Int4Acc4/madlad_{encoder,decoder,cache_initializer}_4bit.onnx`, plus `madlad_embed_8bit.onnx`.
+- HY-MT: `Translation/HY-MT/model_int8_final.onnx`. One decoder session, no separate encoder file.
+- Mozilla: `Translation/Mozilla/{lang}/{lang}en` and `{lang}/en{lang}`. Each directory needs the model, srcvocab, trgvocab (or one shared vocab), and a `lex.*` shortlist.
 
 ### Madlad
 
-SentencePiece 编码前在文本前加上 `<2目标语言码> `。源语言不写进 token。id 与 SentencePiece 一一对应，不再加 1。末尾加 `</s>`。
+Before SentencePiece encoding, the text is prefixed with `<2target-language-code> `. The source language is not written into the tokens. Ids match SentencePiece one to one. They are not shifted by 1. `</s>` is appended.
 
-解码是带 cache 的 beam search，但语音模式把 beam 设为 1，所以退化为贪心。文本模式用设置里的 beam。结构上：
+Decoding is beam search with a cache, but voice mode sets the beam to 1, so it degenerates to greedy. Text mode uses the beam from settings. Structurally:
 
-- 第一步 `input_ids = 0`，batch 为 1。
-- beam 大于 1 时，从第二步起 batch 变成 beam 宽，encoder KV 和 attention mask 被复制到每一条 beam。
-- embedding 在 `embedSession` 里单独算，解码器吃 `embed_matrix`。
-- 结束符是 SentencePiece 的 `</s>`。
+- The first step uses `input_ids = 0` and a batch of 1.
+- When the beam is greater than 1, the batch becomes the beam width from the second step. Encoder KV and the attention mask are copied onto each beam.
+- Embeddings are computed alone in `embedSession`. The decoder consumes `embed_matrix`.
+- The end token is SentencePiece `</s>`.
 
-beam 的打分常量在 `Translator` 里：
+Beam scoring constants in `Translator`:
 
 - `WORD_REWARD = 0.5`
-- `LENGTH_ALPHA = 0`（长度归一化关闭，因为 word reward 已经在拉长句子）
+- `LENGTH_ALPHA = 0` (length normalization is off because the word reward already lengthens sentences)
 - `SIBLING_PENALTY = 0.2`
-- `PATIENCE = 1.5`，已完成句子的保留条数大约是 `1.5 * beamSize`
+- `PATIENCE = 1.5`, so finished sentences kept are about `1.5 * beamSize`
 - `EOS_PENALTY = 0`
-- `PARTIAL_RESULT_MARGIN = 0.2`，提前停止时用来挑还没结束的最好候选
+- `PARTIAL_RESULT_MARGIN = 0.2`, used to pick the best unfinished candidate when stopping early
 
-这些数同时作用于 NLLB cache 和 HY-MT 的解码循环。
+These numbers also apply to the NLLB cache decode loop and the HY-MT decode loop.
 
 ### HY-MT
 
-不用 SentencePiece。`HuggingFaceTokenizer` 把整段提示编码进去。源语言是中文时提示是中文指令，否则是英文指令，目标语言名来自 `hy_mt_supported_languages.xml` 里的中文名或英文名。提示以 `<｜hy_Assistant｜>` 结尾，模型只应接着写译文。
+HY-MT does not use SentencePiece. `HuggingFaceTokenizer` encodes the whole prompt. A Chinese source language uses a Chinese instruction. Otherwise the instruction is English. The target language name comes from the Chinese or English name in `hy_mt_supported_languages.xml`. The prompt ends with `<｜hy_Assistant｜>`. The model should continue with the translation only.
 
-结束符不是 `</s>`，而是 `<｜hy_place▁holder▁no▁2｜>`。KV cache 只记 4 组（GQA，注释写真实头数 16、组大小 4）。cache 张量名没有 `.decoder` 这一段，和 Madlad / NLLB 不同。
+The end token is not `</s>`. It is `<｜hy_place▁holder▁no▁2｜>`. The KV cache stores 4 groups (GQA; the comment says 16 real heads and a group size of 4). Cache tensor names have no `.decoder` segment, unlike Madlad and NLLB.
 
-第一步就把带提示的 `input_ids` 送进解码器，而不是一个单独的起始 id。
+The first step sends the prompted `input_ids` into the decoder. It does not send a lone start id.
 
 ### Mozilla Bergamot
 
-`bergamot_translator_interface` 加载本地 C++。每种非英语语言缓存两个模型：`{lang}en` 和 `en{lang}`。翻译规则：
+`bergamot_translator_interface` loads the local C++ library. Each non-English language caches two models: `{lang}en` and `en{lang}`. The translation rules are:
 
-- 源和目标相同：原样返回。
-- 两边都不是英语：`pivotMultiple`，先译到英语，再译到目标语言。
-- 只有一边不是英语：用对应的那一个方向。
+- Same source and target: return the text unchanged.
+- Neither side is English: `pivotMultiple`, English first, then the target language.
+- Only one side is not English: use that one direction.
 
-生成配置固定为 beam 1、`normalize: 1.0`、`word-penalty: 0`、`max-length-break: 256`、`max-length-factor: 3`、1 个 CPU 线程、`workspace: 256`、soft alignment。文件名含 `intgemm8.bin` 或 `intgemm.alphas.bin` 时加上对应的 int8 GEMM 精度。Java 侧的 beam、词典式逐句拼接都不进入这条路径。短句仍可以先被词典或 Tatoeba 截走。
+The generation config is fixed at beam 1, `normalize: 1.0`, `word-penalty: 0`, `max-length-break: 256`, `max-length-factor: 3`, 1 CPU thread, `workspace: 256`, and soft alignment. File names containing `intgemm8.bin` or `intgemm.alphas.bin` add the matching int8 GEMM precision. The Java beam and the dictionary-style sentence joining do not enter this path. A short sentence can still be taken by the dictionary or Tatoeba first.
 
 ### NLLB
 
-仍能加载，但不是 3.0 的默认选项。SentencePiece id 要加 1，并且把 0、1、2 映射成 NLLB 的特殊 id。序列开头是源语言 id（`256000 + 语言下标 + 1`），结尾是 `</s>`。cache 解码第一步用 `input_ids = 2`。
+NLLB can still be loaded. It is not the 3.0 default. SentencePiece ids are shifted by 1, and 0, 1, and 2 are mapped to NLLB special ids. The sequence starts with the source-language id (`256000 + language index + 1`) and ends with `</s>`. The first cache-decode step uses `input_ids = 2`.
 
-## 6. 发声
+## 6. Speech output
 
-应用没有自己的声学模型或声码器。`TTSEngine` 包了一层 Android `android.speech.tts.TextToSpeech`，语言和音色取决于手机上选中的系统引擎。设置里的 “Text to Speech” 打开的是系统 TTS 设置。Google TTS 只是 README 的推荐，不是依赖。
+The app has no acoustic model and no vocoder of its own. `TTSEngine` wraps Android `android.speech.tts.TextToSpeech`. Language and voice depend on the system engine selected on the phone. The "Text to Speech" row in settings opens the system TTS settings. Google TTS is a README recommendation, not a dependency.
 
-队列行为：
+Queue behavior:
 
-- 队列只在 `TTSEngine` 里有一份，`SpeechQueue` 保存待读内容并保证同一条目只提交一次。系统引擎**一次只收一句**：上一句 `onDone`（或失败、被打断、看门狗超时）之后才提交下一句，所以新句子不会截断正在读的句子。
-- 提交给系统引擎时只用 `QUEUE_ADD`，从不为了开始新句子而 `QUEUE_FLUSH`。只有用户点文本模式的朗读按钮会替换上一句。
-- `TTS` 只是引擎的薄封装：`setLanguage` / `setSpeechRate` 只在值真的变化时才调用（每句前重复设置会让某些引擎吞掉开头），空文本或纯标点不提交。
-- 引擎节流：`onDone`、任何 `stop()`、以及真的改了语言之后，都要等 `TTS.ENGINE_SETTLE_MS`（250 ms）再提交下一句。`onDone` 在音频输出还没排空时就回调，紧贴它提交会让引擎丢掉新句开头几个词。`TTSEngine` 用 `notBefore` 时间戳实现，`pump` 提前调用只会排一个延迟任务，不取队头。
-- 蓝牙句首：外放同一句是完整的。耳机的媒体链路空闲时会休眠，新的一段音频开头大约几百毫秒被丢掉；后台正在放音乐时句首完整。同传服务在场并且输出是 A2DP、SCO、助听器或 LE Audio 时，`BluetoothRouteWake` 用和 TTS 相同的 `AudioAttributes` 持续写一段听不见的媒体流，直到离开同传或耳机断开。这条流在麦克风静置（`MIC_SETTLE_MILLIS`，2 秒）之前就已开始，静置时间用来等耳机退出休眠。朗读本身不再为这句话额外等待。`tts.stop()` 不会停掉这条流。
-- 系统引擎实例统一设成 `AudioAttributes(USAGE_MEDIA, CONTENT_TYPE_SPEECH)`。默认是 accessibility usage，部分 ROM 对它做开头淡入，听感就是开头几个字没读。整轮朗读期间持有 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`，队列空了或 `stop()`/`pause()`/`shutdown()` 时释放；另一个应用抢走焦点时只放弃标记，不自己暂停，队列仍由引擎回调驱动。
-- 文本模式的朗读按钮持有自己的 `TTS` 实例，是唯一会「替换上一句」的地方：正在读时先 `stop()`，再等 250 ms 用 `QUEUE_ADD` 提交新句；没有在读时直接 `QUEUE_ADD`。不再用 `QUEUE_FLUSH`。
-- `logcat -s tts_engine` 会打印每次提交（id、字数、距上次 `onDone`/`stop()` 的毫秒数、前 60 字）、`onStart` 相对提交的延迟、以及结束时长，用来判断「文本对不对」和「是不是紧贴上一句」。
-- 一条译文的分片按到达顺序读完；同一译文只在最后一片读完时回调 `onUtteranceFinished`，并且 `last` 只在**整个队列**空了才为 true。第一条开始时，若没有蓝牙耳机，服务会停麦；队列全部读完后再等 500 ms 开麦。SCO 耳机连接时不停麦。
-- 引擎报错只丢弃出错的那一句，不再清空整个队列。
-- 看门狗只做自愈：提交后 5 秒没有 `onStart`，或开始后远超该句时长仍没有 `onDone`，就 `stop()` 引擎、丢弃这一句并继续下一句。它不会重播文本，也不会 flush。
-- WalkieTalkie 检测到新的一句开始会 `pause()` 当前朗读（正在读的那句放回队头），这句的 `onVoiceEnd` 之后延迟再 `resume()`，从放回的那句继续。
-- TalkBack 打断时，被打断的那句放回队列头部，1.5 秒后再提交。这是为了让 TalkBack 把连续的提示说完，避免两套语音交错；同一句只重排一次，避免死循环。用户自己按停止则清空队列，不重播。
-- Conversation 的自动朗读开关是 `conversationAutoTTS`，WalkieTalkie 是 `walkieTalkieAutoTTS`，默认都开。目标语言不在系统 TTS 支持列表里就只显示文字。
+- There is one queue inside `TTSEngine`. `SpeechQueue` holds what is waiting and submits each item only once. The system engine **receives one sentence at a time**: the next sentence is submitted only after the previous `onDone` (or a failure, an interruption, or a watchdog timeout). A new sentence does not cut off the one being spoken.
+- Submissions to the system engine use only `QUEUE_ADD`. A new sentence is never started with `QUEUE_FLUSH`. Only the text-mode speak button replaces the previous sentence.
+- `TTS` is a thin wrapper. `setLanguage` / `setSpeechRate` run only when the value actually changes (setting them again before every sentence makes some engines swallow the start). Empty text and punctuation-only text are not submitted.
+- Engine settling: after `onDone`, any `stop()`, and a real language change, the next sentence waits `TTS.ENGINE_SETTLE_MS` (250 ms). `onDone` fires before the audio output has drained. Submitting immediately makes the engine drop the first words of the new sentence. `TTSEngine` implements this with a `notBefore` timestamp. An early `pump` only schedules a delayed task. It does not pop the queue head.
+- Bluetooth sentence onset: the same sentence on the loudspeaker is complete. An idle headphone media link sleeps, and the first few hundred milliseconds of a new clip are dropped. The onset is complete when music is already playing in the background. While the simultaneous-interpretation service is up and the output is A2DP, SCO, a hearing aid, or LE Audio, `BluetoothRouteWake` keeps writing an inaudible media stream with the same `AudioAttributes` as TTS until the user leaves that mode or the headset disconnects. The stream has already started before the microphone settle time (`MIC_SETTLE_MILLIS`, 2 seconds). That settle time waits for the headset to leave sleep. Speech itself does not add another wait for this sentence. `tts.stop()` does not stop this stream.
+- The system engine is set to `AudioAttributes(USAGE_MEDIA, CONTENT_TYPE_SPEECH)`. The default accessibility usage gets a fade-in on some ROMs, which sounds like the first few words were skipped. The round holds `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` and releases it when the queue is empty or on `stop()` / `pause()` / `shutdown()`. If another app takes focus, the flag is dropped and the queue is not paused by this code. Engine callbacks still drive the queue.
+- The text-mode speak button has its own `TTS` instance and is the only place that replaces the previous sentence: if speech is in progress it calls `stop()`, waits 250 ms, then submits the new sentence with `QUEUE_ADD`. If nothing is speaking it uses `QUEUE_ADD` directly. It does not use `QUEUE_FLUSH`.
+- `logcat -s tts_engine` prints each submission (id, character count, milliseconds since the last `onDone` / `stop()`, first 60 characters), the `onStart` delay relative to submission, and the finished duration. That separates "the text was wrong" from "it was submitted hard against the previous sentence".
+- Pieces of one translation are spoken in arrival order. `onUtteranceFinished` runs only when the last piece of that translation has been spoken, and `last` is true only when the **whole queue** is empty. When the first sentence starts, the service stops the microphone if no Bluetooth headset is connected. After the queue is fully spoken it waits another 500 ms and opens the microphone. An SCO headset does not stop the microphone.
+- An engine error drops only the sentence that failed. It does not clear the whole queue.
+- The watchdog only recovers: if `onStart` does not arrive within 5 seconds of submission, or `onDone` does not arrive long after the sentence should have finished, it calls `stop()` on the engine, drops that sentence, and continues. It does not replay the text and it does not flush.
+- When WalkieTalkie detects a new utterance it `pause()`s current speech (the sentence being spoken goes back to the head of the queue). After that utterance's `onVoiceEnd` it delays and then `resume()`s from the sentence that was put back.
+- When TalkBack interrupts, the interrupted sentence goes back to the head of the queue and is submitted again after 1.5 seconds. That lets TalkBack finish a run of prompts so the two voices do not overlap. The same sentence is rescheduled only once, to avoid a loop. The user's own stop clears the queue and does not replay.
+- Conversation's automatic speech switch is `conversationAutoTTS`. WalkieTalkie's is `walkieTalkieAutoTTS`. Both default to on. If the target language is not in the system TTS list, only the text is shown.
 
-## 7. 三种模式各走哪条路
+## 7. Which path each mode takes
 
-| | 切段 | 识别 | 分句 | 翻译 | 朗读 |
+| | Segmentation | Recognition | Sentence split | Translation | Speech |
 | --- | --- | --- | --- | --- | --- |
-| Conversation | 自动 VAD，本机一种语言 | Whisper 贪心，单语言 | 接收端、非 Mozilla 才切 | 接收端，beam 1 | 系统 TTS，耳机可与麦并行 |
-| WalkieTalkie | 自动或按住 | 同一段音频两种语言各解一次 | 本机、非 Mozilla 才切 | 本机，beam 1，译到另一种语言 | 系统 TTS，开口时暂停 |
-| 文本 | 无 | 无 | 非 Mozilla 才切 | 本机，beam 用设置值 | 按钮触发，同一套 TTS |
+| Conversation | Automatic VAD, one local language | Whisper greedy, one language | On the receiver, and only if not Mozilla | On the receiver, beam 1 | System TTS; a headset can run with the mic |
+| WalkieTalkie | Automatic or push-to-talk | The same audio decoded once per language | On this phone, and only if not Mozilla | On this phone, beam 1, into the other language | System TTS, paused when speech starts |
+| Text | None | None | Only if not Mozilla | On this phone, beam from settings | Button, same TTS |
 
-Conversation 的语音 beam 常量是 4，翻译 beam 常量是 1。前者目前没有被解码器使用。
+Conversation's speech beam constant is 4 and its translation beam constant is 1. The decoder does not currently use the former.
 
-## 8. 改动时容易错的地方
+## 8. Easy mistakes when changing this
 
-- 不要把识别改成边说边出字，除非同时改 `Recorder.executeEnd` 和所有 `onVoice` 调用方。现在 `onVoice` 的语义是“一句的完整 PCM”。
-- `speechTimeout`、`prevVoiceDuration`、音量门限是用户设置。29 秒上限和 512 点帧长是代码常量。
-- Whisper 的 `beamSize` 参数是死的。真正的 beam 在 `Translator.executeCacheDecoder`，而且语音模式传入 1。
-- 7 个词以上的文本，`LanguageDetector` 直接返回 `und`。WalkieTalkie 因此更依赖两条 Whisper 假设的平均对数概率。
-- Java 分句不作用于 Bergamot。改 ICU 切分不会改变 Mozilla 的断句。
-- HY-MT 的提示语、结束符和 cache 张量名都和其他模型不同。换模型时这三处要一起换。
-- Bergamot 的非英语对一定会经过英语。质量问题可能出在两跳中的任何一跳。
-- 发声质量和语言覆盖不由这个仓库的模型决定，而由系统 TTS 决定。
-- 不要在 `TTSEngine` / `TTS` 之外直接对系统引擎 `speak`，也不要为了开始新句子用 `QUEUE_FLUSH`：那会截断正在读的句子，引擎还会把被截断的那句以 `onStop` 回调回来，队列状态会跟着错。文本模式的朗读按钮是唯一需要替换上一句的地方。
-- 不要把 `speak()` 写在 `stop()` 或 `onDone` 回调的同一个同步块里，也不要在 `setLanguage()` 之后立刻 `speak()`：这三种紧贴提交都会让引擎丢掉新请求开头几个词。统一走 `TTSEngine` 的 `notBefore` 或文本模式按钮的延迟提交。
+- Do not turn recognition into partial text while the person is still talking unless `Recorder.executeEnd` and every `onVoice` caller change together. `onVoice` means "the complete PCM of one utterance".
+- `speechTimeout`, `prevVoiceDuration`, and the amplitude threshold are user settings. The 29 second cap and the 512-sample frame are code constants.
+- Whisper's `beamSize` argument is dead. The real beam is in `Translator.executeCacheDecoder`, and voice mode passes 1.
+- Text of 7 words or more makes `LanguageDetector` return `und` immediately. WalkieTalkie then depends more on the mean log probability of the two Whisper hypotheses.
+- Java sentence splitting does not apply to Bergamot. Changing the ICU split does not change Mozilla's breaks.
+- HY-MT's prompt, end token, and cache tensor names differ from the other models. Replacing the model has to change all three together.
+- A Bergamot pair that is not English always goes through English. A quality problem can be in either hop.
+- Speech quality and language coverage are decided by the system TTS, not by a model in this repository.
+- Do not call `speak` on the system engine outside `TTSEngine` / `TTS`, and do not use `QUEUE_FLUSH` to start a new sentence. That cuts off the sentence being spoken. The engine also reports the cut sentence through `onStop`, and the queue state follows it into the wrong place. The text-mode speak button is the only place that needs to replace the previous sentence.
+- Do not call `speak()` inside the same synchronous block as `stop()` or an `onDone` callback, and do not call `speak()` immediately after `setLanguage()`. All three submit too close together and the engine drops the first words of the new request. Use `TTSEngine`'s `notBefore`, or the delayed submit on the text-mode button.

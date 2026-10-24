@@ -1,151 +1,153 @@
-# Conversation 模式技术说明
+# Conversation mode
 
-本文描述 TransPocket `0.1.0` 里 Conversation 模式的实际实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。结论都来自当前源码，不是 README 里的产品介绍。
+中文：[conversation.zh-CN.md](conversation.zh-CN.md)
 
-Conversation 是多手机、双向的实时口译。每台手机只识别自己的话，把原文和语言码经蓝牙低功耗发给对方。对方在本机把原文译成自己的语言，再用系统 TTS 读出来。音频不离开本机。
+This note describes the Conversation implementation in TransPocket `0.1.0`. It is a fork of RTranslator `v3.00` (`3.0.0-beta2`). The conclusions come from the current source, not from the product summary in the README.
 
-## 1. 它和另外两种模式的差别
+Conversation is multi-phone, two-way spoken translation. Each phone recognizes only its own speech, then sends the original text and a language code to the other phones over Bluetooth Low Energy. The receiver translates that text into its own language and reads it with the system TTS. Audio does not leave the phone.
 
-三种模式共用 `Global` 里的 `Translator`、`Recognizer` 和 Silero VAD，但数据路径不同。
+## 1. How it differs from the other two modes
+
+All three modes share the `Translator`, `Recognizer`, and Silero VAD in `Global`. The data paths differ.
 
 | | Text | WalkieTalkie | Conversation |
 | --- | --- | --- | --- |
-| 设备 | 一台 | 一台 | 两台或更多 |
-| 识别 | 不识别 | 同时听两种语言 | 只听本机用户的一种语言 |
-| 翻译发生在 | 本机 | 本机 | 接收方 |
-| 网络 | 无 | 无 | 无，只有 BLE |
-| 前台服务 | 无 | `WalkieTalkieService` | `ConversationService` |
+| Devices | One | One | Two or more |
+| Recognition | None | Listens for two languages at once | Listens for the local user's one language |
+| Translation happens | On this phone | On this phone | On the receiver |
+| Network | None | None | None, BLE only |
+| Foreground service | None | `WalkieTalkieService` | `ConversationService` |
 
-WalkieTalkie 在同一部手机上做检测、翻译和播报。Conversation 把“我说的原文”当成消息，翻译推迟到听的那一侧。这样每台手机只需要加载“对方的语言 → 我的语言”，而不必在说话时知道所有听众的语言后再分别翻译。
+WalkieTalkie detects, translates, and speaks on the same phone. Conversation treats "what I said" as a message and postpones translation until the listening side. Each phone only has to load "their language → my language". It does not have to know every listener's language at speak time and translate once per listener.
 
-## 2. 对象怎么挂在一起
+## 2. How the objects are wired
 
 ```
 VoiceTranslationActivity
-  PairingFragment                         发现、发起、接受
+  PairingFragment                         discover, request, accept
   ConversationFragment
-    ConversationMainFragment              麦克风、键盘、消息列表
-    PeersInfoFragment                     已连接的人、继续加人
+    ConversationMainFragment              microphone, keyboard, message list
+    PeersInfoFragment                     people already connected, add more
         | Messenger
         v
-ConversationService                       录音、识别、收消息、翻译、TTS
+ConversationService                       record, recognize, receive, translate, TTS
         |
-        +-- Recorder + Recognizer         本机语音
-        +-- Translator                    收到的文本
-        +-- TTSEngine                     系统 TTS
+        +-- Recorder + Recognizer         local speech
+        +-- Translator                    text that arrived
+        +-- TTSEngine                     system TTS
         |
         v
-Global.ConversationBluetoothCommunicator  应用头 m / d / i / l
+Global.ConversationBluetoothCommunicator  app headers m / d / i / l
         |
         v
 BluetoothCommunicator
-  BluetoothConnectionClient               本机主动 connect 的链路
-  BluetoothConnectionServer               别人连上来的链路
+  BluetoothConnectionClient               links this phone opened with connect
+  BluetoothConnectionServer               links other phones opened to us
         |
         v
-每个 Peer 一个 Channel                   分包、队列、重连
+one Channel per Peer                      fragmentation, queues, reconnect
 ```
 
-`Global` 是 `Application`。`Translator`、`Recognizer`、VAD 和 `ConversationBluetoothCommunicator` 都挂在它上面，Activity 和 Service 共用同一份。`ConversationBluetoothCommunicator` 在进入配对界面时由 `initializeBluetoothCommunicator()` 创建，策略固定为 `STRATEGY_P2P_WITH_RECONNECTION`，并且 `bluetoothChange=false`：应用不会再自己开关系统蓝牙。
+`Global` is the `Application`. `Translator`, `Recognizer`, VAD, and `ConversationBluetoothCommunicator` all hang off it. The activity and the service share those instances. `ConversationBluetoothCommunicator` is created by `initializeBluetoothCommunicator()` when the pairing screen opens. The strategy is fixed at `STRATEGY_P2P_WITH_RECONNECTION`, and `bluetoothChange=false`: the app does not toggle the system Bluetooth radio itself.
 
-界面和 Service 不直接调方法。`ConversationMainFragment` bind 到 `ConversationService`，双方用 `Messenger` 传 `Bundle`。界面发给服务的命令包括 `START_MIC`、`STOP_MIC`、`START_SOUND`、`STOP_SOUND`、`RECEIVE_TEXT`、`SPEAK_TEXT`。服务回界面的事件包括 `ON_MESSAGE`、`ON_VOICE_STARTED`、`ON_VOLUME_LEVEL`、`ON_TTS_STARTED`。
+The UI and the service do not call each other directly. `ConversationMainFragment` binds to `ConversationService`. Both sides pass a `Bundle` through a `Messenger`. Commands from the UI to the service include `START_MIC`, `STOP_MIC`, `START_SOUND`, `STOP_SOUND`, `RECEIVE_TEXT`, and `SPEAK_TEXT`. Events from the service to the UI include `ON_MESSAGE`, `ON_VOICE_STARTED`, `ON_VOLUME_LEVEL`, and `ON_TTS_STARTED`.
 
-`ConversationService` 是前台服务。有录音权限时类型是 `FOREGROUND_SERVICE_TYPE_MICROPHONE`，否则降为 `DATA_SYNC`。它持有一个 10 分钟的 `PARTIAL_WAKE_LOCK`，到期前 10 秒续上，避免息屏后被系统挂起。
+`ConversationService` is a foreground service. With record permission its type is `FOREGROUND_SERVICE_TYPE_MICROPHONE`. Otherwise it drops to `DATA_SYNC`. It holds a 10 minute `PARTIAL_WAKE_LOCK` and renews it 10 seconds before expiry so the screen-off state does not suspend the process.
 
-## 3. 一次会话的生命周期
+## 3. Lifecycle of one session
 
-1. 用户进入配对。`PairingFragment` 同时 `startAdvertising()` 和 `startDiscovery()`。两边都广播，也都扫描。
-2. 扫描只认 service data。广播包不带设备名，service UUID 是 `00007B3D-0000-1000-8000-00805F9B34FB`，service data 是 `uniqueName`。
-3. `uniqueName` = 用户显示名 + 2 个持久随机字符。这两个字符存在 `default` SharedPreferences 的 `bluetoothNameId`。显示名可以改，身份用 `uniqueName`。蓝牙地址在断线后经常变，不能当身份。
-4. 点某个发现到的人会调用 `connect()`。发起方是 GATT client，对方是 GATT server。一部手机可以同时是某些链路的 client、另一些链路的 server。`BluetoothConnectionClient` 和 `BluetoothConnectionServer` 一直都在。
-5. Server 收到连接请求后弹出确认框，15 秒超时。接受走 `acceptConnection()`，拒绝走 `rejectConnection()`。拒绝用的 GATT 状态是 `150`，落在应用保留区间 148–159，client 才能把它和系统错误分开。
-6. 任意一方 `onConnectionSuccess` 后，`PairingFragment` 切到 `ConversationFragment`。这个界面有两页：对话页和连接页。
-7. `ConversationMainFragment` bind 服务时，如果服务还没起，会先 `startService`。服务 `onCreate` 里加载本机目标语言的翻译资源，成功后才创建 `Recorder`。
-8. 最后一个人断开时，服务 `stopSelf()`，界面回到 `PairingFragment`。用户确认退出时，如果还有连接，先 `disconnectFromAll()`。
+1. The user enters pairing. `PairingFragment` calls `startAdvertising()` and `startDiscovery()` together. Both sides advertise and both sides scan.
+2. The scan accepts only service data. The advertising packet has no device name. The service UUID is `00007B3D-0000-1000-8000-00805F9B34FB`. The service data is `uniqueName`.
+3. `uniqueName` is the display name plus 2 persistent random characters. Those characters are stored in the `default` SharedPreferences key `bluetoothNameId`. The display name can change. Identity is `uniqueName`. The Bluetooth address often changes after a disconnect and cannot be the identity.
+4. Tapping a discovered person calls `connect()`. The initiator is the GATT client. The other phone is the GATT server. One phone can be the client on some links and the server on others. `BluetoothConnectionClient` and `BluetoothConnectionServer` are both always present.
+5. After the server receives a connection request it shows a confirm dialog with a 15 second timeout. Accept calls `acceptConnection()`. Reject calls `rejectConnection()`. The reject GATT status is `150`, inside the application range 148–159, so the client can tell it apart from a system error.
+6. After either side's `onConnectionSuccess`, `PairingFragment` switches to `ConversationFragment`. That screen has two pages: the conversation page and the connection page.
+7. When `ConversationMainFragment` binds, it calls `startService` first if the service is not up. In `onCreate` the service loads translation resources for the local target language and creates the `Recorder` only after that succeeds.
+8. When the last person disconnects, the service calls `stopSelf()` and the UI returns to `PairingFragment`. If the user confirms exit while connections remain, it first calls `disconnectFromAll()`.
 
-连接页可以在会话中继续搜索并加入更多人。一个人断开不会结束整场会话；`peersLeft == 0` 才会结束。这是相对旧版本的行为：以前单个设备掉线会退出整个 Conversation。
+The connection page can keep searching and add more people during a session. One person disconnecting does not end the session. It ends when `peersLeft == 0`. That differs from the old behavior, where one device dropping out left Conversation entirely.
 
-## 4. 蓝牙握手
+## 4. Bluetooth handshake
 
-Client 连上之后按这个顺序走。握手包不进普通消息队列，因为此时 peer 还没标记为 connected，队列里的发送会被 `isConnected` 检查挡住。
+After the client connects, the steps run in this order. Handshake packets do not enter the normal message queue. The peer is not marked connected yet, and a send from that queue is blocked by the `isConnected` check.
 
-1. `onServicesDiscovered`：若硬件支持，client 请求 LE 2M PHY，并把连接优先级设为 `CONNECTION_PRIORITY_HIGH`。
-2. Client 向 `MTU_REQUEST_UUID` 写 247 字节。这不是协商数值本身，而是用一次尽量长的 write 探测当前能写下的长度。
-3. Server 用这次 write 的长度减 1 作为自己的分包长度，再通过 `MTU_RESPONSE_UUID` 把这个长度 indicate 回去。
-4. 若对端报回的长度小于 `PREFERRED_MTU`（247），client 再调用 `requestMtu(247)`。`onMtuChanged` 里把分包长度设为 `mtu - DATA_MARGIN`，`DATA_MARGIN` 是 6。在协商完成前，`Channel` 的默认分包长度是 17。
-5. Client 订阅连接响应、消息、数据、改名和断开这几个 indicate 特征，然后写 `CONNECTION_REQUEST_UUID`，内容是自己的 `uniqueName`。重连时写的是 `CONNECTION_RESUMED_RECEIVE_UUID`，不是新的连接请求。
-6. Server 弹出接受或拒绝。接受后 indicate `CONNECTION_RESPONSE_UUID`，内容是 `ACCEPT`（GATT success，0）或 `REJECT`（150）。
-7. Client 收到接受，两边都回调 `onConnectionSuccess`。从这一刻起，应用层消息才能走消息队列。
+1. `onServicesDiscovered`: if the hardware supports it, the client requests LE 2M PHY and sets the connection priority to `CONNECTION_PRIORITY_HIGH`.
+2. The client writes 247 bytes to `MTU_REQUEST_UUID`. That is not the negotiated number itself. It is a long write used to probe the length that can be written now.
+3. The server takes that write length minus 1 as its own fragment length, then indicates that length back through `MTU_RESPONSE_UUID`.
+4. If the peer reports a length below `PREFERRED_MTU` (247), the client calls `requestMtu(247)`. In `onMtuChanged` the fragment length becomes `mtu - DATA_MARGIN`. `DATA_MARGIN` is 6. Before negotiation finishes, a `Channel`'s default fragment length is 17.
+5. The client subscribes to the indicate characteristics for the connection response, messages, data, rename, and disconnect, then writes `CONNECTION_REQUEST_UUID` with its own `uniqueName`. A reconnect writes `CONNECTION_RESUMED_RECEIVE_UUID`, not a new connection request.
+6. The server shows accept or reject. After accept it indicates `CONNECTION_RESPONSE_UUID` with `ACCEPT` (GATT success, 0) or `REJECT` (150).
+7. The client receives accept. Both sides call `onConnectionSuccess`. From that moment, application messages can use the message queue.
 
-整段握手有 10 秒的 `CONNECTION_COMPLETE_TIMEOUT`。超时就拆掉这条还没完成的 channel。
+The whole handshake has a 10 second `CONNECTION_COMPLETE_TIMEOUT`. On timeout the unfinished channel is torn down.
 
-重连时地址往往已经变了，server 在 `onConnectionStateChange` 里认不出旧 channel，会先建一个占位 channel。等到 resume 写入里带上 `uniqueName`，server 找到正在重连、且名字相同的旧 channel，把新连接的 device 和参数换过去，删掉占位 channel，再在旧 channel 上把握手做完。旧协议只写一个字符 `1`，长度小于等于 1 的 resume 负载会被拒绝。因此 beta 2 的链路和更早的应用版本不兼容。
+On reconnect the address has often changed. The server does not recognize the old channel in `onConnectionStateChange` and first creates a placeholder channel. When the resume write carries `uniqueName`, the server finds the old channel that is reconnecting under the same name, swaps in the new connection's device and parameters, deletes the placeholder, and finishes the handshake on the old channel. The old protocol wrote a single character `1`. A resume payload of length 1 or less is rejected. Beta 2 links are therefore incompatible with earlier app versions.
 
-## 5. 应用层四类消息
+## 5. Four application messages
 
-`ConversationBluetoothCommunicator` 在 BLE 之上只用 1 字符的 header。文本走 `sendMessage`，头像走 `sendData`。两条队列互相独立，所以传头像不会堵住后面的口译文本，反过来也一样。`receiver == null` 表示发给当前所有还没进入断开流程的 peer。
+Above BLE, `ConversationBluetoothCommunicator` uses a 1-character header. Text uses `sendMessage`. The avatar uses `sendData`. The two queues are independent, so an avatar transfer does not block a later interpretation text, and the reverse is also true. `receiver == null` means every peer that has not entered disconnect.
 
-| Header | 通道 | 谁先发 | 内容 |
+| Header | Channel | Who sends first | Contents |
 | --- | --- | --- | --- |
-| `d` | message | client，在 `onConnectionSuccess` | `Settings.Secure.ANDROID_ID` |
-| `i` | data | client，在收到对方的 `d` 之后 | 160px、质量 70 的头像 JPEG，或字符串 `null` |
-| `l` | message | client，在收到对方的 `i` 之后 | 对方要加载的源语言 |
-| `m` | message | 任一方，识别结束或键盘发送 | 口译正文 |
+| `d` | message | client, in `onConnectionSuccess` | `Settings.Secure.ANDROID_ID` |
+| `i` | data | client, after receiving the peer's `d` | a 160 px JPEG at quality 70, or the string `null` |
+| `l` | message | client, after receiving the peer's `i` | the source language the peer should load |
+| `m` | message | either side, after recognition or a keyboard send | the text to interpret |
 
-握手后的身份交换是固定接力，角色看的是这条 GATT 链路的 `source`，不是“谁先开口”：
+The identity exchange after the handshake is a fixed relay. The role follows the GATT link's `source`, not "who spoke first":
 
-1. Client 发 `d`。
-2. Server 收到 `d` 后回自己的 `d`。双方用这个 id 写入或更新 Room 里的 recent peer，键是 Android id 加 `uniqueName`。
-3. Client 收到 `d` 后发 `i`。
-4. Server 收到 `i` 后回自己的 `i`，并更新头像。
-5. Client 收到 `i` 后发 `l`。
-6. 双方收到 `l` 都调用 `loadSrcLangResourcesForPeer`。Server 按下面的条件决定要不要把自己的语言回给 client。
+1. The client sends `d`.
+2. The server receives `d` and replies with its own `d`. Both sides write or update the Room recent peer. The key is the Android id plus `uniqueName`.
+3. The client receives `d` and sends `i`.
+4. The server receives `i`, replies with its own `i`, and updates the avatar.
+5. The client receives `i` and sends `l`.
+6. Both sides call `loadSrcLangResourcesForPeer` when they receive `l`. The server uses the condition below to decide whether to send its own language back to the client.
 
-`l` 和 `m` 的正文用同一种尾巴编码：
+The bodies of `l` and `m` use the same tail encoding:
 
 ```
-{payload}{languageCode}{languageCode 的字符数，一位十进制}
+{payload}{languageCode}{character count of languageCode, one decimal digit}
 ```
 
-例如语言码 `en`、文本 `hello` 的 `m` 消息正文是 `helloen2`。解析时先读最后一个字符得到语言码长度，再从末尾切出语言码，剩下的是正文。语言码必须是 1 到 9 个字符。`zh-Hans` 这种更长的码会把边界切错。
+For language code `en` and text `hello`, the `m` body is `helloen2`. Parsing reads the last character as the language-code length, cuts the language code off the end, and keeps the rest as the body. The language code must be 1 to 9 characters. A longer code such as `zh-Hans` cuts the boundary in the wrong place.
 
-Server 回语言的条件和注释不一致。注释说“第一次收到对方语言才回复”。代码在调用 `loadSrcLangResourcesForPeer` 之前读 `isPeerLoaded()`，而这个方法在 peer 已经出现在 `conversationSrcResources` 里时返回 true。因此第一次收到 `l` 时 `firstLoad` 为 false，server 不会回复；之后的语言更新反而会回复。Client 的语言是在头像交换后发出的，server 的语言回复依赖这段判断。改这段逻辑前要对照一次真实双机握手，不要只按注释改。
+The condition for the server's language reply does not match the comment. The comment says "reply only the first time the peer's language arrives". The code reads `isPeerLoaded()` before calling `loadSrcLangResourcesForPeer`, and that method returns true when the peer is already in `conversationSrcResources`. The first `l` therefore sees `firstLoad` as false and the server does not reply. Later language updates do reply. The client's language is sent after the avatar exchange, and the server's language reply depends on this check. Before changing it, compare a real two-phone handshake. Do not change it from the comment alone.
 
-用户在会话中改自己的语言时，`Global.setLanguage()` 会重新 `loadTgtLangResourcesForConversation`，再 `sendLanguage()` 广播给所有已连接的人。
+When the user changes their own language during a session, `Global.setLanguage()` loads `loadTgtLangResourcesForConversation` again and then `sendLanguage()` broadcasts to everyone connected.
 
-## 6. BLE 分包
+## 6. BLE fragmentation
 
-`Message` 先变成一串 `BluetoothMessage`。每一片的字节布局是：
+A `Message` becomes a series of `BluetoothMessage`s. Each piece is laid out as:
 
 ```
 id(4) + sequence(3) + type(1) + data
 ```
 
-`id` 和 `sequence` 不是整数的十进制，而是 `BluetoothTools.getSupportedUTFCharacters()` 里的字符进位。`type` 是字符 `1`（`NON_FINAL`）或 `2`（`FINAL`）。`data` 是“1 字符 header + 正文 UTF-8”切出来的一片。片长是当前 channel 的 `bluetoothMessagesLength`，其中要先扣掉这 8 字节头。
+`id` and `sequence` are not decimal integers. They are digits in the character set from `BluetoothTools.getSupportedUTFCharacters()`. `type` is the character `1` (`NON_FINAL`) or `2` (`FINAL`). `data` is one slice of "1-character header + UTF-8 body". The slice length is the channel's current `bluetoothMessagesLength`, after subtracting these 8 header bytes.
 
-同一个 `id` 的片按 sequence 拼回去，看到 `FINAL` 才还原成 `Message`。消息 id 和数据 id 分开计数。每个 channel 同时只发一条逻辑消息的各个分片；这条发完才发队列里的下一条。写失败会立刻重试当前片。
+Pieces with the same `id` are joined by sequence. The `Message` is restored only when `FINAL` is seen. Message ids and data ids are counted separately. A channel sends the pieces of only one logical message at a time. The next queued message starts after that one finishes. A failed write retries the current piece immediately.
 
-一条 channel 上的 characteristic write、read、notification 进 `pendingCommands`，串行执行。不同 peer 的 channel 并行。Server 上所有 channel 共用一个 `BluetoothGattServer` 和同一批 characteristic 对象，所以 `notifyCharacteristicChanged` 还要用 `gattServerLock` 串起来，避免两个 channel 同时改同一个 characteristic 的 value。
+Characteristic write, read, and notification on one channel enter `pendingCommands` and run serially. Channels for different peers run in parallel. On the server, every channel shares one `BluetoothGattServer` and the same characteristic objects, so `notifyCharacteristicChanged` is also serialized on `gattServerLock`. Two channels must not change the same characteristic value at once.
 
-超时：命令 1 秒，消息片 1.5 秒，断开通知 5 秒，断开完成 4 秒。`disconnectFromAll()` 先给所有人发断开通知；5 秒内收不齐，就 `forceDisconnectionFromAll()`，拆掉 client 和 server 再重建。
+Timeouts: 1 second for a command, 1.5 seconds for a message piece, 5 seconds for the disconnect notice, 4 seconds for disconnect completion. `disconnectFromAll()` first sends a disconnect notice to everyone. If they have not all arrived within 5 seconds, `forceDisconnectionFromAll()` tears down the client and the server and builds them again.
 
-## 7. 本机说的一句话怎么出去
+## 7. How one local utterance leaves the phone
 
-`ConversationService` 把 `Recorder` 的回调直接接成识别，不在这里做第二种语言。
+`ConversationService` connects `Recorder` callbacks straight to recognition. It does not run a second language here.
 
-`Recorder` 用 `AudioSource.MIC`。除 vivo 用 `PCM_16BIT` 外，其他机器用 `PCM_FLOAT`。采样率从候选列表里挑设备能打开的那一个。读块对齐到 Silero 的帧长。VAD 在 `Global` 里建好后传进来：16 kHz、帧长 512、`Mode.NORMAL`、语音段至少 50 ms、静音 300 ms 视为结束。
+`Recorder` uses `AudioSource.MIC`. vivo devices use `PCM_16BIT`. Other devices use `PCM_FLOAT`. The sample rate is the one the device can open from the candidate list. Reads are aligned to Silero's frame length. VAD is built in `Global` and passed in: 16 kHz, frame length 512, `Mode.NORMAL`, a speech segment of at least 50 ms, and 300 ms of silence treated as the end.
 
-检测到语音后，`onVoice` 把 float 缓冲交给 `Recognizer.recognize()`。Conversation 的语音 beam size 是 `SPEECH_BEAM_SIZE = 4`，语言码固定是 `global.getLanguage()`，也就是这台手机用户自己的语言。Whisper 在本机 ONNX Runtime 里跑，模型文件是 `Whisper_encoder.onnx` 以及 init、cache、decoder、detokenizer 那一组。低内存手机会关掉 encoder 的 CPU arena。
+After speech is detected, `onVoice` gives the float buffer to `Recognizer.recognize()`. Conversation's speech beam size is `SPEECH_BEAM_SIZE = 4`. The language code is fixed at `global.getLanguage()`, the language of the user of this phone. Whisper runs in the local ONNX Runtime. The model files are `Whisper_encoder.onnx` plus the init, cache, decoder, and detokenizer set. A low-memory phone turns off the encoder CPU arena.
 
-识别回调里的过滤：
+Filters in the recognition callback:
 
-- 空文本丢掉。
-- `[(und)]` 丢掉。
-- 前三个字符里出现 `[` 或 `(` 的文本当元数据丢掉，避免把 Whisper 的特殊标记送出去。
-- 非 final 结果只 `notifyMessage` 给界面，不入库，也不发送。每次回调都会 `incrementCurrentResultID()`，所以这些中间结果在界面上是独立气泡，不会覆盖上一条。
-- final 结果才发送，并 `addOrUpdateMessage` 放进服务里的列表。界面重连服务时用 `GET_ATTRIBUTES` 把这份列表拿回去。
+- Empty text is dropped.
+- `[(und)]` is dropped.
+- Text whose first three characters contain `[` or `(` is dropped as metadata, so Whisper special tokens are not sent.
+- A non-final result only `notifyMessage`s the UI. It is not stored and not sent. Every callback calls `incrementCurrentResultID()`, so those intermediate results are separate bubbles. They do not replace the previous one.
+- Only a final result is sent, and `addOrUpdateMessage` puts it in the service's list. When the UI rebinds, `GET_ATTRIBUTES` returns that list.
 
-发送前再包一层：
+Before sending, one more wrapper is applied:
 
 ```
 text + languageCode + languageCode.length()
@@ -153,102 +155,102 @@ header = "m"
 receiver = null
 ```
 
-键盘发送走命令 `RECEIVE_TEXT`，跳过识别，但用同一条 `sendMessage()`。本机气泡的输入语言和输出语言都设成自己的语言，因为本机不翻译自己的话。
+A keyboard send uses the command `RECEIVE_TEXT`. It skips recognition and uses the same `sendMessage()`. The local bubble's input language and output language are both this phone's language, because this phone does not translate its own speech.
 
-## 8. 对方收到后怎么翻译和朗读
+## 8. Translation and speech after the other phone receives it
 
-`onMessageReceived` 只处理 header `m`。它按第 5 节的规则切出原文和源语言，做成 `ConversationMessage(sender, NeuralNetworkApiText)`，然后：
+`onMessageReceived` handles header `m` only. It splits out the original text and the source language with the rule in section 5, builds a `ConversationMessage(sender, NeuralNetworkApiText)`, then:
 
 ```
-translator.translateMessage(message, 本机语言, TRANSLATOR_BEAM_SIZE=1, ...)
+translator.translateMessage(message, local language, TRANSLATOR_BEAM_SIZE=1, ...)
 ```
 
-`translateMessage` 在名为 `messageTranslationPerformer` 的线程里排队，同一时间只翻一条。源语言和本机语言相同就直接回原文，不跑模型。否则先 `loadSrcLangResourcesForPeer(源语言, sender)`，再 `performTextTranslation`。翻译队列和文本模式、WalkieTalkie 模式共用 `Translator` 的锁，但 Conversation 走的是 `translateMessage` 这条入口，不是普通 `translate`。
+`translateMessage` queues on a thread named `messageTranslationPerformer` and translates one item at a time. If the source language and the local language are the same, it returns the original text and does not run a model. Otherwise it calls `loadSrcLangResourcesForPeer(source language, sender)` and then `performTextTranslation`. The translation queue shares `Translator`'s lock with text mode and WalkieTalkie, but Conversation enters through `translateMessage`, not the ordinary `translate`.
 
-译完之后：
+After translation:
 
-- `message.textToTranslate` 保存原文，`message.text` 换成译文。
-- 若是 final、系统 TTS 支持目标语言、且 `conversationAutoTTS` 为 true，就 `speak()`。
-- 气泡交给界面，并写入服务内的消息列表。
-- 翻译失败目前只 `notifyError`。源码里留了 TODO：语言不支持时还没有红色的“不支持”气泡。
+- `message.textToTranslate` keeps the original text. `message.text` is replaced with the translation.
+- If it is final, the system TTS supports the target language, and `conversationAutoTTS` is true, it calls `speak()`.
+- The bubble is handed to the UI and written into the service's message list.
+- A translation failure currently only calls `notifyError`. The source has a TODO: an unsupported language does not yet get a red "unsupported" bubble.
 
-TTS 是手机上的系统引擎，不是模型。默认自动朗读。用户关掉声音按钮会把 `conversationAutoTTS` 写成 false，并停掉当前朗读。
+TTS is the phone's system engine, not a model. Automatic speech is on by default. Turning the sound button off writes `conversationAutoTTS` to false and stops the current speech.
 
-麦克风和 TTS 的关系：
+Microphone and TTS:
 
-- 没连蓝牙耳机时，`shouldDeactivateMicDuringTTS()` 为 true。TTS 一开始就停录音，全部朗读结束后再等 500 ms 重新开麦。
-- 连着 SCO 耳机时这个方法返回 false，麦保持开着，耳机播报不会掐掉自己的下一句。
-- `Recorder` 还会看系统是不是正在播无障碍音频。TalkBack 说话时会把麦让开；如果当前走的是耳机 SCO，这条让麦逻辑不生效。
+- With no Bluetooth headset, `shouldDeactivateMicDuringTTS()` is true. Recording stops when TTS starts and the microphone opens again 500 ms after all speech has finished.
+- With an SCO headset the method returns false. The microphone stays open, and headset playback does not cut off the user's next sentence.
+- `Recorder` also watches whether the system is playing accessibility audio. TalkBack speaking yields the microphone. That yield does not apply when the route is headset SCO.
 
-`ConversationService` 里旧的 `BluetoothHelper` 已经注释掉。耳机 SCO 的连接和断开由 `Recorder` 自己的 `BluetoothHeadsetCallback` 通知界面，把输入标签在 “mic” 和 “btHeadset” 之间切换。
+The old `BluetoothHelper` in `ConversationService` is commented out. SCO connect and disconnect are reported to the UI by `Recorder`'s own `BluetoothHeadsetCallback`, which switches the input label between "mic" and "btHeadset".
 
-## 9. 翻译资源按人加载
+## 9. Language resources loaded per person
 
-Conversation 的语言资源不是一对固定的源语言和目标语言。`LanguageResourcesManager` 为这个模式保存：
+Conversation language resources are not one fixed source and target pair. `LanguageResourcesManager` keeps, for this mode:
 
-- 一个目标语言 `conversationTgtResource`：本机用户的语言。服务启动时加载。
-- 一张表 `conversationSrcResources`：key 是对方 `uniqueName`，value 是对方发来的语言。
+- One target language, `conversationTgtResource`: the local user's language. Loaded when the service starts.
+- A map, `conversationSrcResources`: the key is the peer's `uniqueName`, the value is the language that peer sent.
 
-每一对“对方语言 → 我的语言”会按当前设置加载 Mozilla Bergamot 模型、词典和 Tatoeba 句对。Madlad 和 HY-MT 是整模型，不按语言对拆文件；Mozilla 才是每种语言一个模型。资源在 Text、WalkieTalkie、Conversation 之间复用。卸载某个 peer 时，如果别的 peer 或别的模式还用着同一种语言，模型留在缓存里。
+Each pair "their language → my language" loads Mozilla Bergamot models, the dictionary, and Tatoeba pairs according to the current settings. Madlad and HY-MT are whole models. They are not split into per-language files. Only Mozilla is one model per language. Resources are reused across Text, WalkieTalkie, and Conversation. When one peer is unloaded, a model stays cached if another peer or another mode still uses that language.
 
-一个人断开时调用 `unloadSrcLangResourcesForPeer`。服务销毁时调用 `unloadAllLangResourcesForConversation`。peer 改名会走 `updatePeer`，避免资源表还指着旧的 `uniqueName`。
+A disconnect calls `unloadSrcLangResourcesForPeer`. Service destruction calls `unloadAllLangResourcesForConversation`. A renamed peer goes through `updatePeer` so the resource map does not keep the old `uniqueName`.
 
-当前可选的翻译后端仍是 `Translator` 上的模式常量。Conversation 不单独再选模型，用的就是设置里的 `selectedTranslationModel`，默认 `MOZILLA`（7）。`HY_MT` 是 8，`MADLAD_CACHE` 是 5。这些整数写在偏好里，不能改含义。
+The selectable translation backends are still the mode constants on `Translator`. Conversation does not pick a separate model. It uses `selectedTranslationModel` from settings, default `MOZILLA` (7). `HY_MT` is 8. `MADLAD_CACHE` is 5. Those integers are stored in preferences. Do not change what they mean.
 
-## 10. 断线、重连和多人
+## 10. Disconnect, reconnect, and several people
 
-每个已连接的 peer 是一条 `Channel`。链路掉了以后，策略 `STRATEGY_P2P_WITH_RECONNECTION` 会把 peer 标成 reconnecting，并给 30 秒。窗口内重新发现到同一个 `uniqueName` 就走 resume 握手，而不是新的连接请求。30 秒内回不来就真正断开。
+Each connected peer is one `Channel`. After the link drops, `STRATEGY_P2P_WITH_RECONNECTION` marks the peer reconnecting and allows 30 seconds. If the same `uniqueName` is discovered again inside that window, the resume handshake runs instead of a new connection request. If it does not return within 30 seconds, it is a real disconnect.
 
-正在重连的 peer 不会被继续发消息。消息留在该 channel 的 `pendingMessages` 里，恢复后从被打断的队列继续。握手期间会停掉普通命令，避免和 resume 包抢 GATT 操作。
+A reconnecting peer is not sent further messages. Messages stay in that channel's `pendingMessages` and continue from the interrupted queue after the link returns. Ordinary commands are paused during the handshake so they do not compete with the resume packet for GATT operations.
 
-多人会话没有主持人。每台手机把 `m` 消息发给 `receiver == null` 的所有 channel，也就是当前所有未断开的人。每台接收机用自己的目标语言独立翻译。A 说中文、B 的语言是英文、C 的语言是日文时，B 和 C 各自把同一条中文原文译成自己的语言。A 不会先译好再转发。
+A multi-phone session has no host. Each phone sends `m` messages to every channel with `receiver == null`, which is everyone not disconnected. Each receiver translates independently into its own target language. If A speaks Chinese, B's language is English, and C's language is Japanese, B and C each translate the same Chinese original into their own language. A does not translate first and then forward.
 
-最近联系人存在 Room（`RecentPeerEntity`）。发现列表会用 `uniqueName` 把旧头像贴回去。头像和 Android id 只在 `d` / `i` 交换里更新，不放进每一条口译消息。
+Recent contacts are stored in Room (`RecentPeerEntity`). The discovery list uses `uniqueName` to put the old avatar back. The avatar and the Android id are updated only in the `d` / `i` exchange. They are not placed in every interpretation message.
 
-## 11. 线程和锁
+## 11. Threads and locks
 
-改 Conversation 时最容易踩的是“哪条线程可以动哪份状态”。
+The easy mistake when changing Conversation is which thread may touch which state.
 
-| 位置 | 线程 |
+| Place | Thread |
 | --- | --- |
-| 广播、扫描、GATT 回调后的处理 | 主线程。`startAdvertising` 不在主线程会返回 `NOT_MAIN_THREAD` |
-| `Recorder.ProcessVoice` | 录音线程，经命令队列把 start/stop 收进去 |
-| `Recognizer.recognize` | 每次调用新开线程，内部用 `lock` 串成一条识别队列 |
-| `Translator.translateMessage` | `messageTranslationPerformer`，`lock` 保证一条条翻 |
-| 语言资源加载 | 单独线程，再加 `langResourcesLock` |
-| 界面更新 | `ConversationBluetoothCommunicator` 和 `BluetoothCommunicator` 把回调 post 回主线程 |
+| Advertising, scanning, work after GATT callbacks | Main thread. `startAdvertising` off the main thread returns `NOT_MAIN_THREAD` |
+| `Recorder.ProcessVoice` | The record thread. Start and stop are pulled in through a command queue |
+| `Recognizer.recognize` | A new thread per call, serialized internally on `lock` into one recognition queue |
+| `Translator.translateMessage` | `messageTranslationPerformer`. `lock` keeps translations one at a time |
+| Language-resource loading | Its own thread, plus `langResourcesLock` |
+| UI updates | `ConversationBluetoothCommunicator` and `BluetoothCommunicator` post callbacks back to the main thread |
 
-Service 里的 `mVoiceRecognizerCallback` 跑在识别线程上。它调用 `sendMessage` 和 `notifyMessage`。`notifyMessage` 通过 `Messenger` 把 `GuiMessage` 送到界面进程内的 handler。
+`mVoiceRecognizerCallback` in the service runs on the recognition thread. It calls `sendMessage` and `notifyMessage`. `notifyMessage` sends a `GuiMessage` to the in-process UI handler through a `Messenger`.
 
-## 12. 改代码时不要假设的事
+## 12. Do not assume these things
 
-- 线上传的是原文，不是译文，也不是音频。
-- 本机语言来自 `Global.getLanguage()`。WalkieTalkie 的 first/second language 不参与 Conversation。
-- 语音 beam 是 4，翻译 beam 是 1。不要把设置里的 beam 直接套到这两个常量上，除非连同质量一起改。
-- `m` 消息的语言码长度只有一位。多字符 locale 不能直接塞进去。
-- header `l` 的回复条件和注释相反，见第 5 节。
-- `uniqueName` 才是身份。比较 MAC 会在重连时失败。
-- beta 2 的 resume 包带完整 `uniqueName`。只写 `1` 的旧客户端会被拒绝。
-- JNI、ONNX 输入名、模型模式整数、`abiFilters arm64-v8a` 都不属于这条会话协议，但翻译质量的改动会落到接收端的 `Translator`。
-- 应用不上传音频或文本。新增网络上报会破坏这个模式的隐私前提。
+- What goes on the air is the original text, not the translation and not the audio.
+- The local language comes from `Global.getLanguage()`. WalkieTalkie's first and second languages do not take part in Conversation.
+- The speech beam is 4 and the translation beam is 1. Do not apply the beam from settings to these two constants unless the quality check changes with them.
+- The language-code length on an `m` message is one digit. A multi-character locale cannot be dropped in directly.
+- The reply condition for header `l` is the opposite of the comment. See section 5.
+- `uniqueName` is the identity. Comparing MAC addresses fails on reconnect.
+- The beta 2 resume packet carries the full `uniqueName`. An old client that writes only `1` is rejected.
+- JNI, ONNX input names, model-mode integers, and `abiFilters arm64-v8a` are not part of this session protocol, but a translation-quality change lands in the receiver's `Translator`.
+- The app does not upload audio or text. Adding a network report would break the privacy premise of this mode.
 
-## 13. 关键文件
+## 13. Key files
 
-| 文件 | 职责 |
+| File | Responsibility |
 | --- | --- |
-| `voice_translation/VoiceTranslationActivity.java` | 配对、会话、WalkieTalkie、文本四种界面切换，以及服务的启动和绑定 |
-| `voice_translation/_conversation_mode/PairingFragment.java` | 发现、请求、接受、连上后进入会话 |
-| `voice_translation/_conversation_mode/_conversation/ConversationFragment.java` | 对话页和连接页 |
-| `.../main/ConversationMainFragment.java` | 麦、键盘、朗读按钮、消息列表 |
-| `.../connection_info/PeersInfoFragment.java` | 会话中的人和继续搜索 |
-| `.../_conversation/ConversationService.java` | 识别、发送、接收、翻译、TTS |
-| `voice_translation/VoiceTranslationService.java` | 前台服务、唤醒锁、麦和 TTS 的互斥 |
+| `voice_translation/VoiceTranslationActivity.java` | Switches pairing, the session, WalkieTalkie, and text, and starts and binds the service |
+| `voice_translation/_conversation_mode/PairingFragment.java` | Discover, request, accept, then enter the session |
+| `voice_translation/_conversation_mode/_conversation/ConversationFragment.java` | Conversation page and connection page |
+| `.../main/ConversationMainFragment.java` | Mic, keyboard, speak button, message list |
+| `.../connection_info/PeersInfoFragment.java` | People in the session and continued search |
+| `.../_conversation/ConversationService.java` | Recognize, send, receive, translate, TTS |
+| `voice_translation/VoiceTranslationService.java` | Foreground service, wake lock, mic and TTS exclusion |
 | `.../communication/ConversationBluetoothCommunicator.java` | `m` / `d` / `i` / `l` |
-| `bluetooth/BluetoothCommunicator.java` | 广播、扫描、client/server 生命周期 |
-| `bluetooth/BluetoothConnectionClient.java` | 主动连接和 MTU 握手 |
-| `bluetooth/BluetoothConnectionServer.java` | GATT server、特征表、接受和拒绝 |
-| `bluetooth/Channel.java` | 分包、两条队列、超时 |
-| `bluetooth/Message.java`、`BluetoothMessage.java` | 应用消息和线上分片 |
-| `neural_networks/translation/Translator.java` | `translateMessage` 和按 peer 加载资源 |
-| `neural_networks/translation/LanguageResourcesManager.java` | Conversation 的目标语言和每个 peer 的源语言 |
-| `neural_networks/voice/Recorder.java`、`Recognizer.java` | 采集、VAD、Whisper |
+| `bluetooth/BluetoothCommunicator.java` | Advertising, scanning, client and server lifetime |
+| `bluetooth/BluetoothConnectionClient.java` | Outgoing connection and the MTU handshake |
+| `bluetooth/BluetoothConnectionServer.java` | GATT server, characteristic table, accept and reject |
+| `bluetooth/Channel.java` | Fragmentation, two queues, timeouts |
+| `bluetooth/Message.java`, `BluetoothMessage.java` | Application messages and on-air pieces |
+| `neural_networks/translation/Translator.java` | `translateMessage` and per-peer resource loading |
+| `neural_networks/translation/LanguageResourcesManager.java` | Conversation's target language and each peer's source language |
+| `neural_networks/voice/Recorder.java`, `Recognizer.java` | Capture, VAD, Whisper |

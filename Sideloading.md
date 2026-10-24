@@ -1,4 +1,4 @@
-> 下面的步骤保留自上游 RTranslator 2.0。它指向 [niedev/RTranslator 2.0.0](https://github.com/niedev/RTranslator/releases/tag/2.0.0) 附带的 ONNX 文件。TransPocket 0.1.0 的翻译和识别模型由应用内下载器按所选模型获取，那份 2.0.0 附件不是本版本的完整模型包。
+> The steps below are kept from upstream RTranslator 2.0. They point at the ONNX files attached to [niedev/RTranslator 2.0.0](https://github.com/niedev/RTranslator/releases/tag/2.0.0). TransPocket 0.1.0 downloads the selected translation and recognition models inside the app. That 2.0.0 attachment is not this version's model pack. The external files directory for this application id is `Android/data/io.github.maoruiqa.transpocket/files`.
 
 **If you have trouble with the initial download of app's AI models and prefer to do it from a computer and manually insert the models into the app** (sideloading)**, starting with RTranslator version 2.0.3 you can do so by following these steps:**
 
@@ -13,7 +13,7 @@
 - **Connect your smartphone to your computer**.<br />
   If you had already connected your phone to the computer, unplug it and plug it back in, because otherwise, even with refresh, the folders just created by RTranslator, in which to insert the models, will not be displayed.
 
-- **Using your computer, insert the AI model files downloaded before into your phone's folder "Android/data/nie.translator.rtranslator/files"**. <br />
+- **Using your computer, insert the AI model files downloaded before into your phone's folder "Android/data/io.github.maoruiqa.transpocket/files"**. <br />
   If you have an sd card and you don't know whether to look in the internal memory or the sd card, check if this folder is present in the internal memory and if inside "files" there is a readme file, if there is not then look in the sd card.
 
 - **Once the transfer is finished, open RTranslator and continue with the configuration. Once you get to the download screen, instead of downloading the models, the latter will be extracted directly from the folder where we inserted them before and their integrity will be verified** (a real download starts only for the damaged model files).<br /><br />

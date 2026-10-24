@@ -26,7 +26,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -109,9 +108,6 @@ public class LoadingActivity extends GeneralActivity {
         // Re-assert the launcher icon alias, in case the process was restored without a cold start.
         ThemeManager.applyLauncherIcon(this);
         setContentView(R.layout.activity_loading);
-        // The logo is part of the theme, so it follows the selected palette.
-        ((ImageView) findViewById(R.id.imageView)).setImageResource(
-                ThemeManager.getAppLogoResource(ThemeManager.getPalette(this)));
         mainHandler = new Handler(Looper.getMainLooper());
         loadingStage = findViewById(R.id.loadingStage);
         loadingProgress = findViewById(R.id.loadingProgress);

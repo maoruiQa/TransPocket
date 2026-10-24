@@ -28,7 +28,7 @@ android {
     ndkVersion "28.0.12674087"
     compileSdk 37
     defaultConfig {
-        applicationId "nie.translator.rtranslator"
+        applicationId "io.github.maoruiqa.transpocket"
         targetSdkVersion 37
         versionName '0.1.0'
         versionCode 28
