@@ -26,6 +26,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -45,6 +46,7 @@ import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.ImageActivity;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationActivity;
 import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetworkApi;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
@@ -77,10 +79,15 @@ public class LoadingActivity extends GeneralActivity {
             splashScreen = SplashScreen.installSplashScreen(this);
         }
         super.onCreate(savedInstanceState);
-        if(splashScreen == null){
-            setTheme(R.style.Theme_Speech);
-        }
+        // Re-apply after the splash screen installs its post-splash theme, so a palette
+        // selected on a previous run is used by the loading screen too.
+        ThemeManager.applyTheme(this);
+        // Re-assert the launcher icon alias, in case the process was restored without a cold start.
+        ThemeManager.applyLauncherIcon(this);
         setContentView(R.layout.activity_loading);
+        // The logo is part of the theme, so it follows the selected palette.
+        ((ImageView) findViewById(R.id.imageView)).setImageResource(
+                ThemeManager.getAppLogoResource(ThemeManager.getPalette(this)));
         mainHandler = new Handler(Looper.getMainLooper());
         loadingStage = findViewById(R.id.loadingStage);
         loadingProgress = findViewById(R.id.loadingProgress);

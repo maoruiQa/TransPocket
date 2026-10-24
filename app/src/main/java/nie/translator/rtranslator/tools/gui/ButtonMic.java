@@ -32,6 +32,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.animations.CustomAnimator;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationActivity;
@@ -79,8 +80,8 @@ public class ButtonMic extends DeactivableButton {
     public ButtonMic(Context context) {
         super(context);
         this.context = context;
-        colorActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.primary));
-        colorMutedActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.primary_very_dark), GuiTools.getColorStateList(context,R.color.primary_very_lite));
+        colorActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorOnPrimary), ThemeManager.getColorStateList(context, R.attr.xtColorPrimary));
+        colorMutedActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorIcon), ThemeManager.getColorStateList(context, R.attr.xtColorPrimaryVeryLite));
         colorDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.gray));
         colorMutedDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.very_very_dark_gray), GuiTools.getColorStateList(context,R.color.very_very_light_gray));
     }
@@ -88,8 +89,8 @@ public class ButtonMic extends DeactivableButton {
     public ButtonMic(Context context, AttributeSet attrs) {
         super(context, attrs);
         this.context = context;
-        colorActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.primary));
-        colorMutedActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.primary_very_dark), GuiTools.getColorStateList(context,R.color.primary_very_lite));
+        colorActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorOnPrimary), ThemeManager.getColorStateList(context, R.attr.xtColorPrimary));
+        colorMutedActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorIcon), ThemeManager.getColorStateList(context, R.attr.xtColorPrimaryVeryLite));
         colorDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.gray));
         colorMutedDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.very_very_dark_gray), GuiTools.getColorStateList(context,R.color.very_very_light_gray));
     }
@@ -97,8 +98,8 @@ public class ButtonMic extends DeactivableButton {
     public ButtonMic(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         this.context = context;
-        colorActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.primary));
-        colorMutedActivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.primary_very_dark), GuiTools.getColorStateList(context,R.color.primary_very_lite));
+        colorActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorOnPrimary), ThemeManager.getColorStateList(context, R.attr.xtColorPrimary));
+        colorMutedActivated = new ButtonMicColor(ThemeManager.getColorStateList(context, R.attr.xtColorIcon), ThemeManager.getColorStateList(context, R.attr.xtColorPrimaryVeryLite));
         colorDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.accent_white), GuiTools.getColorStateList(context,R.color.gray));
         colorMutedDeactivated = new ButtonMicColor(GuiTools.getColorStateList(context,R.color.very_very_dark_gray), GuiTools.getColorStateList(context,R.color.very_very_light_gray));
     }

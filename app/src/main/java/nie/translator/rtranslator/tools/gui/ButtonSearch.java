@@ -25,6 +25,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.widget.AppCompatImageButton;
 import java.util.ArrayList;
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.gui.animations.CustomAnimator;
 
 public class ButtonSearch extends AppCompatImageButton {
@@ -211,7 +212,7 @@ public class ButtonSearch extends AppCompatImageButton {
 
     public Drawable getDrawable(int id) {
         Drawable drawable = getResources().getDrawable(id, null);
-        drawable.setTintList(GuiTools.getColorStateList(getContext(), R.color.primary));
+        drawable.setTintList(ThemeManager.getColorStateList(getContext(), R.attr.xtColorIcon));
         return drawable;
     }
 }

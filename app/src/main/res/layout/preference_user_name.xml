@@ -32,7 +32,7 @@
         android:contentDescription="@string/hint_user_name"
         android:labelFor="@id/editNameButton"
         app:cardCornerRadius="24dp"
-        app:cardBackgroundColor="@color/primary_very_dark"
+        app:cardBackgroundColor="?attr/xtColorPrimaryVeryDark"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

@@ -27,12 +27,14 @@ import androidx.fragment.app.FragmentActivity;
 import javax.annotation.Nullable;
 
 import nie.translator.rtranslator.access.AccessActivity;
+import nie.translator.rtranslator.tools.ThemeManager;
 
 
 public abstract class GeneralActivity extends FragmentActivity {
 
     @Override
     protected void onCreate(@androidx.annotation.Nullable Bundle savedInstanceState) {
+        ThemeManager.applyTheme(this);
         super.onCreate(savedInstanceState);
         // if the models are not loaded and an activity different than LoadingActivity or AccessActivity is created,
         // that means that the system has killed the app, and now it is launching the app with the last activity (restoring it).
@@ -48,6 +50,12 @@ public abstract class GeneralActivity extends FragmentActivity {
             startActivity(intent);
             finish();
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ThemeManager.recreateIfPaletteChanged(this);
     }
 
     public void showMissingGoogleTTSDialog(@Nullable DialogInterface.OnClickListener continueListener) {

@@ -1,6 +1,6 @@
 # 语音识别、分句、翻译与发声
 
-本文描述 `v3.00`（`3.0.0-beta2`）里从麦克风到译文朗读的实现。模型文件不在 git 里，首次启动后下到应用私有目录。`Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` 目前是 `false`，所以下面的路径都相对于 `context.getFilesDir()`。
+本文描述 Xtranslate `0.1.0` 里从麦克风到译文朗读的实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。模型文件不在 git 里，首次启动后下到应用私有目录。`Global.USE_EXTERNAL_MEMORY_FOR_RESOURCES` 目前是 `false`，所以下面的路径都相对于 `context.getFilesDir()`。
 
 整条链路分四段，中间没有流式识别：
 
@@ -192,10 +192,19 @@ beam 的打分常量在 `Translator` 里：
 
 队列行为：
 
-- 每条译文 `QUEUE_ADD` 排在系统引擎后面。语言和当前 voice 不一致时先 `setLanguage`。
-- 第一条开始时，若没有蓝牙耳机，服务会停麦；队列全部读完后再等 500 ms 开麦。SCO 耳机连接时不停麦。
-- WalkieTalkie 检测到新的一句开始会 `pause()` 当前朗读，这句的 `onVoiceEnd` 之后延迟再 `resume()`。
-- TalkBack 打断时，被打断的那句放回队列头部，1.5 秒后再 `speak()`。这是为了让 TalkBack 把连续的提示说完，避免两套语音交错。用户自己按停止则清空队列，不重播。
+- 队列只在 `TTSEngine` 里有一份，`SpeechQueue` 保存待读内容并保证同一条目只提交一次。系统引擎**一次只收一句**：上一句 `onDone`（或失败、被打断、看门狗超时）之后才提交下一句，所以新句子不会截断正在读的句子。
+- 提交给系统引擎时只用 `QUEUE_ADD`，从不为了开始新句子而 `QUEUE_FLUSH`。只有用户点文本模式的朗读按钮会替换上一句。
+- `TTS` 只是引擎的薄封装：`setLanguage` / `setSpeechRate` 只在值真的变化时才调用（每句前重复设置会让某些引擎吞掉开头），空文本或纯标点不提交。
+- 引擎节流：`onDone`、任何 `stop()`、以及真的改了语言之后，都要等 `TTS.ENGINE_SETTLE_MS`（250 ms）再提交下一句。`onDone` 在音频输出还没排空时就回调，紧贴它提交会让引擎丢掉新句开头几个词。`TTSEngine` 用 `notBefore` 时间戳实现，`pump` 提前调用只会排一个延迟任务，不取队头。
+- 蓝牙句首：外放同一句是完整的。耳机的媒体链路空闲时会休眠，新的一段音频开头大约几百毫秒被丢掉；后台正在放音乐时句首完整。同传服务在场并且输出是 A2DP、SCO、助听器或 LE Audio 时，`BluetoothRouteWake` 用和 TTS 相同的 `AudioAttributes` 持续写一段听不见的媒体流，直到离开同传或耳机断开。这条流在麦克风静置（`MIC_SETTLE_MILLIS`，2 秒）之前就已开始，静置时间用来等耳机退出休眠。朗读本身不再为这句话额外等待。`tts.stop()` 不会停掉这条流。
+- 系统引擎实例统一设成 `AudioAttributes(USAGE_MEDIA, CONTENT_TYPE_SPEECH)`。默认是 accessibility usage，部分 ROM 对它做开头淡入，听感就是开头几个字没读。整轮朗读期间持有 `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`，队列空了或 `stop()`/`pause()`/`shutdown()` 时释放；另一个应用抢走焦点时只放弃标记，不自己暂停，队列仍由引擎回调驱动。
+- 文本模式的朗读按钮持有自己的 `TTS` 实例，是唯一会「替换上一句」的地方：正在读时先 `stop()`，再等 250 ms 用 `QUEUE_ADD` 提交新句；没有在读时直接 `QUEUE_ADD`。不再用 `QUEUE_FLUSH`。
+- `logcat -s tts_engine` 会打印每次提交（id、字数、距上次 `onDone`/`stop()` 的毫秒数、前 60 字）、`onStart` 相对提交的延迟、以及结束时长，用来判断「文本对不对」和「是不是紧贴上一句」。
+- 一条译文的分片按到达顺序读完；同一译文只在最后一片读完时回调 `onUtteranceFinished`，并且 `last` 只在**整个队列**空了才为 true。第一条开始时，若没有蓝牙耳机，服务会停麦；队列全部读完后再等 500 ms 开麦。SCO 耳机连接时不停麦。
+- 引擎报错只丢弃出错的那一句，不再清空整个队列。
+- 看门狗只做自愈：提交后 5 秒没有 `onStart`，或开始后远超该句时长仍没有 `onDone`，就 `stop()` 引擎、丢弃这一句并继续下一句。它不会重播文本，也不会 flush。
+- WalkieTalkie 检测到新的一句开始会 `pause()` 当前朗读（正在读的那句放回队头），这句的 `onVoiceEnd` 之后延迟再 `resume()`，从放回的那句继续。
+- TalkBack 打断时，被打断的那句放回队列头部，1.5 秒后再提交。这是为了让 TalkBack 把连续的提示说完，避免两套语音交错；同一句只重排一次，避免死循环。用户自己按停止则清空队列，不重播。
 - Conversation 的自动朗读开关是 `conversationAutoTTS`，WalkieTalkie 是 `walkieTalkieAutoTTS`，默认都开。目标语言不在系统 TTS 支持列表里就只显示文字。
 
 ## 7. 三种模式各走哪条路
@@ -218,3 +227,5 @@ Conversation 的语音 beam 常量是 4，翻译 beam 常量是 1。前者目前
 - HY-MT 的提示语、结束符和 cache 张量名都和其他模型不同。换模型时这三处要一起换。
 - Bergamot 的非英语对一定会经过英语。质量问题可能出在两跳中的任何一跳。
 - 发声质量和语言覆盖不由这个仓库的模型决定，而由系统 TTS 决定。
+- 不要在 `TTSEngine` / `TTS` 之外直接对系统引擎 `speak`，也不要为了开始新句子用 `QUEUE_FLUSH`：那会截断正在读的句子，引擎还会把被截断的那句以 `onStop` 回调回来，队列状态会跟着错。文本模式的朗读按钮是唯一需要替换上一句的地方。
+- 不要把 `speak()` 写在 `stop()` 或 `onDone` 回调的同一个同步块里，也不要在 `setLanguage()` 之后立刻 `speak()`：这三种紧贴提交都会让引擎丢掉新请求开头几个词。统一走 `TTSEngine` 的 `notBefore` 或文本模式按钮的延迟提交。

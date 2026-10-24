@@ -25,7 +25,7 @@
                 android:layout_marginTop="16dp"
                 android:text="@string/translation_model"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/accent"
+                android:textColor="?attr/xtColorAccent"
                 android:layout_marginStart="16dp"
                 android:accessibilityHeading="true"/>
             <TextView
@@ -264,7 +264,7 @@
                 android:accessibilityHeading="true"
                 android:fontFamily="sans-serif-medium"
                 android:text="@string/asr_model"
-                android:textColor="@color/accent" />
+                android:textColor="?attr/xtColorAccent" />
             <worker8.com.github.radiogroupplus.RadioGroupPlus
                 android:id="@+id/asr_radios"
                 android:layout_width="match_parent"
@@ -383,7 +383,7 @@
                 android:accessibilityHeading="true"
                 android:fontFamily="sans-serif-medium"
                 android:text="@string/title_live_draft"
-                android:textColor="@color/accent" />
+                android:textColor="?attr/xtColorAccent" />
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -393,11 +393,6 @@
                 android:text="@string/description_live_draft"
                 android:textColor="@color/very_dark_gray"
                 android:textSize="14sp" />
-            <LinearLayout
-                android:id="@+id/liveDraftList"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -406,7 +401,7 @@
                 android:accessibilityHeading="true"
                 android:fontFamily="sans-serif-medium"
                 android:text="@string/title_fragment_simultaneous"
-                android:textColor="@color/accent" />
+                android:textColor="?attr/xtColorAccent" />
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -495,7 +490,7 @@
                 android:layout_marginTop="16dp"
                 android:text="@string/speech_recognition_model"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/accent"
+                android:textColor="?attr/xtColorAccent"
                 android:layout_marginStart="16dp"
                 android:accessibilityHeading="true"/>
             <LinearLayout
@@ -560,7 +555,7 @@
                 android:layout_marginTop="16dp"
                 android:text="@string/translation_enhancements"
                 android:fontFamily="sans-serif-medium"
-                android:textColor="@color/accent"
+                android:textColor="?attr/xtColorAccent"
                 android:layout_marginStart="16dp"
                 android:accessibilityHeading="true"/>
             <LinearLayout
@@ -796,11 +791,11 @@
                 android:layout_marginTop="16dp"
                 android:layout_marginEnd="40dp"
                 android:layout_marginBottom="16dp"
-                android:backgroundTint="@color/primary"
+                android:backgroundTint="?attr/xtColorPrimary"
                 android:elevation="2dp"
                 android:stateListAnimator="@null"
                 android:text="@string/apply"
-                android:textColor="@color/white"
+                android:textColor="?attr/xtColorOnPrimary"
                 app:cornerRadius="24dp"
                 android:layout_gravity="center"/>
         </LinearLayout>

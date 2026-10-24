@@ -58,6 +58,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ButtonKeyboard;
 import nie.translator.rtranslator.tools.gui.ButtonMic;
@@ -263,10 +264,10 @@ public class CustomAnimator {
         int duration = buttonMic.getResources().getInteger(R.integer.durationStandard);
         int finalSizeInPixels = Tools.convertDpToPixels(context, ButtonMic.SIZE_MUTED_DP);
 
-        int initialColorIcon = GuiTools.getColor(buttonMic.getContext(), R.color.white);
-        int finalColorIcon = GuiTools.getColor(buttonMic.getContext(), R.color.primary_very_dark);
-        int initialColor = GuiTools.getColor(buttonMic.getContext(), R.color.primary);
-        int finalColor = GuiTools.getColor(buttonMic.getContext(), R.color.primary_very_lite);
+        int initialColorIcon = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorOnPrimary);
+        int finalColorIcon = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorIcon);
+        int initialColor = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorPrimary);
+        int finalColor = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorPrimaryVeryLite);
 
         if(!instant) {
             AnimatorSet animatorSet = new AnimatorSet();
@@ -303,10 +304,10 @@ public class CustomAnimator {
         int duration = buttonMic.getResources().getInteger(R.integer.durationStandard);
         int finalSizeInPixels = Tools.convertDpToPixels(context, ButtonMic.SIZE_NORMAL_DP);
 
-        int initialColorIcon = GuiTools.getColor(buttonMic.getContext(),R.color.primary_very_dark);
-        int finalColorIcon = GuiTools.getColor(buttonMic.getContext(),R.color.white);
-        int initialColor = GuiTools.getColor(buttonMic.getContext(),R.color.primary_very_lite);
-        int finalColor = GuiTools.getColor(buttonMic.getContext(),R.color.primary);
+        int initialColorIcon = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorIcon);
+        int finalColorIcon = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorOnPrimary);
+        int initialColor = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorPrimaryVeryLite);
+        int finalColor = ThemeManager.getColor(buttonMic.getContext(), R.attr.xtColorPrimary);
 
         if(!instant) {
             AnimatorSet animatorSet = new AnimatorSet();
@@ -930,10 +931,10 @@ public class CustomAnimator {
         int duration = activity.getResources().getInteger(R.integer.durationStandard);
         AnimatorSet animatorSet = new AnimatorSet();
 
-        int deselectedColorText = GuiTools.getColorStateList(activity, R.color.primary_very_dark).getDefaultColor();
+        int deselectedColorText = ThemeManager.getColorStateList(activity, R.attr.xtColorPrimaryVeryDark).getDefaultColor();
         int deselectedColorBackground = GuiTools.getColorStateList(activity, R.color.accent_white).getDefaultColor();
         int selectedColorText = GuiTools.getColorStateList(activity, R.color.accent_white).getDefaultColor();
-        int selectedColorBackground = GuiTools.getColorStateList(activity, R.color.primary_very_dark).getDefaultColor();
+        int selectedColorBackground = ThemeManager.getColorStateList(activity, R.attr.xtColorPrimaryVeryDark).getDefaultColor();
 
         Animator animatorBackgroundColorConversation;
         Animator animatorTextColorConversation;

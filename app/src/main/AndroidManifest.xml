@@ -66,7 +66,110 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:noHistory="true"
+            android:theme="@style/Theme.App.Starting" />
+
+        <!-- One real launcher activity per palette. The enabled component decides the home
+             screen icon, and its own theme is the cold-start splash. These cannot be
+             activity-aliases: the platform copies the target activity theme onto an alias,
+             so every cold start used LoadingActivity's golden splash. LoadingActivity itself
+             stays without a launcher filter for in-app restarts. -->
+        <activity
+            android:name=".LauncherGolden"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_golden"
+            android:roundIcon="@mipmap/ic_launcher_golden"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
             android:theme="@style/Theme.App.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Same golden splash and icon. Default-disabled so later switches restore DEFAULT
+             instead of forcing the install-time entry off. -->
+        <activity
+            android:name=".LauncherGoldenAlt"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_golden"
+            android:roundIcon="@mipmap/ic_launcher_golden"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@style/Theme.App.Starting">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".LauncherBamboo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_bamboo"
+            android:roundIcon="@mipmap/ic_launcher_bamboo"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@style/Theme.App.Starting.Bamboo">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".LauncherIndigo"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_indigo"
+            android:roundIcon="@mipmap/ic_launcher_indigo"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@style/Theme.App.Starting.Indigo">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".LauncherSakura"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sakura"
+            android:roundIcon="@mipmap/ic_launcher_sakura"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@style/Theme.App.Starting.Sakura">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.MULTIWINDOW_LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".LauncherWisteria"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_wisteria"
+            android:roundIcon="@mipmap/ic_launcher_wisteria"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@style/Theme.App.Starting.Wisteria">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

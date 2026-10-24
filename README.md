@@ -1,214 +1,97 @@
-<img src="https://github.com/niedev/RTranslator/blob/v2.00/images/logo_beta_cut.png" width="280">
+<img src="images/logo_beta_cut.png" width="280" alt="Xtranslate">
 
-RTranslator is an (<a href='https://github.com/niedev/RTranslator?tab=readme-ov-file#libraries-and-models'>almost</a>) open-source, free, and offline real-time translation app for Android.
+# Xtranslate
 
-Connect to someone who has the app, connect Bluetooth headphones, put the phone in your pocket and you can have a conversation as if the other person spoke your language.
-<br /><br />
+Xtranslate 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。语音识别、翻译和语言判断都在手机上运行。应用没有自己的服务器，也不会上传语音或文本。
 
-![Conversation mode](https://github.com/niedev/RTranslator/blob/v2.00/images/Conversation_image.png)
-<br /><br />
-![WalkieTalkie mode and Costs](https://github.com/niedev/RTranslator/blob/v2.00/images/TextTranslation_and_WalkieTalkie.png)
-<br /><br />
+**本仓库是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。** 上游作者是 Luca Martino（GitHub：[niedev](https://github.com/niedev)）。上游程序以 Apache License 2.0 授权。本 fork 把应用改名为 Xtranslate，并在上游 3.0.0-beta2 之上加入了同声传译、更多端侧模型和界面配色。Xtranslate 不代表上游，也不由上游维护。
 
-<h3>Conversation mode</h3>
+![对话模式](images/Conversation_image.png)
 
-The Conversation mode is the main feature of RTranslator. In this mode, you can connect with another phone that uses this app. If the user accepts your connection request:
+![对讲机模式与文本翻译](images/TextTranslation_and_WalkieTalkie.png)
 
-- When you talk, your phone (or the **Bluetooth headset**, if connected) will capture the audio.
+## 四种用法
 
-- The audio captured will be converted into text and sent to the interlocutor's phone.
+**文本翻译。** 输入文字，在本机翻译。
 
-- The interlocutors' phone will translate the text received into his language.
+**对讲机（WalkieTalkie）。** 一台手机、两种语言、轮流说话。应用判断当前是哪种语言，译成另一种，再用系统语音朗读。
 
-- The interlocutors' phone will convert the translated text into audio and will reproduce it from its speaker (or by the Bluetooth headset of the interlocutor if connected to his phone). 
+**对话（Conversation）。** 多台安装了本应用的手机通过蓝牙低功耗连接。每台手机只识别自己这一侧的话，把文字和语言码发给其他手机。接收方在自己的手机上翻译并朗读。音频不离开本机。可以同时连接多台手机。对话和对讲机可以在后台继续运行；有的系统会限制后台耗电，那种情况下把应用留在前台更稳。
 
-All this in both directions.
+**同声传译。** 一台手机听对方说话，一句一句翻译并朗读。默认使用 Silero VAD 按停顿切句。设置里的「自动发音」可以每次进入时打开、关闭，或按当前播放设备决定。界面上的按钮只影响这一次。
 
-Each user can have more than one connected phone so that you can translate conversations between more than two people and in any combination.
-<br /><br />
+## 0.1.0 里已经有的能力
 
-<h3>WalkieTalkie mode</h3>
+这些是相对上游 RTranslator 3.0.0-beta2 已经在本仓库里的改动：
 
-If conversation mode is useful for having a long conversation with someone, this mode instead is designed for quick conversations, such as asking for information on the street or talking to a shop assistant.
+- 同声传译，默认下载并启用 Silero VAD（约 2 MB）按语音停顿断句。
+- 翻译模型除 Mozilla Bergamot、Madlad 400 3B（int4）、HY-MT 1.5 1.8B（int8）之外，可以选用 Google TranslateGemma 4B 和 Qwen3.5 0.8B。后两者是 GGUF Q4_K_M，在手机上用 llama.cpp 运行。TranslateGemma 大约需要 4 GB 内存，并适用 Gemma 条款。Qwen3.5 0.8B 大约需要 1.4 GB 内存。
+- 语音识别可以在 Whisper Small、Whisper Large V3 Turbo、Qwen3-ASR 0.6B、Qwen3-ASR 1.7B 之间选择。1.7B 需要大约 8 GB 内存的手机。
+- 朗读使用手机上的系统文字转语音。一句结束就开始读这一句，下一句排队，不把整段合成一次提交。连着蓝牙耳机时，会先保持媒体通路，避免句首被耳机休眠吃掉。
+- 模型下载在应用离开前台后继续。加载和切换模型时显示阶段进度。
+- 五种配色：秋日金、竹青、靛蓝、樱粉、紫藤。切换配色会同时切换桌面图标和冷启动画面。
+- 界面显示名称为 Xtranslate。
 
-This mode only translates conversations between two people, it doesn't work with Bluetooth headsets, and you have to talk in turns. It's not a real simultaneous translation, but it can work with **only one phone**.
+词典、Tatoeba 句库和波束搜索仍是文本翻译质量的一部分。语音模式里的波束宽度是 1。不要在没有质量对比的情况下改 `EOS_PENALTY`、`WORD_REWARD`、`LENGTH_ALPHA`、`SIBLING_PENALTY` 或波束宽度。
 
-In this mode, the smartphone microphone will listen in two languages (selectable in the same screen of the walkie talkie mode) simultaneously. <br />
-The app will detect in which language the interlocutor is speaking, translate the audio into the other language, convert the text into audio, and then reproduce it from the phone speaker. When the TTS has finished, it will automatically resume listening.
-<br /><br />
+NLLB 仍留在代码里，作为旧路径，不是当前的默认模型。
 
-<h3>Text translation mode</h3>
+## 下载与安装
 
-This mode is just a classic text translator, but always useful.
-<br /><br />
+从本仓库的 [Releases](https://github.com/maoruiQa/Xtranslate/releases) 安装 `Xtranslate-0.1.0.apk`。只支持 **arm64-v8a**。`minSdk` 是 28。建议手机有大约 **6 GB** 内存。x86_64 模拟器不能安装这个包。
 
-<h3>General</h3>
+应用包名仍是 `nie.translator.rtranslator`，以便覆盖本机已经安装的同一应用。`versionCode` 是 28，高于上游 3.0.0-beta2 的 27。覆盖安装会保留原来的应用数据。
 
-RTranslator uses <a href="https://ai.meta.com/research/no-language-left-behind/">Meta\'s NLLB</a> for translation and <a href="https://openai.com/index/whisper/">OpenAi\'s Whisper</a> for speech recognition, both are (<a href='https://github.com/niedev/RTranslator?tab=readme-ov-file#libraries-and-models'>almost</a>) open-source and state of the art AIs, have excellent quality and run directly on the phone, ensuring absolute privacy and the possibility of using RTranslator even offline without loss of quality.
+首次打开需要联网下载所选模型。模型体积取决于选项，不是一个固定的 1.2 GB。下载完成后可以离线使用。模型来自各自的发布页（包括 Hugging Face），不在本 git 仓库里。
 
-Also, RTranslator works even in the background, with the phone on standby or when using other apps (only when you use Conversation or WalkieTalkie modes). However, some phones limit the power in the background so in that case it is better to avoid it and keep the app open with the screen on.
-<br />
+[Sideloading.md](Sideloading.md) 保留的是上游 2.0 的手动放置步骤。那份附件不是 Xtranslate 0.1.0 的模型包。
 
-<a href="https://www.producthunt.com/posts/rtranslator-2?embed=true&utm_source=badge-featured&utm_medium=badge&utm_souce=badge-rtranslator&#0045;2" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=487672&theme=light" alt="RTranslator - Open&#0045;source&#0032;and&#0032;offline&#0032;simultaneous&#0032;translator&#0032;for&#0032;Android | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
-<br /><br />
+## 语言与朗读
 
-<h3>Download</h3>
+可选语言取决于当前的识别模型和翻译模型。Madlad 覆盖面最宽。Mozilla 需要按语言下载。低质量语言可以在设置里打开。
 
-To install the app, download the latest version of the app apk file from https://github.com/niedev/RTranslator/releases/ and install it (ignore the other files, those will be downloaded automatically by the app on the first start).
+朗读语言和音质取决于系统里选中的文字转语音引擎。推荐安装 Google 文字转语音，也可以用别的引擎。更换系统引擎后，从最近任务划掉 Xtranslate 再打开。
 
-<a href='https://github.com/niedev/RTranslator/releases'><img alt='Get it on GitHub' src='https://github.com/niedev/RTranslator/blob/v2.00/images/get_it_on_github.png' style="width: 180px; height: 58px;" /></a>
+## 设备与构建
 
-On the first launch, RTranslator will automatically download the models for translation and speech recognition (1.2GB) and once done you can start translating.
+在仓库根目录用 PowerShell：
 
-The initial download will get the models from GitHub, however <a href="https://www.reddit.com/r/China/comments/v8fv0p/why_is_github_so_slow_in_china_recently/">in some regions GitHub is very slow</a>, those who have problems of this kind can download the models separately from a computer (or in general in whatever way they prefer) and insert them manually into the app following <a href="https://github.com/niedev/RTranslator/blob/v2.00/Sideloading.md">this guide</a>.
+```
+.\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
+```
 
-If you have a GitHub account and want to be notified when a new release comes out you can do so by clicking, at the top of the page, on "Watch" -> "Custom" -> "Releases" -> "Apply".
-<br /><br />
+发布包仍使用 Android 调试签名，这是上游的构建方式。不要把密钥库提交进仓库。工具链是 Android Gradle Plugin 8.2.2、Gradle 8.12、NDK `28.0.12674087`、CMake 3.22.1。原生代码只在 JNI 边界需要时才改。
 
-<h3>RTranslator 3.0 First Beta is Out!</h3>
+实现说明见 [docs/speech-and-translation.md](docs/speech-and-translation.md) 和 [docs/conversation.md](docs/conversation.md)。
 
-The 3.0 version of RTranslator is currently funded through the [NGI Mobifree Fund](https://nlnet.nl/mobifree), a fund established by [NLnet](https://nlnet.nl).
+## 许可证
 
-Main changes of this version:
-- The NLLB translation model has been replaced with the option to choose between: Mozilla Bergamot models, Madlad 400 3B, and HY-MT 1.5 1.8B. All these models have better translation quality than NLLB 54B, similar to Google Translate, with HY-MT 1.5 1.8B having much better scores than Google Translate, similar to DeepSeek v3 and Gemini 3.0.
-- MLKit has been replaced with open-source alternatives ([FastText](https://github.com/facebookresearch/fasttext) and [Lingua](https://github.com/pemistahl/lingua)), making RTranslator 100% open source.
-- Various techniques have been added to improve translation quality, including: beam search, multilingual dictionaries, Tatoeba integration, and more.
-- The final version of the app will be released on Play Store and F-Droid.
-- A self-hosted web version of the app for text translation using Mozilla models will be made available in the future (probably around November).
+请同时阅读下面三份文件：
 
-The first beta of this version has been released; go check it [here](https://github.com/niedev/RTranslator/releases/tag/3.0.0-beta1)! 🚀
+| 文件 | 作用 |
+| --- | --- |
+| [LICENSE.txt](LICENSE.txt) | 上游 RTranslator 的 Apache License 2.0 全文，未经修改 |
+| [LICENSE](LICENSE) | GNU General Public License v3 全文 |
+| [NOTICE.txt](NOTICE.txt) | 上游声明和本 fork 的许可说明 |
 
-<img src="https://nlnet.nl/logo/banner.svg" width="200px">
-<br />
+上游 RTranslator 版权归 Luca Martino 及其他上游贡献者。源文件里原有的 Apache 2.0 文件头继续有效，本仓库没有把它们改写成 GPL 头。Apache License 2.0 与 GPLv3 兼容，因此本仓库把 **fork 中的修改** 以及 **从本仓库发行的组合程序** 放在 GPLv3 下分发。收到原 Apache 2.0 部分的人，仍须保留其中的署名、NOTICE 和该许可证中的专利授权。
 
-<h3>What's new in version 2.1</h3>
+`app/src/main/cpp` 与 `app/libs` 里的第三方代码各自带有自己的许可证，包括 ONNX Runtime、SentencePiece、Bergamot、FastText、sherpa-onnx、sqlite4java 以及对话模式使用的蓝牙栈。模型权重适用发布者自己的条款。Gemma 模型适用 Gemma 条款。
 
-- **New GUI!** Designed by [Chiara Chindamo](https://www.linkedin.com/in/chiara-chindamo-946053234/).
+向本仓库贡献的修改，以 GPLv3 授权。
 
-- Added speak and copy buttons to the text translation mode.
+## 隐私
 
-- Added the option to manually control the mics in WalkieTalkie mode.
+Xtranslate 不设账号，不加统计，也没有用于语音或文本的后端。联网用途是下载模型。隐私政策原文随上游保留，并注明本副本属于这个 fork：
 
-- Added the option to use low-quality languages.
+- [privacy/Privacy_Policy_en.md](privacy/Privacy_Policy_en.md)
+- [privacy/Privacy_Policy_it.md](privacy/Privacy_Policy_it.md)
 
-- Fixed some bugs.
+## 上游项目
 
-For the full list of changes see [here](https://github.com/niedev/RTranslator/releases/tag/2.1.0).
-<br /><br />
+RTranslator 上游仓库：[https://github.com/niedev/RTranslator](https://github.com/niedev/RTranslator)
 
-<h3>Performance requirements</h3>
+上游的资助、捐赠和 Product Hunt 页面属于上游项目。本 fork 不接收指向那些页面的捐赠。使用上游代码的其他项目（WhisperIMEplus、WhisperJET）也属于上游生态。
 
-I have optimized the AI models a lot to minimize RAM consumption and execution time, despite this however to be able to use the app without the risk of crashing you need a phone with at least **6GB of RAM**, and to have a good enough execution time you need a phone with a fast enough CPU.
-
-If you have a pretty crappy phone (or if you want maximum speed) you can always use <a href="https://github.com/niedev/RTranslator/tree/v1.00">version 1.0 of RTranslator</a> (but since it uses Google APIs it's not free and needs some initial setup).
-<br /><br />
-
-
-<h3>Supported languages</h3>
-
-The languages supported are as follows:
-
-Arabic, Bulgarian, Catalan, Chinese, Croatian, Czech, Danish, Dutch, English, Finnish, French, Galician,  German, Greek, Italian, Japanese, Korean, Macedonian, Polish, Portuguese, Romanian, Russian, Slovak, Spanish, Swedish, Tamil, Thai, Turkish, Ukrainian, Urdu, Vietnamese.
-<br /><br />
-If your language is not on the list, from version 2.1 of RTranslator you can go into the settings and enable "**Support low quality languages**" to add the following languages (which have lower quality for translation and speech recognition):
-
-Afrikaans, Akan (only text), Amharic, Assamese, Bambara (only text), Bangla, Bashkir, Basque, Belarusian, Bosnian, Dzongkha (only text), Esperanto (only text), Estonian, Ewe (only text), Faroese, Fijian (only text), Georgian, Guarani (only text), Gujarati, Hausa, Hebrew, Hindi, Hungarian, Irish (only text), Javanese (only text), Kannada, Kashmiri (only text), Kazakh, Kikuyu (only text), Kinyarwanda (only text), Korean, Kyrgyz (only text), Lao, Limburghish (only text), Lingala, Lithuanian, Luxembourghish, Macedonian, Tagalog (only text), Tibetan.
-<br /><br />
-
-
-<h3>Text To Speech</h3>
-
-To speak, RTranslator uses the system TTS of your phone, so the quality of the latter and the supported languages ​​depend on the system TTS of your phone.
-
-The supported languages ​​seen above are all compatible with <a href="https://play.google.com/store/apps/details?id=com.google.android.tts&pcampaignid=web_share">Google TTS</a>, which is the recommended TTS (although you can use the TTS you want).
-
-To change the system TTS (and therefore the TTS used by RTranslator), download the TTS you want to use from the Play Store, or from the source you prefer, and open RTranslator, then open its settings (top right) and, in the "Output" section, click on "Text to Speech", at this point the system settings will open in the section where you can select the preferred system TTS engine (among those installed), at this point, if you have changed the preferred engine, restart RTranslator to apply the changes (close it from the recent apps and then reopen it).
-
-**Note:** If after that the TTS doesn't work, you can clear the cache of RTranslator and the TTS from Android Applications settings, reboot the phone and retry.
-<br /><br />
-
-<h3>Privacy</h3>
-
-Privacy is a fundamental right. That's why RTranslator does not collect any personal data (I don't even have a server). For more information, read the <a href="https://github.com/niedev/RTranslator/blob/v2.00/privacy/Privacy_Policy_en.md" target="_blank" rel="noopener noreferrer">privacy policy</a> (for now is the same privacy policy of RTranslator 1.0, but I will update it in the future).
-<br /><br />
-
-<h3>Libraries and models</h3>
-
-RTranslator code is completely open-source, but some of the external libraries it uses have less permissive licenses, these are all the external libraries used by the app (with the indication of their license):
-
-<a href="https://github.com/niedev/BluetoothCommunicator">BluetoothCommunicator</a> (open-source): Used for Bluetooth LE communication between devices.
-
-<a href="https://github.com/niedev/GalleryImageSelector">GalleryImageSelector</a> (open-source): Used for selecting and cropping the profile image from the gallery.
-
-[OnnxRuntime](https://github.com/microsoft/onnxruntime) (open-source): Used as an accelerator engine for the AI models.
-
-<a href="https://github.com/google/sentencepiece">SentencePiece</a> (open-source): Used for tokenization of the input text for NLLB.
-
-<a href="https://developers.google.com/ml-kit/language/identification">Ml Kit</a> (closed-source): Used for the identification of the language in the WalkieTalkie mode.
-<br /><br />
-And the following AI models:
-
-<a href="https://github.com/facebookresearch/fairseq/tree/nllb">NLLB</a> (open-source, but only for non-commercial use): The model used is NLLB-Distilled-600M with KV cache.
-
-<a href="https://github.com/openai/whisper">Whisper</a> (open-source): The model used is Whisper-Small-244M with KV cache.
-<br /><br />
-
-<h3>Performance of the models</h3>
-
-I converted both NLLB and Whisper to onnx format and quantized them in int8 (excluding some weights to ensure almost zero quality loss), I also separated some parts of the models to reduce RAM consumption (without this separation some weights were duplicated at runtime consuming more RAM than expected) and done other optimizations to reduce execution time.
-
-Here are the results of my optimizations:
-
-|         | normal NLLB onnx model <br />(full int8, no kv-cache)  | RTranslator NLLB onnx model <br /> (partial int8, with kv-cache, separated parts)  |
-|---------| ------------------------------------------- | ---------------------------------------------------------- |
-|RAM Consumption| 2.5 GB  | 1.3GB &nbsp;&nbsp;(1.9x improvement)  |
-|Execution time for 75 tokens| 8s  | 2s &nbsp;&nbsp;(4x improvement)  |
-
-|         | Whisper onnx model optimized with [Olive](https://github.com/microsoft/Olive) <br /> (full int8, with kv-cache)  | RTranslator Whisper onnx model <br /> (partial int8, with kv-cache, separated parts)  |
-|---------| -------------------------------------------------------------- | ------------------------------------------------------------- |
-|RAM Consumption| 1.4 GB  | 0.9 GB &nbsp;&nbsp;(1.5x improvement)|
-|Execution time for 11s audio| 1.9s  | 1.6s &nbsp;&nbsp;(1.2x improvement)|
-
-**N.B.** RTranslator Whisper model can also consume 0.5 GB of RAM but with an execution time of 2.1s (this mode is used for phones with less than 8 GB of RAM)
-<br /><br />
-
-<h3>Donations</h3>
-
-This is an open-source and completely ad-free app, I don't make any money from it.
-
-So, if you like the app and want to say thank you and support the project, you can make a donation by clicking on one of the the buttons below (any amount is well accepted).
-
-<a href='https://ko-fi.com/niedev'><img alt='Donate' src='https://github.com/niedev/RTranslator/blob/v3.00/images/support_me_on_kofi_beige.png?raw=true' style="width: 230px; " /></a>
-
-<a href='https://www.paypal.com/donate/?business=3VBKS3WC6AFHN&no_recurring=0&currency_code=EUR'><img alt='Donate' src='https://raw.githubusercontent.com/niedev/RTranslator/v2.00/images/Paypal.png' style="width: 190px; height: 80px;" /></a>
-
-In case you will donate, or just live a star, thank you :heart:
-<br /><br />
-
-<h3>Connected external projects</h3>
-
-Take a look at these awesome projects that use RTranslator code:
-
-[**WhisperIMEplus**](https://github.com/woheller69/whisperIMEplus)
-
-[**WhisperJET**](https://github.com/eix128/WhisperJET)
-<br /><br />
-
-
-<h3>Contributions</h3>
-
-If you want to contribute to this project, first of all, thank you 🚀
-
-If you don't know where to start, go check the [to-do list](https://github.com/niedev/RTranslator/blob/v2.00/TODO_LIST.md), and in any case, before starting, read the [contribution guidelines](https://github.com/niedev/RTranslator/blob/v2.00/CONTRIBUTING.md).
-<br /><br />
-
-
-<h3>Bugs and problems</h3>
-I remind you that the app is still in beta. The bugs found are the following:
-
-- Sometimes the Bluetooth connection drops.
-
-If you have found any bug please report it by opening an issue, or by writing an email to contact.niedev@gmail.com
-<br /><br />
-
-Enjoy your simultaneous translator.
+本仓库的缺陷请开在 [maoruiQa/Xtranslate](https://github.com/maoruiQa/Xtranslate) 的 Issues。不要把本 fork 的问题寄给上游维护者。贡献习惯见 [CONTRIBUTING.md](CONTRIBUTING.md)。

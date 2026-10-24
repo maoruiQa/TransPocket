@@ -1,5 +1,7 @@
 <h3 align="center">PRIVACY POLICY</h3> <br />
 
+This copy is distributed with Xtranslate 0.1.0, a fork of RTranslator. The policy text below is the upstream text and is kept as published by that project.
+
 In compliance with the obligations deriving from community legislation (European Regulation for the protection of personal data n. 679/2016, GDPR) and subsequent amendments, this application on mobile device (hereinafter also "App") RTranslator respects and protects the confidentiality of visitors and users, by putting in place measures proportionately designed not to infringe the rights of users.<br />
 This document also takes into account Recommendation no. 2/2001 that the European Authorities for the protection of personal data have adopted to identify the minimum requirements for the collection of personal data online.<br />
 This Privacy Policy applies to the online activities of the App and is valid for visitors / users of the same.<br />

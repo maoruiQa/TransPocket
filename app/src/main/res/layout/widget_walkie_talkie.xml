@@ -3,7 +3,7 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_very_lite"
+    android:background="@color/golden_primary_very_lite"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="8dp">

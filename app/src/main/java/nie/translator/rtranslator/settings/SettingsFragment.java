@@ -42,6 +42,7 @@ import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.GalleryImageSelector;
+import nie.translator.rtranslator.tools.ThemeManager;
 
 
 public class SettingsFragment extends PreferenceFragmentCompat {
@@ -174,6 +175,29 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         languagePreference = (LanguagePreference) findPreference("language");
         languagePreference.setFragment(this);
         languagePreference.initializeLanguagesList();
+
+        // color palette initialization
+        ListPreference colorPalettePreference = (ListPreference) findPreference("colorPalette");
+        if (colorPalettePreference != null) {
+            colorPalettePreference.setValue(ThemeManager.getPalette(activity));
+            colorPalettePreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+                @Override
+                public boolean onPreferenceChange(Preference preference, Object newValue) {
+                    String palette = (String) newValue;
+                    // The rest of the app reads the "default" preferences file, not the
+                    // PreferenceManager default, so persist the palette explicitly.
+                    ThemeManager.setPalette(activity, palette);
+                    ((ListPreference) preference).setValue(palette);
+                    activity.getWindow().getDecorView().post(new Runnable() {
+                        @Override
+                        public void run() {
+                            activity.recreate();
+                        }
+                    });
+                    return false;
+                }
+            });
+        }
 
         // link tts settings initialization
         SeekBarPreference ttsRatePreference = (SeekBarPreference) findPreference("ttsSpeechRateSetting");

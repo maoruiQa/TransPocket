@@ -29,6 +29,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 
 import nie.translator.rtranslator.Global;
+import nie.translator.rtranslator.tools.BluetoothRouteWake;
 import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.tools.CustomLocale;
@@ -84,11 +85,16 @@ public class SimultaneousService extends VoiceTranslationService {
     private boolean capturingSettled;
     private int prepareGeneration;
     private int settleGeneration;
+    /** Silent media loop that keeps a connected Bluetooth headset awake for this session. */
+    private final BluetoothRouteWake routeWake = new BluetoothRouteWake();
 
     @Override
     public void onCreate() {
         super.onCreate();
         isRunning = true;
+        // The microphone stays deaf for MIC_SETTLE_MILLIS after it opens. The loop starts
+        // now, so that wait is long enough for the headset to leave suspend before the first sentence.
+        routeWake.attach(this);
         // The base class starts with the microphone marked on. This mode cannot hear yet.
         isMicActivated = false;
         global = (Global) getApplication();
@@ -325,6 +331,7 @@ public class SimultaneousService extends VoiceTranslationService {
             return;
         }
         final int generation = ++settleGeneration;
+        routeWake.sync();
         capturingSettled = false;
         isMicActivated = false;
         ensureRecording();
@@ -589,6 +596,7 @@ public class SimultaneousService extends VoiceTranslationService {
     @Override
     public void onDestroy() {
         settleGeneration++;
+        routeWake.detach();
         if (speechRecognizer != null && speechRecognizerCallback != null) {
             speechRecognizer.removeCallback(speechRecognizerCallback);
             speechRecognizer.stop();

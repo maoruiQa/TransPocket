@@ -4,7 +4,7 @@
     android:id="@+id/container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_very_lite"
+    android:background="?attr/xtColorPrimaryVeryLite"
     android:fitsSystemWindows="true"
     android:accessibilityPaneTitle="@string/title_fragment_live_translation">
 
@@ -26,7 +26,7 @@
         android:backgroundTint="@android:color/transparent"
         android:contentDescription="@string/back"
         android:src="@drawable/back_arrow_icon2"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarLiveTranslation"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@+id/toolbarLiveTranslation" />
@@ -41,7 +41,7 @@
         android:fontFamily="@font/nunito_sans_semibold"
         android:maxLines="1"
         android:text="@string/title_fragment_live_translation"
-        android:textColor="@color/primary_very_dark"
+        android:textColor="?attr/xtColorPrimaryVeryDark"
         android:textSize="22sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarLiveTranslation"
@@ -93,7 +93,7 @@
                         android:layout_height="40dp"
                         android:contentDescription="@null"
                         android:src="@drawable/conversation_icon"
-                        app:tint="@color/primary_very_dark" />
+                        app:tint="?attr/xtColorIcon" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -107,7 +107,7 @@
                             android:layout_height="wrap_content"
                             android:fontFamily="@font/nunito_sans_semibold"
                             android:text="@string/title_fragment_conversation"
-                            android:textColor="@color/primary_very_dark"
+                            android:textColor="?attr/xtColorPrimaryVeryDark"
                             android:textSize="18sp" />
 
                         <TextView
@@ -143,7 +143,7 @@
                         android:layout_height="40dp"
                         android:contentDescription="@null"
                         android:src="@drawable/mic_icon"
-                        app:tint="@color/primary_very_dark" />
+                        app:tint="?attr/xtColorIcon" />
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -157,7 +157,7 @@
                             android:layout_height="wrap_content"
                             android:fontFamily="@font/nunito_sans_semibold"
                             android:text="@string/title_fragment_simultaneous"
-                            android:textColor="@color/primary_very_dark"
+                            android:textColor="?attr/xtColorPrimaryVeryDark"
                             android:textSize="18sp" />
 
                         <TextView

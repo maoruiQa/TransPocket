@@ -461,7 +461,9 @@ public abstract class VoiceTranslationService extends GeneralService {
                     isEditTextOpen = data.getBoolean("value");
                     return true;
                 case SPEAK_TEXT:
-                    if (ttsEngine != null) {
+                    // Stopping an idle engine still makes it tear down its output, and a
+                    // request submitted right after loses its first words.
+                    if (ttsEngine != null && isTtsBusy()) {
                         ttsEngine.stop();
                     }
                     String text = data.getString("text");

@@ -15,49 +15,203 @@
     * limitations under the License.
     *-->
 
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Base application theme. -->
-    <style name="Theme.Speech" parent="Theme.MaterialComponents.Light.NoActionBar">  <!-- Theme.AppCompat.Light.DarkActionBar-->
-        <item name="color">@color/primary</item>
-        <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="colorAccent">@color/accent</item>
-        <item name="colorPrimary">@color/primary</item>
+    <!-- Shared theme. Palette-specific themes only override the color items. -->
+    <style name="Theme.Speech.Base" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="color">@color/golden_primary</item>
+        <item name="colorPrimary">@color/golden_primary</item>
+        <item name="colorPrimaryDark">@color/golden_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/golden_primary_dark</item>
+        <item name="colorAccent">@color/golden_accent</item>
+        <item name="colorSecondary">@color/golden_accent</item>
+        <item name="colorSecondaryVariant">@color/golden_accent</item>
+        <item name="colorOnPrimary">@color/golden_on_primary</item>
+        <item name="colorSurface">@color/golden_surface</item>
+        <item name="xtColorPrimary">@color/golden_primary</item>
+        <item name="xtColorPrimaryDark">@color/golden_primary_dark</item>
+        <item name="xtColorPrimaryVeryDark">@color/golden_primary_very_dark</item>
+        <item name="xtColorPrimaryLite">@color/golden_primary_lite</item>
+        <item name="xtColorPrimaryVeryLite">@color/golden_primary_very_lite</item>
+        <!-- Model-row titles are body-size text, so they use the ink, not the icon gold. -->
+        <item name="xtColorAccent">@color/autumn_ink</item>
+        <item name="xtColorSecondaryVeryLite">@color/golden_secondary_very_lite</item>
+        <item name="xtColorOnPrimary">@color/golden_on_primary</item>
+        <item name="xtColorIcon">@color/autumn_gold_icon</item>
+        <item name="xtColorAction">@color/autumn_gold_bright</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="cardViewStyle">@style/CardView</item>
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
     </style>
 
-    <style name="Theme.Settings" parent="Theme.MaterialComponents.Light.NoActionBar">  <!-- Theme.AppCompat.Light.DarkActionBar-->
-        <item name="color">@color/primary</item>
-        <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="colorAccent">@color/accent</item>
-        <item name="colorPrimary">@color/primary</item>
-        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:statusBarColor">@color/primary_very_lite</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="cardViewStyle">@style/CardView</item>
-        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
+    <style name="Theme.Speech" parent="Theme.Speech.Base">
+        <!-- White on #D4A62C is under 3:1. Keep this off Base so other palettes stay light-on-accent. -->
+        <item name="colorOnSecondary">@color/golden_on_primary</item>
+    </style>
+
+    <style name="Theme.Speech.Bamboo" parent="Theme.Speech.Base">
+        <item name="color">@color/bamboo_primary</item>
+        <item name="colorPrimary">@color/bamboo_primary</item>
+        <item name="colorPrimaryDark">@color/bamboo_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/bamboo_primary_dark</item>
+        <item name="colorAccent">@color/bamboo_accent</item>
+        <item name="colorSecondary">@color/bamboo_accent</item>
+        <item name="colorSecondaryVariant">@color/bamboo_accent</item>
+        <item name="colorOnPrimary">@color/bamboo_on_primary</item>
+        <item name="colorSurface">@color/bamboo_primary_very_lite</item>
+        <item name="xtColorPrimary">@color/bamboo_primary</item>
+        <item name="xtColorPrimaryDark">@color/bamboo_primary_dark</item>
+        <item name="xtColorPrimaryVeryDark">@color/bamboo_primary_very_dark</item>
+        <item name="xtColorPrimaryLite">@color/bamboo_primary_lite</item>
+        <item name="xtColorPrimaryVeryLite">@color/bamboo_primary_very_lite</item>
+        <item name="xtColorAccent">@color/bamboo_accent</item>
+        <item name="xtColorSecondaryVeryLite">@color/bamboo_secondary_very_lite</item>
+        <item name="xtColorOnPrimary">@color/bamboo_on_primary</item>
+        <item name="xtColorIcon">@color/bamboo_primary_very_dark</item>
+        <item name="xtColorAction">@color/bamboo_primary</item>
+    </style>
+
+    <style name="Theme.Speech.Indigo" parent="Theme.Speech.Base">
+        <item name="color">@color/indigo_primary</item>
+        <item name="colorPrimary">@color/indigo_primary</item>
+        <item name="colorPrimaryDark">@color/indigo_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/indigo_primary_dark</item>
+        <item name="colorAccent">@color/indigo_accent</item>
+        <item name="colorSecondary">@color/indigo_accent</item>
+        <item name="colorSecondaryVariant">@color/indigo_accent</item>
+        <item name="colorOnPrimary">@color/indigo_on_primary</item>
+        <item name="colorSurface">@color/indigo_primary_very_lite</item>
+        <item name="xtColorPrimary">@color/indigo_primary</item>
+        <item name="xtColorPrimaryDark">@color/indigo_primary_dark</item>
+        <item name="xtColorPrimaryVeryDark">@color/indigo_primary_very_dark</item>
+        <item name="xtColorPrimaryLite">@color/indigo_primary_lite</item>
+        <item name="xtColorPrimaryVeryLite">@color/indigo_primary_very_lite</item>
+        <item name="xtColorAccent">@color/indigo_accent</item>
+        <item name="xtColorSecondaryVeryLite">@color/indigo_secondary_very_lite</item>
+        <item name="xtColorOnPrimary">@color/indigo_on_primary</item>
+        <item name="xtColorIcon">@color/indigo_primary_very_dark</item>
+        <item name="xtColorAction">@color/indigo_primary</item>
+    </style>
+
+    <style name="Theme.Speech.Sakura" parent="Theme.Speech.Base">
+        <item name="color">@color/sakura_primary</item>
+        <item name="colorPrimary">@color/sakura_primary</item>
+        <item name="colorPrimaryDark">@color/sakura_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/sakura_primary_dark</item>
+        <item name="colorAccent">@color/sakura_accent</item>
+        <item name="colorSecondary">@color/sakura_accent</item>
+        <item name="colorSecondaryVariant">@color/sakura_accent</item>
+        <item name="colorOnPrimary">@color/sakura_on_primary</item>
+        <item name="colorSurface">@color/sakura_primary_very_lite</item>
+        <item name="xtColorPrimary">@color/sakura_primary</item>
+        <item name="xtColorPrimaryDark">@color/sakura_primary_dark</item>
+        <item name="xtColorPrimaryVeryDark">@color/sakura_primary_very_dark</item>
+        <item name="xtColorPrimaryLite">@color/sakura_primary_lite</item>
+        <item name="xtColorPrimaryVeryLite">@color/sakura_primary_very_lite</item>
+        <item name="xtColorAccent">@color/sakura_accent</item>
+        <item name="xtColorSecondaryVeryLite">@color/sakura_secondary_very_lite</item>
+        <item name="xtColorOnPrimary">@color/sakura_on_primary</item>
+        <item name="xtColorIcon">@color/sakura_primary_very_dark</item>
+        <item name="xtColorAction">@color/sakura_primary</item>
+    </style>
+
+    <style name="Theme.Speech.Wisteria" parent="Theme.Speech.Base">
+        <item name="color">@color/wisteria_primary</item>
+        <item name="colorPrimary">@color/wisteria_primary</item>
+        <item name="colorPrimaryDark">@color/wisteria_primary_dark</item>
+        <item name="colorPrimaryVariant">@color/wisteria_primary_dark</item>
+        <item name="colorAccent">@color/wisteria_accent</item>
+        <item name="colorSecondary">@color/wisteria_accent</item>
+        <item name="colorSecondaryVariant">@color/wisteria_accent</item>
+        <item name="colorOnPrimary">@color/wisteria_on_primary</item>
+        <item name="colorSurface">@color/wisteria_primary_very_lite</item>
+        <item name="xtColorPrimary">@color/wisteria_primary</item>
+        <item name="xtColorPrimaryDark">@color/wisteria_primary_dark</item>
+        <item name="xtColorPrimaryVeryDark">@color/wisteria_primary_very_dark</item>
+        <item name="xtColorPrimaryLite">@color/wisteria_primary_lite</item>
+        <item name="xtColorPrimaryVeryLite">@color/wisteria_primary_very_lite</item>
+        <item name="xtColorAccent">@color/wisteria_accent</item>
+        <item name="xtColorSecondaryVeryLite">@color/wisteria_secondary_very_lite</item>
+        <item name="xtColorOnPrimary">@color/wisteria_on_primary</item>
+        <item name="xtColorIcon">@color/wisteria_primary_very_dark</item>
+        <item name="xtColorAction">@color/wisteria_primary</item>
+    </style>
+
+    <style name="Theme.Settings" parent="Theme.Speech">
+        <item name="android:statusBarColor">?attr/xtColorPrimaryVeryLite</item>
+    </style>
+
+    <style name="Theme.Settings.Bamboo" parent="Theme.Speech.Bamboo">
+        <item name="android:statusBarColor">?attr/xtColorPrimaryVeryLite</item>
+    </style>
+
+    <style name="Theme.Settings.Indigo" parent="Theme.Speech.Indigo">
+        <item name="android:statusBarColor">?attr/xtColorPrimaryVeryLite</item>
+    </style>
+
+    <style name="Theme.Settings.Sakura" parent="Theme.Speech.Sakura">
+        <item name="android:statusBarColor">?attr/xtColorPrimaryVeryLite</item>
+    </style>
+
+    <style name="Theme.Settings.Wisteria" parent="Theme.Speech.Wisteria">
+        <item name="android:statusBarColor">?attr/xtColorPrimaryVeryLite</item>
     </style>
 
     <style name="AppTheme" parent="Theme.MaterialComponents.Light.NoActionBar" />
 
     <style name="Theme.App.Starting" parent="Theme.SplashScreen.IconBackground">
         <!-- Set the splash screen background -->
-        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <item name="windowSplashScreenBackground">@color/golden_primary_very_lite</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/golden_primary_very_lite</item>
         <!-- Set a background behind the splash screen icon. -->
-        <item name="windowSplashScreenIconBackgroundColor">@android:color/white</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/accent_white</item>
         <!-- Use windowSplashScreenAnimatedIcon to add a drawable or an animated drawable. -->
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen</item>
         <!-- Set the theme of the Activity that follows your splash screen. -->
         <item name="postSplashScreenTheme">@style/Theme.Speech</item>
     </style>
 
+    <!-- Platform splash attrs are set again on each palette. A child that only overrides the
+         library attr still inherits the parent's resolved android:windowSplashScreenBackground. -->
+    <style name="Theme.App.Starting.Bamboo" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@color/bamboo_primary_very_lite</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/bamboo_primary_very_lite</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_bamboo</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_bamboo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Speech.Bamboo</item>
+    </style>
+
+    <style name="Theme.App.Starting.Indigo" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@color/indigo_primary_very_lite</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/indigo_primary_very_lite</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_indigo</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_indigo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Speech.Indigo</item>
+    </style>
+
+    <style name="Theme.App.Starting.Sakura" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@color/sakura_primary_very_lite</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/sakura_primary_very_lite</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_sakura</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_sakura</item>
+        <item name="postSplashScreenTheme">@style/Theme.Speech.Sakura</item>
+    </style>
+
+    <style name="Theme.App.Starting.Wisteria" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@color/wisteria_primary_very_lite</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/wisteria_primary_very_lite</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_wisteria</item>
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_wisteria</item>
+        <item name="postSplashScreenTheme">@style/Theme.Speech.Wisteria</item>
+    </style>
+
     <style name="Theme.Toolbar" parent="Theme.AppCompat.Light.DarkActionBar">
-        <item name="android:textColorPrimary">@color/primary_very_dark</item>
-        <item name="android:textColorSecondary">@color/primary_very_dark</item>
+        <item name="android:textColorPrimary">?attr/xtColorPrimaryVeryDark</item>
+        <item name="android:textColorSecondary">?attr/xtColorPrimaryVeryDark</item>
     </style>
 
     <style name="Theme.TabLayout" parent="Theme.AppCompat.Light.DarkActionBar">
@@ -81,7 +235,7 @@
 
     <style name="MyThemeOverlay.MaterialComponents.MaterialAlertDialog" parent="@style/ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.RTranslator.Dialog.Rounded</item>
-        <item name="colorSurface">@color/primary_very_lite</item>
+        <item name="colorSurface">?attr/xtColorPrimaryVeryLite</item>
     </style>
 
     <style name="MyThemeOverlay.MaterialComponents.MaterialAlertDialogWithTitle" parent="@style/ThemeOverlay.MaterialComponents.MaterialAlertDialog">

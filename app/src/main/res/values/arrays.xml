@@ -15,4 +15,20 @@
         <item>18</item>
         <item>5</item>
     </string-array>
+
+    <string-array name="color_palette_entries">
+        <item>@string/palette_golden</item>
+        <item>@string/palette_bamboo</item>
+        <item>@string/palette_indigo</item>
+        <item>@string/palette_sakura</item>
+        <item>@string/palette_wisteria</item>
+    </string-array>
+
+    <string-array name="color_palette_values">
+        <item>golden</item>
+        <item>bamboo</item>
+        <item>indigo</item>
+        <item>sakura</item>
+        <item>wisteria</item>
+    </string-array>
 </resources>

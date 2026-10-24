@@ -41,6 +41,7 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.TaskStackBuilder;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
@@ -484,7 +485,7 @@ public class VoiceTranslationActivity extends GeneralActivity {
         if(mode == PAIRING_FRAGMENT){
             icon.setImageDrawable(getResources().getDrawable(R.drawable.bluetooth));
         }else{
-            icon.setImageDrawable(getResources().getDrawable(R.drawable.mic));
+            icon.setImageDrawable(ContextCompat.getDrawable(this, R.drawable.mic));
         }
 
         //set text

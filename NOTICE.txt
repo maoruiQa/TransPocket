@@ -3,3 +3,30 @@ Copyright 2018-2020 The Apache Software Foundation
 
 This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
+
+Xtranslate
+Copyright 2026 maoruiQa
+
+Xtranslate is a fork of RTranslator by Luca Martino (niedev):
+https://github.com/niedev/RTranslator
+
+The upstream program is licensed under the Apache License, Version 2.0.
+The full upstream license is kept, unmodified, in LICENSE.txt.
+Copyright and Apache License notices already present in source files
+are part of that upstream work and stay in place.
+
+Changes in this fork, and the combined program distributed from this
+repository, are released under the GNU General Public License, version 3.
+The full text is in LICENSE. The Apache License 2.0 is compatible with
+GPLv3, which is what allows this combination. Recipients of the original
+Apache-2.0 portions also keep that license's attribution requirements
+and patent grant.
+
+Third-party libraries under app/src/main/cpp and app/libs keep the
+license that ships with each library. Model weights are not in this
+repository and keep the terms of their publishers.
+
+This fork is not maintained by, endorsed by, or affiliated with the
+upstream RTranslator authors or the Apache Software Foundation.
+The Apache Software Foundation notice above is retained from the
+upstream tree.

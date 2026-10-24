@@ -37,6 +37,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.gui.DeactivableButton;
 import nie.translator.rtranslator.tools.gui.GuiTools;
 import nie.translator.rtranslator.tools.gui.MicrophoneComunicable;
@@ -100,7 +101,7 @@ public abstract class VoiceTranslationFragment extends Fragment implements Micro
         }
         int text = loadingStageText(progress, max);
         description.setText(text);
-        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.primary_very_dark));
+        description.setTextColor(ThemeManager.getColor(description.getContext(), R.attr.xtColorPrimaryVeryDark));
         boolean listVisible = mRecyclerView != null && mRecyclerView.getVisibility() == View.VISIBLE;
         if (modelLoadingText != null) {
             modelLoadingText.setText(text);

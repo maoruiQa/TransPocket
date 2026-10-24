@@ -44,6 +44,7 @@ import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.settings.SettingsActivity;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ButtonMic;
 import nie.translator.rtranslator.tools.gui.ButtonSound;
@@ -321,7 +322,7 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
         finishModelLoading();
         CharSequence previous = description.getText();
         description.setText(R.string.simultaneous_ready);
-        description.setTextColor(GuiTools.getColor(description.getContext(), R.color.primary_very_dark));
+        description.setTextColor(ThemeManager.getColor(description.getContext(), R.attr.xtColorPrimaryVeryDark));
         if (microphone != null) {
             microphone.setContentDescription(getString(R.string.description_start_automatic_recognition));
         }

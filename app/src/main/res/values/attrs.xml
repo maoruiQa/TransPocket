@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Palette roles used by layouts/drawables. Custom names keep per-view theme
+         overlays (for example android:theme="@style/Theme.MaterialComponents") from
+         replacing the activity's palette with Material's default colors. -->
+    <attr name="xtColorPrimary" format="color" />
+    <attr name="xtColorPrimaryDark" format="color" />
+    <attr name="xtColorPrimaryVeryDark" format="color" />
+    <attr name="xtColorPrimaryLite" format="color" />
+    <attr name="xtColorPrimaryVeryLite" format="color" />
+    <attr name="xtColorAccent" format="color" />
+    <attr name="xtColorSecondaryVeryLite" format="color" />
+    <attr name="xtColorOnPrimary" format="color" />
+    <attr name="xtColorIcon" format="color" />
+    <attr name="xtColorAction" format="color" />
+
     <declare-styleable name="ResourceManagerView">
         <attr name="modelTitle" format="string" />
         <attr name="modelDescription" format="string" />

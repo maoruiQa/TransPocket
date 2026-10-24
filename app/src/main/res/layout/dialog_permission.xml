@@ -4,7 +4,7 @@
     android:id="@+id/container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@color/primary_very_lite"
+    android:background="?attr/xtColorPrimaryVeryLite"
     android:elevation="0dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -22,7 +22,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
-            android:tint="@color/primary_very_dark"
+            android:tint="?attr/xtColorIcon"
             android:src="@drawable/mic"
             android:focusable="false"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -30,7 +30,7 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:srcCompat="@drawable/mic"
-            app:tint="@color/primary_very_dark" />
+            app:tint="?attr/xtColorIcon" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <com.google.android.material.card.MaterialCardView
@@ -80,7 +80,7 @@
                 android:layout_marginTop="24dp"
                 android:layout_marginEnd="8dp"
                 android:layout_marginBottom="12dp"
-                android:backgroundTint="@color/primary_very_dark"
+                android:backgroundTint="?attr/xtColorPrimaryVeryDark"
                 android:maxWidth="200dp"
                 android:minWidth="120dp"
                 android:outlineProvider="none"
@@ -107,7 +107,7 @@
                 android:layout_marginTop="24dp"
                 android:layout_marginEnd="24dp"
                 android:layout_marginBottom="12dp"
-                android:backgroundTint="@color/primary_very_dark"
+                android:backgroundTint="?attr/xtColorPrimaryVeryDark"
                 android:maxWidth="200dp"
                 android:minWidth="120dp"
                 android:outlineProvider="none"

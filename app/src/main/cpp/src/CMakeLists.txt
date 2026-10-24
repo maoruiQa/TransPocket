@@ -67,4 +67,3 @@ target_link_libraries(cache_container_native
 add_subdirectory(bergamot_translator)
 add_subdirectory(fasttext)
 add_subdirectory(gguf)
-add_subdirectory(livedraft)

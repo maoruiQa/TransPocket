@@ -58,7 +58,7 @@
             android:layout_marginBottom="12dp"
             android:gravity="center"
             android:text="@string/loading_stage_check"
-            android:textColor="@color/primary_very_dark"
+            android:textColor="?attr/xtColorPrimaryVeryDark"
             app:layout_constraintBottom_toTopOf="@+id/loadingProgress"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent" />

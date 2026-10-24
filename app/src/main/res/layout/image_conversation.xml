@@ -8,7 +8,7 @@
     android:id="@+id/container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_very_lite"
+    android:background="?attr/xtColorPrimaryVeryLite"
     android:fitsSystemWindows="true">
 
     <android.widget.Toolbar
@@ -19,7 +19,7 @@
         android:popupTheme="@style/ThemeOverlay.AppCompat.Light"
         android:theme="@style/Theme.Toolbar"
         android:title=" "
-        android:titleTextColor="@color/primary"
+        android:titleTextColor="?attr/xtColorPrimaryVeryDark"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0"
@@ -39,7 +39,7 @@
         android:focusable="true"
         android:scaleType="fitCenter"
         android:src="@drawable/back_arrow_icon2"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarConversation"
         app:layout_constraintEnd_toEndOf="parent"
@@ -56,7 +56,7 @@
         android:fontFamily="@font/nunito_sans_semibold"
         android:text="@string/title_fragment_conversation"
         android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:textColor="@color/primary_very_dark"
+        android:textColor="?attr/xtColorPrimaryVeryDark"
         android:textSize="22sp"
         android:textStyle="bold"
         android:maxLines="1"
@@ -77,7 +77,7 @@
         android:layout_marginTop="8dp"
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="8dp"
-        android:indeterminateTint="@color/primary_very_dark"
+        android:indeterminateTint="?attr/xtColorPrimaryVeryDark"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarConversation"
         app:layout_constraintEnd_toStartOf="@+id/settingsButton"
@@ -95,7 +95,7 @@
         android:backgroundTint="@android:color/transparent"
         android:scaleType="fitCenter"
         android:src="@drawable/cancel_icon"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         android:visibility="invisible"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarConversation"
         app:layout_constraintEnd_toStartOf="@+id/settingsButton"
@@ -110,7 +110,7 @@
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"
         android:backgroundTint="@android:color/transparent"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarConversation"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="1.0"
@@ -162,7 +162,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
             android:layout_marginBottom="16dp"
-            app:cardBackgroundColor="@color/primary_very_dark"
+            app:cardBackgroundColor="?attr/xtColorPrimaryVeryDark"
             app:cardCornerRadius="24dp"
             app:cardElevation="0dp"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -171,7 +171,7 @@
             app:layout_constraintStart_toStartOf="@+id/guideline10"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintVertical_bias="0"
-            app:strokeColor="@color/primary_very_dark"
+            app:strokeColor="?attr/xtColorPrimaryVeryDark"
             app:strokeWidth="2dp">
 
             <androidx.constraintlayout.widget.ConstraintLayout
@@ -216,7 +216,7 @@
             app:layout_constraintStart_toStartOf="@+id/guideline12"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintVertical_bias="0"
-            app:strokeColor="@color/primary_very_dark"
+            app:strokeColor="?attr/xtColorPrimaryVeryDark"
             app:strokeWidth="2dp">
 
             <androidx.constraintlayout.widget.ConstraintLayout
@@ -237,7 +237,7 @@
                     android:fontFamily="@font/nunito_semibold"
                     android:text="@string/connection"
                     android:textAlignment="center"
-                    android:textColor="@color/primary_very_dark"
+                    android:textColor="?attr/xtColorPrimaryVeryDark"
                     app:layout_constraintBottom_toBottomOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"
                     app:layout_constraintStart_toStartOf="parent"
@@ -356,7 +356,7 @@
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintTop_toTopOf="parent"
                         app:layout_constraintVertical_bias="1.0"
-                        app:tint="@color/primary_very_dark" />
+                        app:tint="?attr/xtColorIcon" />
 
                     <TextView
                         android:id="@+id/textButtonPlaceHolder"
@@ -403,9 +403,9 @@
                                 android:layout_height="66dp"
                                 android:layout_gravity="center"
                                 android:background="@drawable/circle"
-                                android:backgroundTint="@color/primary"
+                                android:backgroundTint="?attr/xtColorPrimary"
                                 android:src="@drawable/mic_icon"
-                                app:tint="@color/white"
+                                app:tint="?attr/xtColorOnPrimary"
                                 app:layout_constraintBottom_toBottomOf="parent"
                                 app:layout_constraintEnd_toEndOf="parent"
                                 app:layout_constraintStart_toStartOf="parent"

@@ -31,6 +31,21 @@
         app:iconSpaceReserved="false" />
 
     <androidx.preference.PreferenceCategory
+        android:title="@string/preference_header_appearance"
+        app:iconSpaceReserved="false"
+        app:allowDividerBelow="true">
+        <ListPreference
+            android:key="colorPalette"
+            android:title="@string/preference_title_color_palette"
+            android:summary="%s"
+            android:entries="@array/color_palette_entries"
+            android:entryValues="@array/color_palette_values"
+            android:defaultValue="golden"
+            android:persistent="false"
+            app:iconSpaceReserved="false" />
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
         android:title="@string/general"
         app:iconSpaceReserved="false"
         app:allowDividerBelow="true">

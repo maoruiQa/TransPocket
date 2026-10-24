@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.tools.gui.messages.MessagesAdapter;
 
@@ -24,6 +25,7 @@ public class ImageActivity extends Activity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        ThemeManager.applyTheme(this);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.image_conversation);
 

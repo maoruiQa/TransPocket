@@ -9,6 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.text.Editable;
@@ -49,8 +52,9 @@ import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.settings.SettingsActivity;
 import nie.translator.rtranslator.tools.CustomLocale;
-import nie.translator.rtranslator.tools.LiveDraftSpeaker;
+
 import nie.translator.rtranslator.tools.TTS;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.GuiTools;
 import nie.translator.rtranslator.tools.gui.animations.CustomAnimator;
@@ -69,6 +73,14 @@ public class TranslationFragment extends Fragment {
     private TextWatcher outputTextListener;
     private TTS tts;
     private UtteranceProgressListener ttsListener;
+    private long ttsUtteranceCounter = 0;
+    private String currentTtsUtteranceId = "";
+    /** True between onStart and onDone/onStop of the sentence this fragment's engine is reading. */
+    private boolean ttsSpeaking = false;
+    private long lastTtsStopAt = 0;
+    private final Handler ttsHandler = new Handler(Looper.getMainLooper());
+    @Nullable
+    private Runnable pendingTtsSpeak;
 
     //TranslatorFragment's GUI
     private MaterialButton translateButton;
@@ -102,7 +114,7 @@ public class TranslationFragment extends Fragment {
     private TextView synonymsText;
     private CustomAnimator animator = new CustomAnimator();
     private Animator colorAnimator = null;
-    private int activatedColor = R.color.primary;
+    private int activatedColor = R.attr.xtColorAction;
     private int deactivatedColor = R.color.gray;
     private boolean isKeyboardShowing = false;
     private boolean isScreenReduced = false;
@@ -627,10 +639,24 @@ public class TranslationFragment extends Fragment {
         ttsListener = new UtteranceProgressListener() {
             @Override
             public void onStart(String s) {
+                if (isCurrentTtsUtterance(s)) {
+                    ttsSpeaking = true;
+                }
+            }
+
+            @Override
+            public void onStop(String s, boolean interrupted) {
+                if (isCurrentTtsUtterance(s)) {
+                    ttsSpeaking = false;
+                }
             }
 
             @Override
             public void onDone(String s) {
+                if (!isCurrentTtsUtterance(s)) {
+                    return; // a sentence replaced by a newer tap
+                }
+                ttsSpeaking = false;
                 if(((int) ttsInputButton.getTag()) == R.drawable.stop_icon){
                     ttsInputButton.setImageResource(R.drawable.sound_icon);
                     ttsInputButton.setTag(R.drawable.sound_icon);
@@ -643,6 +669,10 @@ public class TranslationFragment extends Fragment {
 
             @Override
             public void onError(String s) {
+                if (!isCurrentTtsUtterance(s)) {
+                    return;
+                }
+                ttsSpeaking = false;
                 if(((int) ttsInputButton.getTag()) == R.drawable.stop_icon){
                     ttsInputButton.setImageResource(R.drawable.sound_icon);
                     ttsInputButton.setTag(R.drawable.sound_icon);
@@ -659,7 +689,7 @@ public class TranslationFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 if(((int) ttsInputButton.getTag()) == R.drawable.stop_icon){
-                    tts.stop();
+                    stopSpeech();
                     ttsListener.onDone("");  //we call this to make eventual visual updates to the tts buttons (stop() doesn't call onDone automatically)
                 }else {
                     CustomLocale firstLanguage = global.getFirstTextLanguage(true);
@@ -687,7 +717,7 @@ public class TranslationFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 if(((int) ttsOutputButton.getTag()) == R.drawable.stop_icon){
-                    tts.stop();
+                    stopSpeech();
                     ttsListener.onDone("");  //we call this to make eventual visual updates to the tts buttons (stop() doesn't call onDone automatically)
                 }else {
                     CustomLocale secondLanguage = global.getSecondTextLanguage(true);
@@ -779,16 +809,59 @@ public class TranslationFragment extends Fragment {
 
             @Override
             public void onError(int reason) {
-                // Keep the wrapper. A downloaded Live Draft voice can still speak when the system engine fails.
             }
         });
     }
 
+    /**
+     * Reads {@code text}, replacing the sentence that is being read. The replacement is
+     * submitted only after the engine has closed the previous output: a request sent in
+     * that moment loses its first words.
+     */
     public void speak(String text, CustomLocale language) {
-        if (tts != null && (tts.isActive() || LiveDraftSpeaker.canSpeak(activity, language.getLanguage()))) {
-            tts.setLanguage(language, activity);
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "c01");
+        if (tts == null || !tts.isActive()) {
+            return;
         }
+        tts.prepareLanguage(language, activity);
+        // A new id per tap: the onDone of the sentence this one replaces must not reset the buttons.
+        currentTtsUtteranceId = "text-" + (++ttsUtteranceCounter);
+        final String utteranceId = currentTtsUtteranceId;
+        if (pendingTtsSpeak != null) {
+            ttsHandler.removeCallbacks(pendingTtsSpeak);
+            pendingTtsSpeak = null;
+        }
+        if (ttsSpeaking) {
+            stopSpeech();
+        }
+        long wait = Math.max(0, lastTtsStopAt + TTS.ENGINE_SETTLE_MS - SystemClock.elapsedRealtime());
+        if (wait == 0) {
+            // QUEUE_ADD and never QUEUE_FLUSH: flushing is what cuts the start of the sentence.
+            tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId);
+            return;
+        }
+        pendingTtsSpeak = new Runnable() {
+            @Override
+            public void run() {
+                pendingTtsSpeak = null;
+                tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId);
+            }
+        };
+        ttsHandler.postDelayed(pendingTtsSpeak, wait);
+    }
+
+    /** Stops this fragment's engine and remembers when, so the next request can wait for it. */
+    private void stopSpeech() {
+        if (tts == null) {
+            return;
+        }
+        tts.stop();
+        ttsSpeaking = false;
+        lastTtsStopAt = SystemClock.elapsedRealtime();
+    }
+
+    /** The manual {@code onDone("")} call after a stopped tap is accepted too. */
+    private boolean isCurrentTtsUtterance(String utteranceId) {
+        return utteranceId == null || utteranceId.isEmpty() || utteranceId.equals(currentTtsUtteranceId);
     }
 
     private void activateTranslationButton(){
@@ -796,7 +869,7 @@ public class TranslationFragment extends Fragment {
             colorAnimator.cancel();
         }
         if(!translateButton.isActivated()) {
-            colorAnimator = animator.createAnimatorColor(translateButton, GuiTools.getColorStateList(activity, deactivatedColor).getDefaultColor(), GuiTools.getColorStateList(activity, activatedColor).getDefaultColor(), activity.getResources().getInteger(R.integer.durationShort));
+            colorAnimator = animator.createAnimatorColor(translateButton, GuiTools.getColorStateList(activity, deactivatedColor).getDefaultColor(), ThemeManager.getColorStateList(activity, activatedColor).getDefaultColor(), activity.getResources().getInteger(R.integer.durationShort));
             colorAnimator.addListener(new Animator.AnimatorListener() {
                 @Override
                 public void onAnimationStart(@NonNull Animator animation) {
@@ -818,7 +891,7 @@ public class TranslationFragment extends Fragment {
             });
             colorAnimator.start();
         }else{
-            translateButton.setBackgroundColor(GuiTools.getColorStateList(activity, activatedColor).getDefaultColor());
+            translateButton.setBackgroundColor(ThemeManager.getColorStateList(activity, activatedColor).getDefaultColor());
         }
     }
 
@@ -828,7 +901,7 @@ public class TranslationFragment extends Fragment {
         }
         if(translateButton.isActivated()) {
             translateButton.setActivated(false);
-            colorAnimator = animator.createAnimatorColor(translateButton, GuiTools.getColorStateList(activity, activatedColor).getDefaultColor(), GuiTools.getColorStateList(activity, deactivatedColor).getDefaultColor(), activity.getResources().getInteger(R.integer.durationShort));
+            colorAnimator = animator.createAnimatorColor(translateButton, ThemeManager.getColorStateList(activity, activatedColor).getDefaultColor(), GuiTools.getColorStateList(activity, deactivatedColor).getDefaultColor(), activity.getResources().getInteger(R.integer.durationShort));
             colorAnimator.addListener(new Animator.AnimatorListener() {
                 @Override
                 public void onAnimationStart(@NonNull Animator animation) {
@@ -906,6 +979,11 @@ public class TranslationFragment extends Fragment {
         outputText.removeTextChangedListener(outputTextListener);
         inputText.clearFocus();
         outputText.clearFocus();
+        // A delayed replacement must not speak after the screen is gone.
+        if (pendingTtsSpeak != null) {
+            ttsHandler.removeCallbacks(pendingTtsSpeak);
+            pendingTtsSpeak = null;
+        }
         //we detach the translate listener
         global.getTranslator().removeCallback(translateListener);
     }

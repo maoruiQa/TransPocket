@@ -18,6 +18,9 @@ package nie.translator.rtranslator.tools;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
@@ -30,30 +33,33 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * The system text-to-speech engine. This class only forwards requests to the engine:
+ * ordering, "one sentence at a time", interruption recovery and the completion
+ * bookkeeping live in {@code TTSEngine}, so there is a single place that decides
+ * what is spoken next.
+ */
 public class TTS {
+    /**
+     * Pause the engine needs after a {@code stop()}, a language change, or the
+     * {@code onDone} of the previous sentence. On several engines the previous audio
+     * output is still being torn down when the callback arrives, and a request
+     * submitted in that moment loses its first words.
+     */
+    public static final int ENGINE_SETTLE_MS = 250;
+
     //object
     private TextToSpeech tts;
     private final Context appContext;
+    private final AudioManager audioManager;
+    private final AudioAttributes speechAttributes;
+    private AudioFocusRequest focusRequest;
+    private boolean focusHeld;
     private UtteranceProgressListener progressListener;
     private CustomLocale currentLocale;
-    private boolean cosyStream;
-    private final Object streamLock = new Object();
-    private final StringBuilder systemPending = new StringBuilder();
-    private final android.os.Handler mainHandler = new android.os.Handler(Looper.getMainLooper());
-    private final ArrayDeque<String> systemPieces = new ArrayDeque<>();
-    private int systemGeneration;
-    private int systemTicket;
-    private int systemPieceIndex;
-    private String systemUtteranceId = "";
-    private String systemWaitingId = "";
-    private boolean systemOpen;
-    private boolean systemFinished;
-    private boolean systemStarted;
-    private boolean systemInFlight;
-    private boolean systemForceFlush;
-    private boolean systemApplied;
-    private int systemQueueMode = TextToSpeech.QUEUE_ADD;
-    private Runnable systemWatch;
+    /** Last values really applied to the engine. Re-applying them before every sentence clips the opening words on some engines. */
+    private String appliedLanguage = "";
+    private float appliedRate = -1f;
 
     //Attributes used for getting the supported languages
     private static Thread getSupportedLanguageThread;
@@ -64,6 +70,26 @@ public class TTS {
 
     public TTS(Context context, final InitListener listener) {
         appContext = context.getApplicationContext();
+        audioManager = (AudioManager) appContext.getSystemService(Context.AUDIO_SERVICE);
+        // The default attributes of the engine are USAGE_ASSISTANCE_ACCESSIBILITY, and some
+        // ROMs fade the beginning of that usage in (it sounds like the first words are missing).
+        speechAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+        focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(speechAttributes)
+                .setOnAudioFocusChangeListener(new AudioManager.OnAudioFocusChangeListener() {
+                    @Override
+                    public void onAudioFocusChange(int focusChange) {
+                        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                            // Another app took the focus. The engine stops on its own and reports it
+                            // through the progress listener, so the queue is still in charge.
+                            focusHeld = false;
+                        }
+                    }
+                })
+                .build();
         tts = new TextToSpeech(context, new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
@@ -99,7 +125,7 @@ public class TTS {
                             listener.onInit();
                         }
                         return;*/
-                        installBridge();
+                        tts.setAudioAttributes(speechAttributes);
                         listener.onInit();
                         return; // Set TTS to the default TTS directly.
                     }
@@ -112,479 +138,160 @@ public class TTS {
     }
 
     public boolean isActive() {
-        return tts != null || LiveDraftVoices.isReady(appContext, LiveDraftVoices.ENGINE_COSYVOICE);
+        return tts != null;
     }
 
     /**
-     * Incremental speech is available for CosyVoice and for the system engine.
+     * Holds the audio focus for one run of sentences. Without it the engine output can be
+     * ducked at the start of a sentence while the microphone is capturing.
+     */
+    public void requestSpeechFocus() {
+        if (focusHeld || audioManager == null) {
+            return;
+        }
+        focusHeld = audioManager.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+    }
+
+    public void abandonSpeechFocus() {
+        if (!focusHeld || audioManager == null) {
+            return;
+        }
+        audioManager.abandonAudioFocusRequest(focusRequest);
+        focusHeld = false;
+    }
+
+    /** Speech always uses the system engine. */
+    public boolean isLiveDraft(CustomLocale locale) {
+        return false;
+    }
+
+    /**
      * The system engine cannot accept partial text, so sentences are queued instead.
      */
     public boolean canStream(CustomLocale locale) {
-        return locale != null && (LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage()) || tts != null);
+        return locale != null && tts != null;
     }
 
     private float speechRate() {
         return appContext.getSharedPreferences("default", Context.MODE_PRIVATE).getFloat("ttsSpeechRate", 1f);
     }
 
+    /** Longest text the system engine accepts in one request. 0 when there is no engine. */
+    public int getMaxSpeechInputLength() {
+        return tts != null ? tts.getMaxSpeechInputLength() : 0;
+    }
+
+    private static float clampRate(float rate) {
+        if (rate < 0.5f) {
+            return 0.5f;
+        }
+        if (rate > 2f) {
+            return 2f;
+        }
+        return rate;
+    }
+
+    /** The system engine has no streaming session. The caller speaks the queued sentence. */
     public boolean startStream(CustomLocale locale, String utteranceId) {
         currentLocale = locale;
-        if (locale == null) {
-            return false;
-        }
-        cosyStream = false;
-        if (LiveDraftSpeaker.canSpeak(appContext, locale.getLanguage())
-                && LiveDraftSpeaker.start(appContext, locale.getLanguage(), speechRate(), progressListener, utteranceId)) {
-            cosyStream = true;
-            return true;
-        }
-        return beginSystem(locale, utteranceId, TextToSpeech.QUEUE_FLUSH);
+        return false;
     }
 
     public void appendStream(String text) {
-        if (cosyStream) {
-            LiveDraftSpeaker.append(text);
-            return;
-        }
-        appendSystem(text, false);
     }
 
     public void finishStream() {
-        if (cosyStream) {
-            LiveDraftSpeaker.finish();
-            return;
-        }
-        finishSystem();
     }
 
     public int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
-        float rate = speechRate();
         String spoken = text == null ? "" : text.toString();
-        if (currentLocale != null && LiveDraftSpeaker.canSpeak(appContext, currentLocale.getLanguage())) {
-            cosyStream = true;
-            int result = LiveDraftSpeaker.speak(appContext, spoken, currentLocale.getLanguage(), rate, queueMode, progressListener, utteranceId);
-            if (result == TextToSpeech.SUCCESS) {
-                return result;
-            }
-            cosyStream = false;
+        if (spoken.trim().isEmpty()) {
+            // Most engines answer ERROR to blank input, which used to clear the whole queue.
+            return TextToSpeech.SUCCESS;
         }
-        if (tts == null || currentLocale == null) {
-            return TextToSpeech.ERROR;
-        }
-        if (!beginSystem(currentLocale, utteranceId, queueMode)) {
-            return TextToSpeech.ERROR;
-        }
-        if (!appendSystem(spoken, true)) {
-            return TextToSpeech.ERROR;
-        }
-        return TextToSpeech.SUCCESS;
-    }
-
-    private boolean beginSystem(CustomLocale locale, String utteranceId, int queueMode) {
-        if (tts == null || locale == null) {
-            return false;
-        }
-        disarmWatch();
-        synchronized (streamLock) {
-            systemGeneration++;
-            systemTicket++;
-            systemPending.setLength(0);
-            systemPieces.clear();
-            systemPieceIndex = 0;
-            systemUtteranceId = utteranceId == null ? "" : utteranceId;
-            systemWaitingId = "";
-            systemOpen = true;
-            systemFinished = false;
-            systemStarted = false;
-            systemInFlight = false;
-            systemForceFlush = false;
-            systemApplied = false;
-            systemQueueMode = queueMode;
-        }
-        return true;
-    }
-
-    private boolean appendSystem(String text, boolean finished) {
-        String doneId = null;
-        synchronized (streamLock) {
-            if (!systemOpen) {
-                return false;
-            }
-            if (text != null && text.length() > 0) {
-                systemPending.append(text);
-            }
-            if (finished) {
-                systemFinished = true;
-            }
-            collectSystemPieces();
-            if (systemPieces.isEmpty() && !systemInFlight && systemFinished && systemPending.length() == 0) {
-                doneId = systemUtteranceId;
-                systemOpen = false;
-            }
-        }
-        if (doneId != null) {
-            postDone(doneId);
-            return true;
-        }
-        pumpSystem();
-        return true;
-    }
-
-    private void collectSystemPieces() {
-        while (true) {
-            String piece = SimultaneousText.takeSpeakable(systemPending.toString(), systemFinished);
-            if (piece == null) {
-                break;
-            }
-            systemPending.delete(0, piece.length());
-            if (!SimultaneousText.isAudible(piece)) {
-                continue;
-            }
-            systemPieces.addLast(piece);
-        }
-    }
-
-    /**
-     * The system engine stalls when several utterances are queued before the first
-     * one starts. One sentence is submitted at a time, on the main thread, and the
-     * next is submitted only after that sentence finishes.
-     */
-    private void pumpSystem() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    pumpSystem();
-                }
-            });
-            return;
-        }
-        String piece;
-        String pieceId;
-        int queue;
-        int ticket;
-        CustomLocale locale;
-        int max = tts == null ? 0 : tts.getMaxSpeechInputLength();
-        synchronized (streamLock) {
-            if (!systemOpen || systemInFlight || systemPieces.isEmpty()) {
-                return;
-            }
-            piece = systemPieces.removeFirst();
-            if (max > 1 && piece.length() > max) {
-                systemPieces.addFirst(piece.substring(max));
-                piece = piece.substring(0, max);
-            }
-            systemInFlight = true;
-            ticket = systemTicket;
-            pieceId = systemGeneration + ":" + systemPieceIndex;
-            systemPieceIndex++;
-            systemWaitingId = pieceId;
-            queue = systemPieceIndex == 1 || systemForceFlush ? systemQueueMode : TextToSpeech.QUEUE_ADD;
-            if (systemForceFlush) {
-                queue = TextToSpeech.QUEUE_FLUSH;
-                systemForceFlush = false;
-            }
-            locale = currentLocale;
-        }
+        float rate = clampRate(speechRate());
         if (tts == null) {
-            failSystem(ticket);
-            return;
+            return TextToSpeech.ERROR;
         }
-        boolean apply;
-        synchronized (streamLock) {
-            apply = !systemApplied;
-            systemApplied = true;
-        }
-        float rate = speechRate();
-        if (rate < 0.5f) {
-            rate = 0.5f;
-        } else if (rate > 2f) {
-            rate = 2f;
-        }
-        if (apply) {
+        if (rate != appliedRate) {
             tts.setSpeechRate(rate);
-            if (locale != null) {
-                tts.setLanguage(new Locale(locale.getLanguage()));
-            }
+            appliedRate = rate;
         }
-        android.os.Bundle params = new android.os.Bundle();
-        params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, pieceId);
-        int result = tts.speak(piece, queue, params, pieceId);
-        if (result == TextToSpeech.ERROR) {
-            failSystem(ticket);
-            return;
-        }
-        armWatch(ticket, pieceId, piece.length(), rate);
-    }
-
-    private void armWatch(final int ticket, final String pieceId, int chars, float rate) {
-        disarmWatch();
-        float safeRate = rate <= 0f ? 1f : rate;
-        final long budget = Math.max(8000L, (long) (chars * 700L / safeRate) + 4000L);
-        systemWatch = new Runnable() {
-            @Override
-            public void run() {
-                postPieceFinished(ticket, pieceId, true);
-            }
-        };
-        mainHandler.postDelayed(systemWatch, budget);
-    }
-
-    private void disarmWatch() {
-        if (systemWatch != null) {
-            mainHandler.removeCallbacks(systemWatch);
-            systemWatch = null;
-        }
-    }
-
-    private void postPieceFinished(final int ticket, final String pieceId, final boolean forceFlush) {
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                onPieceFinished(ticket, pieceId, forceFlush);
-            }
-        });
-    }
-
-    private void onPieceFinished(int ticket, String pieceId, boolean forceFlush) {
-        String doneId = null;
-        synchronized (streamLock) {
-            if (!systemOpen || ticket != systemTicket || pieceId == null || !pieceId.equals(systemWaitingId)) {
-                return;
-            }
-            systemWaitingId = "";
-            systemInFlight = false;
-            if (forceFlush) {
-                systemForceFlush = true;
-            }
-            if (systemPieces.isEmpty() && systemFinished && systemPending.length() == 0) {
-                doneId = systemUtteranceId;
-                systemOpen = false;
-            }
-        }
-        disarmWatch();
-        if (doneId != null) {
-            postDone(doneId);
-            return;
-        }
-        pumpSystem();
-    }
-
-    private void failSystem(int ticket) {
-        String id;
-        synchronized (streamLock) {
-            if (ticket != systemTicket || !systemOpen) {
-                return;
-            }
-            id = systemUtteranceId;
-            systemOpen = false;
-            systemInFlight = false;
-            systemWaitingId = "";
-            systemPieces.clear();
-        }
-        disarmWatch();
-        postError(id);
-    }
-
-    private void finishSystem() {
-        appendSystem("", true);
-    }
-
-    private void installBridge() {
-        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-            @Override
-            public void onStart(String utteranceId) {
-                UtteranceProgressListener forward = null;
-                String id = utteranceId;
-                synchronized (streamLock) {
-                    if (isSystemPiece(utteranceId)) {
-                        if (!systemStarted) {
-                            systemStarted = true;
-                            forward = progressListener;
-                            id = systemUtteranceId;
-                        }
-                    } else if (!isSystemId(utteranceId)) {
-                        forward = progressListener;
-                    }
-                }
-                if (forward != null) {
-                    forward.onStart(id);
-                }
-            }
-
-            @Override
-            public void onDone(String utteranceId) {
-                if (isWaitingPiece(utteranceId)) {
-                    int ticket;
-                    synchronized (streamLock) {
-                        ticket = systemTicket;
-                    }
-                    postPieceFinished(ticket, utteranceId, false);
-                    return;
-                }
-                if (!isSystemId(utteranceId) && progressListener != null) {
-                    progressListener.onDone(utteranceId);
-                }
-            }
-
-            @Override
-            public void onError(String utteranceId) {
-                deliverError(utteranceId);
-            }
-
-            @Override
-            public void onStop(String utteranceId, boolean interrupted) {
-                if (isWaitingPiece(utteranceId)) {
-                    if (interrupted) {
-                        UtteranceProgressListener forward;
-                        String id;
-                        synchronized (streamLock) {
-                            systemOpen = false;
-                            systemInFlight = false;
-                            systemWaitingId = "";
-                            systemPieces.clear();
-                            forward = progressListener;
-                            id = systemUtteranceId;
-                        }
-                        disarmWatch();
-                        if (forward != null) {
-                            forward.onStop(id, true);
-                        }
-                        return;
-                    }
-                    int ticket;
-                    synchronized (streamLock) {
-                        ticket = systemTicket;
-                    }
-                    postPieceFinished(ticket, utteranceId, false);
-                    return;
-                }
-                if (!isSystemId(utteranceId) && progressListener != null) {
-                    progressListener.onStop(utteranceId, interrupted);
-                }
-            }
-        });
-    }
-
-    private boolean isWaitingPiece(String utteranceId) {
-        synchronized (streamLock) {
-            return isSystemPiece(utteranceId);
-        }
-    }
-
-    private boolean isSystemPiece(String utteranceId) {
-        return systemOpen && utteranceId != null && utteranceId.equals(systemWaitingId);
-    }
-
-    /** Ids queued by {@link #appendSystem}. Stale ones must not be forwarded. */
-    private static boolean isSystemId(String utteranceId) {
-        if (utteranceId == null) {
-            return false;
-        }
-        int colon = utteranceId.indexOf(':');
-        if (colon <= 0) {
-            return false;
-        }
-        for (int i = 0; i < colon; i++) {
-            if (!Character.isDigit(utteranceId.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void deliverError(String utteranceId) {
-        UtteranceProgressListener forward = null;
-        String id = utteranceId;
-        boolean ours = false;
-        synchronized (streamLock) {
-            if (isSystemPiece(utteranceId)) {
-                systemOpen = false;
-                systemInFlight = false;
-                systemWaitingId = "";
-                systemPieces.clear();
-                forward = progressListener;
-                id = systemUtteranceId;
-                ours = true;
-            } else if (!isSystemId(utteranceId)) {
-                forward = progressListener;
-            }
-        }
-        if (ours) {
-            disarmWatch();
-        }
-        if (forward != null) {
-            forward.onError(id);
-        }
-    }
-
-    private void postDone(final String id) {
-        final UtteranceProgressListener forward = progressListener;
-        if (forward == null) {
-            return;
-        }
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                forward.onDone(id);
-            }
-        });
-    }
-
-    private void postError(final String id) {
-        final UtteranceProgressListener forward = progressListener;
-        if (forward == null) {
-            return;
-        }
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                forward.onError(id);
-            }
-        });
+        return tts.speak(spoken, queueMode, params, utteranceId);
     }
 
     @Nullable
     public Voice getVoice() {
-        if (tts != null) {
-            return tts.getVoice();
+        if (isActive()) {
+            return tts != null ? tts.getVoice() : null;
         }
         return null;
     }
 
     @Nullable
     public Set<Voice> getVoices() {
-        if (tts != null) {
-            return tts.getVoices();
+        if (isActive()) {
+            return tts != null ? tts.getVoices() : null;
         }
         return null;
     }
 
     public int setOnUtteranceProgressListener(UtteranceProgressListener listener) {
         progressListener = listener;
+        if (tts != null) {
+            return tts.setOnUtteranceProgressListener(listener);
+        }
         return TextToSpeech.SUCCESS;
     }
 
-    public int setLanguage(CustomLocale loc, Context context) {
+    /**
+     * Applies the language only when the engine is not already using it, and reports
+     * whether a change was made. The caller has to wait {@link #ENGINE_SETTLE_MS} before
+     * speaking: a language change right before a request clips the opening words.
+     */
+    public boolean prepareLanguage(CustomLocale loc, Context context) {
         currentLocale = loc;
-        if (tts != null && loc != null) {
-            return tts.setLanguage(new Locale(loc.getLocale().getLanguage()));
+        if (tts == null || loc == null) {
+            return false;
         }
-        return tts != null ? TextToSpeech.ERROR : TextToSpeech.SUCCESS;
+        String language = loc.getLocale().getLanguage();
+        if (language.equals(appliedLanguage)) {
+            return false;
+        }
+        int result = tts.setLanguage(new Locale(language));
+        if (result != TextToSpeech.ERROR) {
+            appliedLanguage = language;
+        }
+        return true;
+    }
+
+    public int setLanguage(CustomLocale loc, Context context) {
+        prepareLanguage(loc, context);
+        if (tts == null) {
+            return TextToSpeech.SUCCESS;
+        }
+        return loc != null ? TextToSpeech.LANG_AVAILABLE : TextToSpeech.ERROR;
+    }
+
+    /**
+     * Applies the configured rate only when it differs from the one the engine already
+     * has. Like a language change, it has to be applied before the settle delay of the
+     * next request, never in the same moment as the request itself.
+     */
+    public boolean prepareSpeechRate() {
+        if (tts == null) {
+            return false;
+        }
+        float rate = clampRate(speechRate());
+        if (rate == appliedRate) {
+            return false;
+        }
+        tts.setSpeechRate(rate);
+        appliedRate = rate;
+        return true;
     }
 
     public int stop() {
-        cosyStream = false;
-        LiveDraftSpeaker.stop();
-        disarmWatch();
-        synchronized (streamLock) {
-            systemOpen = false;
-            systemInFlight = false;
-            systemWaitingId = "";
-            systemPending.setLength(0);
-            systemPieces.clear();
-            systemTicket++;
-        }
         if (tts != null) {
             return tts.stop();
         }
@@ -592,7 +299,7 @@ public class TTS {
     }
 
     public void shutdown() {
-        LiveDraftSpeaker.release();
+        abandonSpeechFocus();
         if (tts != null) {
             tts.shutdown();
         }

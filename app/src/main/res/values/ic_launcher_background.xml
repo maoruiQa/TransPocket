@@ -16,5 +16,5 @@
     *-->
 
 <resources>
-    <color name="ic_launcher_background">#43A047</color>
+    <color name="ic_launcher_background">@color/golden_primary</color>
 </resources>

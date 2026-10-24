@@ -227,7 +227,6 @@ public class AccessActivity extends GeneralActivity {
         };
         ArrayList<DownloadGroupInfo> watched = new ArrayList<>();
         Collections.addAll(watched, groups);
-        watched.addAll(nie.translator.rtranslator.tools.LiveDraftVoices.wantedDownloads(global));
         ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
         for (DownloadGroupInfo group : watched) {
             int index = saved.indexOf(group);

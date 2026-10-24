@@ -1,5 +1,9 @@
 # Contributing
 
+Xtranslate 是 [RTranslator](https://github.com/niedev/RTranslator) 的 fork。下面的正文是上游维护者 niedev 的贡献规则，原样保留，用来说明这个代码库的风格和审查习惯。
+
+给本 fork 提问题或补丁时，请使用本仓库的 Issues 和 Pull Requests。不要把 Xtranslate 的缺陷寄到 contact.niedev@gmail.com。Java 缩进以仓库里的现有文件为准，使用 4 个空格。不要整文件重排，也不要改上游源文件里的 Apache 2.0 声明。
+
 I really appreciate the contributions to this project, so first of all thank you!
 
 Just make sure to read and respect the following rules before submitting a pull request:

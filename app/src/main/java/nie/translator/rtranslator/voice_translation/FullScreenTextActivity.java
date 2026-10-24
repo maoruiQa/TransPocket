@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.tools.CustomLocale;
+import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.gui.GuiTools;
 
 public class FullScreenTextActivity extends AppCompatActivity {
@@ -19,6 +20,7 @@ public class FullScreenTextActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        ThemeManager.applyTheme(this);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_full_screen_text);
 

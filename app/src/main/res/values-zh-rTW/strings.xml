@@ -93,11 +93,11 @@
 
     <string name="notification_channel_name">背景通知</string>
 
-    <string name="privacy_check_box">我聲明我已閱讀 <a href="https://github.com/niedev/RTranslator/blob/v2.00/privacy/Privacy_Policy_en.md">隱私政策</a></string>
+    <string name="privacy_check_box">我聲明我已閱讀 <a href="https://github.com/maoruiQa/Xtranslate/blob/main/privacy/Privacy_Policy_en.md">隱私政策</a></string>
 
-    <string name="toast_working_background">RTranslator 將在背景中運行</string>
+    <string name="toast_working_background">Xtranslate 將在背景中運行</string>
     <string name="toast_download_completed">下載完成</string>
-    <string name="toast_download_error">下載時出現錯誤，請打開 RTranslator 重試</string>
+    <string name="toast_download_error">下載時出現錯誤，請打開 Xtranslate 重試</string>
     <string name="toast_missing_notification_permission">為確保此模式在背景中正常運行，請啟用通知</string>
 
 
@@ -129,7 +129,7 @@
     <string name="error_tts">TTS 初始化時出現錯誤，是否要在沒有 TTS 的情況下繼續？</string>
     <string name="error_missing_tts">此裝置上沒有 Google TTS 引擎，請下載以使用 TTS</string>
     <string name="error_missing_bluetooth_le">此裝置不支援低功耗藍牙，無法使用對話模式</string>
-    <string name="error_internet_lack_loading">啟動 RTranslator 需要網際網路連線，請檢查您的連線</string>
+    <string name="error_internet_lack_loading">啟動 Xtranslate 需要網際網路連線，請檢查您的連線</string>
     <string name="error_internet_lack_accessing">執行此操作需要網際網路連線，請檢查您的連線</string>
     <string name="error_internet_lack_services">無法翻譯訊息，請檢查網際網路連線</string>
     <string name="error_internet_lack_loading_languages">查看語言需要網際網路連線，請檢查您的連線並重試</string>
@@ -180,7 +180,7 @@
     <string name="dialog_select_source_language">選擇對方的語言</string>
     <string name="dialog_select_target_language">選擇我的語言</string>
     <string name="simultaneous_mode_running">同聲傳譯正在執行...</string>
-    <string name="description_permission_simultaneous">要使用同聲傳譯，請允許 RTranslator 使用麥克風。</string>
+    <string name="description_permission_simultaneous">要使用同聲傳譯，請允許 Xtranslate 使用麥克風。</string>
     <string name="title_fragment_notice">通知</string>
     <string name="title_fragment_user_data">輸入您的資料</string>
     <string name="title_fragment_download">模型下載</string>
@@ -194,21 +194,21 @@
     <string name="header_found_peers">找到的</string>
     <string name="header_connected_peers">已連接</string>
 
-    <string name="description_discovery">此畫面將搜尋並使我們對其他使用 RTranslator 的設備可見，以便能夠與它們建立連接並開始對話</string>
+    <string name="description_discovery">此畫面將搜尋並使我們對其他使用 Xtranslate 的設備可見，以便能夠與它們建立連接並開始對話</string>
     <string name="description_fragment_user_data">您的名字將顯示給所有附近的設備，而您的個人資料照片僅顯示在您已經進行過對話的設備上</string>
-    <string name="description_fragment_download">現在 RTranslator 將下載翻譯和語音辨識所需的神經網路模型，完成後您可以開始使用應用程式（即使是離線狀態下）。</string>
-    <string name="description_conversation">對話模式是 RTranslator 的主要功能，它允許您實時翻譯多個人之間的對話，為了更好的體驗，建議將藍牙耳機連接到手機，此外應用程式在背景運行和手機待機時也會繼續工作（然而，一些手機在應用程式背景運行時可能會有性能問題）</string>
-    <string name="description_walkie_talkie">對講機模式是 RTranslator 的次要功能，它不支持實時翻譯，但設計成只需使用一部手機，它會自動檢測並將語音從一種語言翻譯成另一種語言，應用程式在背景運行和手機待機時也會繼續工作</string>
-    <string name="description_notice">RTranslator 使用 <a href="https://openai.com/index/whisper/">OpenAi 的 Whisper</a> 進行語音辨識，使用 <a href="https://ai.meta.com/research/no-language-left-behind/">Meta 的 NLLB</a> 進行翻譯，這些模型需要相當多的計算能力和至少 6GB 的記憶體來執行，所以請確保您使用的是現代智慧手機，以避免速度變慢或崩潰。更多有關 RTranslator 的資訊，請訪問應用程式的 GitHub 項目<a href="https://github.com/niedev/RTranslator">這裡</a></string>
+    <string name="description_fragment_download">現在 Xtranslate 將下載翻譯和語音辨識所需的神經網路模型，完成後您可以開始使用應用程式（即使是離線狀態下）。</string>
+    <string name="description_conversation">對話模式是 Xtranslate 的主要功能，它允許您實時翻譯多個人之間的對話，為了更好的體驗，建議將藍牙耳機連接到手機，此外應用程式在背景運行和手機待機時也會繼續工作（然而，一些手機在應用程式背景運行時可能會有性能問題）</string>
+    <string name="description_walkie_talkie">對講機模式是 Xtranslate 的次要功能，它不支持實時翻譯，但設計成只需使用一部手機，它會自動檢測並將語音從一種語言翻譯成另一種語言，應用程式在背景運行和手機待機時也會繼續工作</string>
+    <string name="description_notice">Xtranslate 使用 <a href="https://openai.com/index/whisper/">OpenAi 的 Whisper</a> 進行語音辨識，使用 <a href="https://ai.meta.com/research/no-language-left-behind/">Meta 的 NLLB</a> 進行翻譯，這些模型需要相當多的計算能力和至少 6GB 的記憶體來執行，所以請確保您使用的是現代智慧手機，以避免速度變慢或崩潰。更多有關 Xtranslate 的資訊，請訪問應用程式的 GitHub 項目<a href="https://github.com/maoruiQa/Xtranslate">這裡</a></string>
     <string name="description_download">正在下載 %1$s</string>
     <string name="description_transfer">正在將 %1$s 傳輸到內部記憶體</string>
     <string name="description_unzip">正在解壓縮 %1$s</string>
     <string name="description_integrity_check">正在檢查 %1$s 的完整性</string>
-    <string name="description_tts">說話時，RTranslator 使用系統預設的 TTS 引擎，推薦的 TTS 是 <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>，但您可以選擇您喜歡的，要選擇它，請點擊下面的按鈕</string>
+    <string name="description_tts">說話時，Xtranslate 使用系統預設的 TTS 引擎，推薦的 TTS 是 <a href="https://play.google.com/store/apps/details?id=com.google.android.tts">Google TTS</a>，但您可以選擇您喜歡的，要選擇它，請點擊下面的按鈕</string>
     <string name="description_permission_notification">通知僅用於改善背景作業，例如下載或其他背景工作。本應用程式絕不會傳送通知。</string>
-    <string name="description_permission_pairing">若要使用對話模式，請允許 RTranslator 使用藍牙。</string>
-    <string name="description_permission_walkietalkie">若要使用 WalkieTalkie 模式，請允許 RTranslator 存取您的麥克風。</string>
-    <string name="description_permission_conversation">若要在對話模式中翻譯您的語音，請允許 RTranslator 存取您的麥克風。若不授予此權限，該模式仍可使用，但您只能傳送文字訊息或接收並播放翻譯。</string>
+    <string name="description_permission_pairing">若要使用對話模式，請允許 Xtranslate 使用藍牙。</string>
+    <string name="description_permission_walkietalkie">若要使用 WalkieTalkie 模式，請允許 Xtranslate 存取您的麥克風。</string>
+    <string name="description_permission_conversation">若要在對話模式中翻譯您的語音，請允許 Xtranslate 存取您的麥克風。若不授予此權限，該模式仍可使用，但您只能傳送文字訊息或接收並播放翻譯。</string>
     <string name="model_recommendation_gemma">推薦：TranslateGemma 4B。這部手機大約有 %1$s GB 記憶體、%2$s GB 可用空間，可以跑 Google 的 TranslateGemma 4B。使用須遵守 Gemma 條款。</string>
     <string name="model_recommendation_hy">推薦：品質優先。這部手機大約有 %1$s GB 記憶體、%2$s GB 可用空間，可以同時跑 HY-MT 和語音辨識。</string>
     <string name="description_model_gemma">Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 Q4_K_M GGUF。裝置上品質最高的選項，大約需要 4 GB 記憶體。須遵守 Gemma 條款。</string>

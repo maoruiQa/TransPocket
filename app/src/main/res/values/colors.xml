@@ -16,16 +16,78 @@
     *-->
 
 <resources>
-    <color name="primary">#43a047</color>
-    <color name="primary_dark">#388e3c</color>
-    <color name="primary_very_dark">#296B2C</color>
-    <color name="primary_lite">#66bb6a</color>
-    <color name="primary_very_lite">#E6F8E6</color>   <!-- #DEF8E0 -->  <!-- #E9FFE9-->
-    <color name="accent">#36b024</color>
+    <!-- Autumn gold for the default palette. Names stay golden_* so the saved
+         colorPalette key and the LauncherGolden alias keep working.
+         Hue is about 45 degrees. The page is near-white ivory; ink is a deep
+         gold (white on it is about 7:1, ink on ivory about 7:1). primary_dark
+         and lite alias ink because both are used as text. Icon gold is darker
+         than the button so a 24dp glyph stays above 3:1 on ivory. -->
+    <color name="autumn_ivory">#FBF6EA</color>
+    <color name="autumn_champagne">#F4E7C4</color>
+    <color name="autumn_surface">#FFFCF5</color>
+    <color name="autumn_ink">#704F0C</color>
+    <color name="autumn_gold_icon">#A07B14</color>
+    <color name="autumn_gold_primary">#D4A62C</color>
+    <color name="autumn_gold_bright">#E8C84A</color>
+    <color name="autumn_on_gold">#3B2C07</color>
+
+    <color name="golden_primary">@color/autumn_gold_primary</color>
+    <color name="golden_primary_dark">@color/autumn_ink</color>
+    <color name="golden_primary_very_dark">@color/autumn_ink</color>
+    <color name="golden_primary_lite">@color/autumn_ink</color>
+    <color name="golden_primary_very_lite">@color/autumn_ivory</color>
+    <color name="golden_accent">@color/autumn_gold_primary</color>
+    <color name="golden_secondary_very_lite">@color/autumn_champagne</color>
+    <color name="golden_on_primary">@color/autumn_on_gold</color>
+    <color name="golden_surface">@color/autumn_surface</color>
+
+    <color name="bamboo_primary">#43A047</color>
+    <color name="bamboo_primary_dark">#388E3C</color>
+    <color name="bamboo_primary_very_dark">#296B2C</color>
+    <color name="bamboo_primary_lite">#66BB6A</color>
+    <color name="bamboo_primary_very_lite">#E6F8E6</color>
+    <color name="bamboo_accent">#36B024</color>
+    <color name="bamboo_secondary_very_lite">#E0F2F1</color>
+    <color name="bamboo_on_primary">#FFFFFF</color>
+
+    <color name="indigo_primary">#3F6FB5</color>
+    <color name="indigo_primary_dark">#2E558C</color>
+    <color name="indigo_primary_very_dark">#17345E</color>
+    <color name="indigo_primary_lite">#7FA3D4</color>
+    <color name="indigo_primary_very_lite">#E8F0FA</color>
+    <color name="indigo_accent">#2F72A8</color>
+    <color name="indigo_secondary_very_lite">#E0F2F1</color>
+    <color name="indigo_on_primary">#FFFFFF</color>
+
+    <color name="sakura_primary">#D96C8A</color>
+    <color name="sakura_primary_dark">#B84E6D</color>
+    <color name="sakura_primary_very_dark">#6E2740</color>
+    <color name="sakura_primary_lite">#EBA0B5</color>
+    <color name="sakura_primary_very_lite">#FCEFF3</color>
+    <color name="sakura_accent">#C94D72</color>
+    <color name="sakura_secondary_very_lite">#FBE9EF</color>
+    <color name="sakura_on_primary">#3A0F1D</color>
+
+    <color name="wisteria_primary">#8E7CC3</color>
+    <color name="wisteria_primary_dark">#6F5CA8</color>
+    <color name="wisteria_primary_very_dark">#40306B</color>
+    <color name="wisteria_primary_lite">#B7A9DC</color>
+    <color name="wisteria_primary_very_lite">#F2EEFA</color>
+    <color name="wisteria_accent">#7A5FB8</color>
+    <color name="wisteria_secondary_very_lite">#EFEAF9</color>
+    <color name="wisteria_on_primary">#241842</color>
+
+    <!-- Default aliases (golden). -->
+    <color name="primary">@color/golden_primary</color>
+    <color name="primary_dark">@color/golden_primary_dark</color>
+    <color name="primary_very_dark">@color/golden_primary_very_dark</color>
+    <color name="primary_lite">@color/golden_primary_lite</color>
+    <color name="primary_very_lite">@color/golden_primary_very_lite</color>
+    <color name="accent">@color/golden_accent</color>
     <color name="secondary">#3785C3</color>
     <color name="secondary_dark">#2F72A8</color>
     <color name="secondary_very_dark">#1D4C71</color>
-    <color name="secondary_very_lite">#E0F2F1</color>
+    <color name="secondary_very_lite">@color/golden_secondary_very_lite</color>
     <color name="secondaryTransparent">#320099cc</color>
     <color name="background_discover">#5a43a047</color>
     <color name="background_advertize">#5a43a047</color>
@@ -44,7 +106,7 @@
     <color name="white">#fafafa</color>
     <color name="accent_white">#ffffff</color>
     <color name="red">#d50000</color>
-    <color name="yellow">#ffd600</color>
+    <color name="yellow">#FFD600</color>
     <color name="green">#00c853</color>
     <color name="blue">#6faffc</color>
     <color name="purple">#BA68C8</color>

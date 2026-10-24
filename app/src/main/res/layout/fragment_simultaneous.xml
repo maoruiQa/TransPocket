@@ -5,7 +5,7 @@
     android:id="@+id/container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary_very_lite"
+    android:background="?attr/xtColorPrimaryVeryLite"
     android:fitsSystemWindows="true"
     android:accessibilityPaneTitle="@string/title_fragment_simultaneous">
 
@@ -27,7 +27,7 @@
         android:backgroundTint="@android:color/transparent"
         android:contentDescription="@string/back"
         android:src="@drawable/back_arrow_icon2"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous" />
@@ -42,7 +42,7 @@
         android:fontFamily="@font/nunito_sans_semibold"
         android:maxLines="1"
         android:text="@string/title_fragment_simultaneous"
-        android:textColor="@color/primary_very_dark"
+        android:textColor="?attr/xtColorPrimaryVeryDark"
         android:textSize="22sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
@@ -56,7 +56,7 @@
         android:layout_height="wrap_content"
         android:backgroundTint="@android:color/transparent"
         android:contentDescription="@string/description_button_tts_manual"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
         app:layout_constraintEnd_toStartOf="@+id/settingsButton"
         app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous"
@@ -69,7 +69,7 @@
         android:layout_marginEnd="8dp"
         android:backgroundTint="@android:color/transparent"
         android:contentDescription="@string/title_activity_settings"
-        android:tint="@color/primary_very_dark"
+        android:tint="?attr/xtColorIcon"
         app:layout_constraintBottom_toBottomOf="@+id/toolbarSimultaneous"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@+id/toolbarSimultaneous"
@@ -89,7 +89,7 @@
             android:layout_marginTop="16dp"
             android:layout_marginEnd="8dp"
             android:layout_marginBottom="16dp"
-            android:backgroundTint="@color/primary_very_dark"
+            android:backgroundTint="?attr/xtColorPrimaryVeryDark"
             android:fontFamily="@font/nunito_semibold"
             android:outlineProvider="none"
             android:paddingStart="8dp"
@@ -117,7 +117,7 @@
             app:layout_constraintEnd_toStartOf="@+id/second_lang_selector"
             app:layout_constraintStart_toEndOf="@+id/first_lang_selector"
             app:layout_constraintTop_toTopOf="@+id/first_lang_selector"
-            app:tint="@color/primary_very_dark" />
+            app:tint="?attr/xtColorIcon" />
 
         <nie.translator.rtranslator.tools.gui.AutoScrollMaterialButton
             android:id="@+id/second_lang_selector"
@@ -125,7 +125,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:layout_marginEnd="24dp"
-            android:backgroundTint="@color/primary_very_dark"
+            android:backgroundTint="?attr/xtColorPrimaryVeryDark"
             android:fontFamily="@font/nunito_semibold"
             android:outlineProvider="none"
             android:paddingStart="8dp"
@@ -189,13 +189,13 @@
                             android:layout_width="66dp"
                             android:layout_height="66dp"
                             android:background="@drawable/circle"
-                            android:backgroundTint="@color/primary"
+                            android:backgroundTint="?attr/xtColorPrimary"
                             android:contentDescription="@string/description_start_automatic_recognition"
                             android:src="@drawable/mic_icon"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintStart_toStartOf="parent"
                             app:layout_constraintTop_toTopOf="parent"
-                            app:tint="@color/accent_white" />
+                            app:tint="?attr/xtColorOnPrimary" />
 
                         <View
                             android:id="@+id/leftLine"

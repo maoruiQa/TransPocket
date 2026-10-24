@@ -30,8 +30,8 @@ android {
     defaultConfig {
         applicationId "nie.translator.rtranslator"
         targetSdkVersion 37
-        versionName '3.0.0-beta2'
-        versionCode 27
+        versionName '0.1.0'
+        versionCode 28
         minSdkVersion 28
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {

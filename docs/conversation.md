@@ -1,6 +1,6 @@
 # Conversation 模式技术说明
 
-本文描述 `v3.00`（`3.0.0-beta2`）里 Conversation 模式的实际实现。结论都来自当前源码，不是 README 里的产品介绍。
+本文描述 Xtranslate `0.1.0` 里 Conversation 模式的实际实现。它是 RTranslator `v3.00`（`3.0.0-beta2`）的 fork。结论都来自当前源码，不是 README 里的产品介绍。
 
 Conversation 是多手机、双向的实时口译。每台手机只识别自己的话，把原文和语言码经蓝牙低功耗发给对方。对方在本机把原文译成自己的语言，再用系统 TTS 读出来。音频不离开本机。
 

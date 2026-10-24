@@ -99,7 +99,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAlignment="center"
-            android:textColor="@color/primary_very_dark"
+            android:textColor="?attr/xtColorPrimaryVeryDark"
             android:visibility="gone"
             tools:text="@string/voice_loading_microphone"
             tools:visibility="visible" />
@@ -113,6 +113,6 @@
             android:indeterminate="false"
             android:max="100"
             android:progress="30"
-            android:progressTint="@color/primary" />
+            android:progressTint="?attr/xtColorPrimaryDark" />
     </LinearLayout>
 </FrameLayout>

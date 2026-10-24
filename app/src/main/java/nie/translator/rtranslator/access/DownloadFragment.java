@@ -317,7 +317,6 @@ public class DownloadFragment extends Fragment {
         if (global.isUseTranslationDictionaries()) {
             groups.add(global.getDictionaryDownloadInfo());
         }
-        groups.addAll(nie.translator.rtranslator.tools.LiveDraftVoices.wantedDownloads(global));
         return groups;
     }
 
@@ -332,9 +331,6 @@ public class DownloadFragment extends Fragment {
     }
 
     private boolean groupSatisfied(DownloadGroupInfo group, ArrayList<DownloadGroupInfo> saved) {
-        if (nie.translator.rtranslator.tools.LiveDraftVoices.isReadyGroup(global, group)) {
-            return true;
-        }
         if (global.groupFilesPresent(group)) {
             return true;
         }

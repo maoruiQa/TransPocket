@@ -8,8 +8,6 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.icu.text.DecimalFormat;
-import android.media.MediaMetadataRetriever;
-import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -18,16 +16,9 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.RadioButton;
-import android.widget.RadioGroup;
 import android.widget.TextView;
 
-import java.io.InputStream;
-
-import androidx.activity.result.ActivityResultCallback;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
@@ -53,9 +44,6 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
-import nie.translator.rtranslator.tools.LiveDraftReference;
-import nie.translator.rtranslator.tools.LiveDraftSpeaker;
-import nie.translator.rtranslator.tools.LiveDraftVoices;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.ResourceManagerView;
 import nie.translator.rtranslator.tools.gui.SegmentProgressBar;
@@ -123,7 +111,6 @@ public class ModelManagerFragment extends Fragment {
     private TextView textRamUsage2;
     private TextView recommendationText;
     private ImageView arrowMozilla;
-    private LinearLayout liveDraftList;
     private boolean guiStateRestored = false;
     private int baselineTranslationRadioId = View.NO_ID;
     private int baselineAsrRadioId = View.NO_ID;
@@ -138,22 +125,6 @@ public class ModelManagerFragment extends Fragment {
     private int baselineQwen17Quant;
     private ArrayList<DownloadGroupInfo> savedDownloadStatus;
     private int managerLoadGeneration = 0;
-    private ActivityResultLauncher<String> referencePicker;
-    private TextView referenceStatus;
-
-
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        referencePicker = registerForActivityResult(new ActivityResultContracts.GetContent(), new ActivityResultCallback<Uri>() {
-            @Override
-            public void onActivityResult(Uri uri) {
-                if (uri != null) {
-                    storeReference(uri);
-                }
-            }
-        });
-    }
 
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         // Inflate the layout for this fragment
@@ -195,7 +166,6 @@ public class ModelManagerFragment extends Fragment {
         textRamUsage2 = view.findViewById(R.id.textRamUsage2);
         recommendationText = view.findViewById(R.id.recommendationText);
         arrowMozilla = view.findViewById(R.id.arrowMozilla);
-        liveDraftList = view.findViewById(R.id.liveDraftList);
     }
 
     @Override
@@ -219,7 +189,6 @@ public class ModelManagerFragment extends Fragment {
         resourceManagers.put("qwen17Manager", new ResourceManager(activity, global.getQwen3Asr17DownloadInfo(), qwen17ManagerView, downloadManager));
         resourceManagers.put("tatoebaManager", new ResourceManager(activity, global.getTatoebaDownloadInfo(), tatoebaManagerView, downloadManager));
         resourceManagers.put("vadManager", new ResourceManager(activity, global.getSileroVadDownloadInfo(), vadManagerView, downloadManager));
-        showLiveDraftLoading();
 
         // initialize GUI based on shared preferences
         restoreGuiPreferenceState();
@@ -344,16 +313,11 @@ public class ModelManagerFragment extends Fragment {
         }
         new Thread(() -> {
             ArrayList<DownloadGroupInfo> saved = downloadManager.getSavedDownloadStatus();
-            HashMap<String, Boolean> ready = new HashMap<>();
-            for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
-                ready.put(engine.id, LiveDraftVoices.isReady(host, engine.id));
-            }
             host.runOnUiThread(() -> {
                 if (generation != managerLoadGeneration || !isAdded()) {
                     return;
                 }
                 savedDownloadStatus = saved;
-                buildLiveDraftRows(ready);
                 boolean serviceStarted = downloadManager.subscribeAndResumeDownload(downloadManagerCallback, saved);
                 if (!serviceStarted && !guiStateRestored) {
                     restoreGuiDownloadState(saved);
@@ -1076,291 +1040,7 @@ public class ModelManagerFragment extends Fragment {
         if (switchTranslationDict.isChecked() && !isGroupDownloaded(global.getDictionaryDownloadInfo())) {
             return true;
         }
-        for (DownloadGroupInfo voice : LiveDraftVoices.wantedDownloads(activity)) {
-            if (!LiveDraftVoices.isReadyGroup(activity, voice) && !isGroupDownloaded(voice)) {
-                return true;
-            }
-        }
         return false;
-    }
-
-    private void showLiveDraftLoading() {
-        if (liveDraftList == null || activity == null) {
-            return;
-        }
-        liveDraftList.removeAllViews();
-        LinearLayout row = new LinearLayout(activity);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        android.widget.ProgressBar bar = new android.widget.ProgressBar(activity);
-        int size = Tools.convertDpToPixels(activity, 24);
-        row.addView(bar, new LinearLayout.LayoutParams(size, size));
-        TextView label = new TextView(activity);
-        label.setText(R.string.loading_model_files);
-        int pad = Tools.convertDpToPixels(activity, 12);
-        label.setPadding(pad, pad, 0, pad);
-        row.addView(label);
-        int margin = Tools.convertDpToPixels(activity, 16);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMarginStart(margin);
-        params.topMargin = margin;
-        params.bottomMargin = margin;
-        liveDraftList.addView(row, params);
-    }
-
-    private void buildLiveDraftRows(HashMap<String, Boolean> ready) {
-        if (liveDraftList == null) {
-            return;
-        }
-        liveDraftList.removeAllViews();
-        resourceManagers.remove("liveDraft-" + LiveDraftVoices.ENGINE_COSYVOICE);
-        resourceManagers.remove("liveDraft-" + LiveDraftVoices.ENGINE_SYSTEM);
-        String selected = LiveDraftVoices.selected(activity);
-        // RadioGroup only tracks RadioButtons that are its direct children. These radios sit
-        // beside the download row, so the group never saw the click and the engine stayed unchanged.
-        LinearLayout group = new LinearLayout(activity);
-        group.setOrientation(LinearLayout.VERTICAL);
-        ArrayList<RadioButton> engineRadios = new ArrayList<>();
-        for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
-            LinearLayout row = new LinearLayout(activity);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            RadioButton radio = new RadioButton(activity);
-            radio.setId(View.generateViewId());
-            radio.setTag(engine.id);
-            radio.setChecked(engine.id.equals(selected));
-            radio.setContentDescription(engineTitle(engine.id));
-            engineRadios.add(radio);
-            row.addView(radio, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-            if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine.id)) {
-                DownloadGroupInfo download = engine.downloadInfo(activity);
-                ResourceManagerView view = new ResourceManagerView(activity);
-                view.setTitle(engineTitle(engine.id));
-                view.setDescription(getString(engineDescription(engine.id), engine.sizeMb()));
-                view.setModelSize(engine.sizeMb());
-                LinearLayout.LayoutParams viewParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                viewParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
-                row.addView(view, viewParams);
-                ResourceManager manager = new ResourceManager(activity, download, view, downloadManager);
-                if (ready != null && Boolean.TRUE.equals(ready.get(engine.id))) {
-                    manager.setState(ResourceManagerView.State.DOWNLOADED, false);
-                }
-                resourceManagers.put("liveDraft-" + engine.id, manager);
-            } else {
-                LinearLayout text = new LinearLayout(activity);
-                text.setOrientation(LinearLayout.VERTICAL);
-                TextView title = new TextView(activity);
-                title.setText(engineTitle(engine.id));
-                TextView description = new TextView(activity);
-                description.setText(engineDescriptionText(engine.id));
-                text.addView(title);
-                text.addView(description);
-                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                textParams.setMarginStart(Tools.convertDpToPixels(activity, 8));
-                row.addView(text, textParams);
-            }
-            group.addView(row, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        }
-        liveDraftList.addView(group, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        if (!LiveDraftVoices.ENGINE_COSYVOICE.equals(selected)) {
-            attachEngineChoice(engineRadios);
-            return;
-        }
-        int pad = Tools.convertDpToPixels(activity, 16);
-        TextView voiceLabel = new TextView(activity);
-        voiceLabel.setText(R.string.title_live_draft_voice);
-        voiceLabel.setPadding(pad, pad, pad, 0);
-        liveDraftList.addView(voiceLabel);
-        RadioGroup genders = new RadioGroup(activity);
-        genders.setOrientation(RadioGroup.HORIZONTAL);
-        RadioButton female = new RadioButton(activity);
-        female.setId(View.generateViewId());
-        female.setText(R.string.live_draft_gender_female);
-        female.setTag(LiveDraftVoices.GENDER_FEMALE);
-        RadioButton male = new RadioButton(activity);
-        male.setId(View.generateViewId());
-        male.setText(R.string.live_draft_gender_male);
-        male.setTag(LiveDraftVoices.GENDER_MALE);
-        genders.addView(female);
-        genders.addView(male);
-        if (LiveDraftVoices.GENDER_MALE.equals(LiveDraftVoices.gender(activity))) {
-            male.setChecked(true);
-        } else {
-            female.setChecked(true);
-        }
-        LinearLayout.LayoutParams genderParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        genderParams.setMarginStart(pad);
-        liveDraftList.addView(genders, genderParams);
-        TextView hint = new TextView(activity);
-        hint.setText(R.string.description_live_draft_reference);
-        hint.setPadding(pad, 0, pad, 0);
-        liveDraftList.addView(hint);
-        LinearLayout actions = new LinearLayout(activity);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button upload = new Button(activity);
-        upload.setText(R.string.title_live_draft_upload);
-        Button clear = new Button(activity);
-        clear.setText(R.string.title_live_draft_clear_reference);
-        actions.addView(upload);
-        actions.addView(clear);
-        liveDraftList.addView(actions);
-        referenceStatus = new TextView(activity);
-        referenceStatus.setPadding(pad, 0, pad, pad);
-        liveDraftList.addView(referenceStatus);
-        refreshReferenceStatus();
-        genders.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup radioGroup, int checkedId) {
-                RadioButton button = radioGroup.findViewById(checkedId);
-                if (button != null && button.getTag() instanceof String) {
-                    LiveDraftVoices.setGender(activity, (String) button.getTag());
-                    LiveDraftSpeaker.release();
-                    refreshReferenceStatus();
-                }
-            }
-        });
-        upload.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (referencePicker != null) {
-                    referencePicker.launch("audio/*");
-                }
-            }
-        });
-        clear.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                LiveDraftVoices.clearUpload(activity, LiveDraftVoices.gender(activity));
-                LiveDraftSpeaker.release();
-                refreshReferenceStatus();
-            }
-        });
-        attachEngineChoice(engineRadios);
-    }
-
-    private void attachEngineChoice(final ArrayList<RadioButton> engineRadios) {
-        CompoundButton.OnCheckedChangeListener engineChoice = new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton button, boolean isChecked) {
-                if (!(button.getTag() instanceof String)) {
-                    return;
-                }
-                if (!isChecked) {
-                    for (RadioButton other : engineRadios) {
-                        if (other.isChecked()) {
-                            return;
-                        }
-                    }
-                    button.setChecked(true);
-                    return;
-                }
-                for (RadioButton other : engineRadios) {
-                    if (other != button && other.isChecked()) {
-                        other.setChecked(false);
-                    }
-                }
-                LiveDraftVoices.setSelected(activity, (String) button.getTag());
-                LiveDraftSpeaker.release();
-                buildLiveDraftRows(currentReady());
-            }
-        };
-        for (RadioButton radio : engineRadios) {
-            radio.setOnCheckedChangeListener(engineChoice);
-        }
-    }
-
-    private HashMap<String, Boolean> currentReady() {
-        HashMap<String, Boolean> ready = new HashMap<>();
-        if (activity == null) {
-            return ready;
-        }
-        for (LiveDraftVoices.Engine engine : LiveDraftVoices.engines()) {
-            ready.put(engine.id, LiveDraftVoices.isReady(activity, engine.id));
-        }
-        return ready;
-    }
-
-    private void refreshReferenceStatus() {
-        if (referenceStatus == null || activity == null) {
-            return;
-        }
-        java.io.File upload = LiveDraftVoices.uploadFile(activity, LiveDraftVoices.gender(activity));
-        if (upload.isFile() && upload.length() > 0) {
-            referenceStatus.setText(R.string.live_draft_reference_uploaded);
-        } else {
-            referenceStatus.setText(R.string.live_draft_reference_automatic);
-        }
-    }
-
-    private void storeReference(Uri uri) {
-        if (activity == null) {
-            return;
-        }
-        long durationMs = -1L;
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
-        try {
-            retriever.setDataSource(activity, uri);
-            String value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
-            if (value != null) {
-                durationMs = Long.parseLong(value);
-            }
-        } catch (RuntimeException ignored) {
-            durationMs = -1L;
-        } finally {
-            try {
-                retriever.release();
-            } catch (RuntimeException ignored) {
-            } catch (java.io.IOException ignored) {
-            }
-        }
-        try {
-            InputStream input = activity.getContentResolver().openInputStream(uri);
-            if (input == null) {
-                showReferenceNote(LiveDraftReference.DurationNote.UNREADABLE);
-                return;
-            }
-            try {
-                LiveDraftVoices.copyUpload(activity, LiveDraftVoices.gender(activity), input);
-            } finally {
-                input.close();
-            }
-        } catch (java.io.IOException error) {
-            showReferenceNote(LiveDraftReference.DurationNote.UNREADABLE);
-            return;
-        }
-        LiveDraftSpeaker.release();
-        refreshReferenceStatus();
-        if (durationMs > 0) {
-            showReferenceNote(LiveDraftReference.duration(durationMs));
-        }
-    }
-
-    private void showReferenceNote(LiveDraftReference.DurationNote note) {
-        int message;
-        if (note == LiveDraftReference.DurationNote.SHORT) {
-            message = R.string.live_draft_reference_short;
-        } else if (note == LiveDraftReference.DurationNote.LONG) {
-            message = R.string.live_draft_reference_long;
-        } else if (note == LiveDraftReference.DurationNote.UNREADABLE) {
-            message = R.string.live_draft_reference_unreadable;
-        } else {
-            return;
-        }
-        new MaterialAlertDialogBuilder(activity).setMessage(message).setPositiveButton(android.R.string.ok, null).show();
-    }
-
-    private int engineDescription(String engine) {
-        return R.string.description_live_draft_cosyvoice;
-    }
-
-    private String engineDescriptionText(String engine) {
-        return getString(R.string.description_live_draft_system);
-    }
-
-    private String engineTitle(String engine) {
-        if (LiveDraftVoices.ENGINE_COSYVOICE.equals(engine)) {
-            return getString(R.string.title_live_draft_cosyvoice);
-        }
-        return getString(R.string.title_live_draft_system);
     }
 
     private void startRTranslator(){

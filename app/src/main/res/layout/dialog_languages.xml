@@ -29,7 +29,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="24dp"
-        android:textColor="@color/primary_very_dark"
+        android:textColor="?attr/xtColorPrimaryVeryDark"
         android:textSize="19sp"
         android:textStyle="normal"
         android:fontFamily="@font/roboto_medium"

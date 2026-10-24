@@ -70,6 +70,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
     private RecognizerListener speechRecognizerSingleCallback;
 
     // objects
+    public static boolean isRunning = false;
     private Translator translator;
     private Recognizer speechRecognizer;
     private CustomLocale firstLanguage;
@@ -92,6 +93,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
     @Override
     public void onCreate() {
         super.onCreate();
+        isRunning = true;
         isMicActivated = false;
         translator = ((Global) getApplication()).getTranslator();
         speechRecognizer = ((Global) getApplication()).getSpeechRecognizer();
@@ -422,6 +424,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
         speechRecognizer.removeCallback(speechRecognizerSingleCallback);
         // Stop recognizer
         speechRecognizer.stop();
+        isRunning = false;
         super.onDestroy();
     }
 
