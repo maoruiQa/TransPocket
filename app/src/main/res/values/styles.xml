@@ -33,8 +33,7 @@
         <item name="xtColorPrimaryVeryDark">@color/golden_primary_very_dark</item>
         <item name="xtColorPrimaryLite">@color/golden_primary_lite</item>
         <item name="xtColorPrimaryVeryLite">@color/golden_primary_very_lite</item>
-        <!-- Model-row titles are body-size text, so they use the ink, not the icon gold. -->
-        <item name="xtColorAccent">@color/autumn_ink</item>
+        <item name="xtColorAccent">@color/autumn_gold_icon</item>
         <item name="xtColorSecondaryVeryLite">@color/golden_secondary_very_lite</item>
         <item name="xtColorOnPrimary">@color/golden_on_primary</item>
         <item name="xtColorIcon">@color/autumn_gold_icon</item>

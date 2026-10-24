@@ -18,23 +18,20 @@
 <resources>
     <!-- Autumn gold for the default palette. Names stay golden_* so the saved
          colorPalette key and the LauncherGolden alias keep working.
-         Hue is about 45 degrees. The page is near-white ivory; ink is a deep
-         gold (white on it is about 7:1, ink on ivory about 7:1). primary_dark
-         and lite alias ink because both are used as text. Icon gold is darker
-         than the button so a 24dp glyph stays above 3:1 on ivory. -->
+         Titles, language buttons, and icons share autumn_gold_icon. The older
+         darker ink is not used. Launcher and splash keep autumn_gold_primary. -->
     <color name="autumn_ivory">#FBF6EA</color>
     <color name="autumn_champagne">#F4E7C4</color>
     <color name="autumn_surface">#FFFCF5</color>
-    <color name="autumn_ink">#704F0C</color>
     <color name="autumn_gold_icon">#A07B14</color>
     <color name="autumn_gold_primary">#D4A62C</color>
     <color name="autumn_gold_bright">#E8C84A</color>
     <color name="autumn_on_gold">#3B2C07</color>
 
     <color name="golden_primary">@color/autumn_gold_primary</color>
-    <color name="golden_primary_dark">@color/autumn_ink</color>
-    <color name="golden_primary_very_dark">@color/autumn_ink</color>
-    <color name="golden_primary_lite">@color/autumn_ink</color>
+    <color name="golden_primary_dark">@color/autumn_gold_icon</color>
+    <color name="golden_primary_very_dark">@color/autumn_gold_icon</color>
+    <color name="golden_primary_lite">@color/autumn_gold_icon</color>
     <color name="golden_primary_very_lite">@color/autumn_ivory</color>
     <color name="golden_accent">@color/autumn_gold_primary</color>
     <color name="golden_secondary_very_lite">@color/autumn_champagne</color>
