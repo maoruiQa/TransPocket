@@ -90,7 +90,7 @@ public class UserDataFragment extends Fragment {
         super.onActivityCreated(savedInstanceState);
         activity = (AccessActivity) requireActivity();
         global = (Global) activity.getApplication();
-        userImageContainer = new GalleryImageSelector(imageView, activity, this, R.drawable.user_icon, "com.gallery.RTranslator.2.0.provider");
+        userImageContainer = new GalleryImageSelector(imageView, activity, this, R.drawable.user_icon, activity.getPackageName() + ".fileprovider");
 
         buttonSelectTTS.setOnClickListener(new View.OnClickListener() {
             @Override

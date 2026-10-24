@@ -143,7 +143,7 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         userImagePreference.setLifecycleListener(new UserImagePreference.LifecycleListener() {
             @Override
             public void onBindViewHolder() {
-                userImageContainer = new GalleryImageSelector(userImagePreference.getImage(), activity, SettingsFragment.this, R.drawable.user_icon, "com.gallery.RTranslator.2.0.provider");
+                userImageContainer = new GalleryImageSelector(userImagePreference.getImage(), activity, SettingsFragment.this, R.drawable.user_icon, activity.getPackageName() + ".fileprovider");
             }
         });
 
