@@ -36,6 +36,7 @@ public abstract class GeneralActivity extends FragmentActivity {
     protected void onCreate(@androidx.annotation.Nullable Bundle savedInstanceState) {
         ThemeManager.applyTheme(this);
         super.onCreate(savedInstanceState);
+        ThemeManager.applyTaskIcon(this);
         // if the models are not loaded and an activity different than LoadingActivity or AccessActivity is created,
         // that means that the system has killed the app, and now it is launching the app with the last activity (restoring it).
         // In this case we start the loading activity instead, otherwise the app will crash for the lack of loaded models.

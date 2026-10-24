@@ -8,6 +8,8 @@ import android.content.pm.PackageManager;
 
 import org.junit.Test;
 
+import nie.translator.rtranslator.R;
+
 public class ThemeManagerTest {
 
     private static final int DEFAULT = PackageManager.COMPONENT_ENABLED_STATE_DEFAULT;
@@ -34,6 +36,17 @@ public class ThemeManagerTest {
     public void legacyYellowKeysMapToGolden() {
         assertEquals(ThemeManager.PALETTE_GOLDEN, ThemeManager.normalizePalette("ginkgo"));
         assertEquals(ThemeManager.PALETTE_GOLDEN, ThemeManager.normalizePalette("autumn_gold"));
+    }
+
+    @Test
+    public void recentsIconFollowsPaletteInsteadOfTheApplicationIcon() {
+        assertEquals(R.mipmap.ic_launcher_golden, ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_GOLDEN));
+        assertEquals(R.mipmap.ic_launcher_bamboo, ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_BAMBOO));
+        assertEquals(R.mipmap.ic_launcher_indigo, ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_INDIGO));
+        assertEquals(R.mipmap.ic_launcher_sakura, ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_SAKURA));
+        assertEquals(R.mipmap.ic_launcher_wisteria, ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_WISTERIA));
+        assertEquals(R.mipmap.ic_launcher_golden, ThemeManager.getLauncherIconResource("autumn_gold"));
+        assertFalse(ThemeManager.getLauncherIconResource(ThemeManager.PALETTE_BAMBOO) == R.mipmap.ic_launcher);
     }
 
     @Test

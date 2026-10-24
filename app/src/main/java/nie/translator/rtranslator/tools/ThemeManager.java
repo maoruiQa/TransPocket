@@ -17,11 +17,15 @@
 package nie.translator.rtranslator.tools;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 
 import androidx.annotation.AttrRes;
@@ -29,10 +33,12 @@ import androidx.annotation.ColorRes;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.StringRes;
+import androidx.core.content.res.ResourcesCompat;
 
 import com.google.android.material.color.MaterialColors;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.WeakHashMap;
 
 import nie.translator.rtranslator.R;
@@ -108,6 +114,9 @@ public final class ThemeManager {
                 .putString(PREF_COLOR_PALETTE, normalizePalette(palette))
                 .apply();
         applyLauncherIcon(context);
+        if (context instanceof Activity) {
+            applyTaskIcon((Activity) context);
+        }
     }
 
     // Each palette has its own launcher activity, because an activity-alias copies the target
@@ -352,6 +361,58 @@ public final class ThemeManager {
             default:
                 return R.color.golden_primary;
         }
+    }
+
+    // The overview screen draws TaskDescription. Activities in the task inherit the application
+    // icon, which is the original yellow mipmap, so the palette icon has to be set here.
+    private static final HashMap<String, Bitmap> taskIcons = new HashMap<>();
+
+    @DrawableRes
+    public static int getLauncherIconResource(String palette) {
+        switch (normalizePalette(palette)) {
+            case PALETTE_BAMBOO:
+                return R.mipmap.ic_launcher_bamboo;
+            case PALETTE_INDIGO:
+                return R.mipmap.ic_launcher_indigo;
+            case PALETTE_SAKURA:
+                return R.mipmap.ic_launcher_sakura;
+            case PALETTE_WISTERIA:
+                return R.mipmap.ic_launcher_wisteria;
+            case PALETTE_GOLDEN:
+            default:
+                return R.mipmap.ic_launcher_golden;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static void applyTaskIcon(Activity activity) {
+        String palette = getPalette(activity);
+        int iconRes = getLauncherIconResource(palette);
+        int color = activity.getColor(getPalettePrimaryColorResource(palette));
+        Bitmap icon = taskIconBitmap(activity, palette, iconRes);
+        ActivityManager.TaskDescription description = icon != null
+                ? new ActivityManager.TaskDescription(activity.getString(R.string.app_name), icon, color)
+                : new ActivityManager.TaskDescription(activity.getString(R.string.app_name), iconRes, color);
+        activity.setTaskDescription(description);
+    }
+
+    private static Bitmap taskIconBitmap(Context context, String palette, @DrawableRes int iconRes) {
+        String key = normalizePalette(palette) + "@" + context.getResources().getDisplayMetrics().density;
+        Bitmap cached = taskIcons.get(key);
+        if (cached != null && !cached.isRecycled()) {
+            return cached;
+        }
+        Drawable drawable = ResourcesCompat.getDrawable(context.getResources(), iconRes, context.getTheme());
+        if (drawable == null) {
+            return null;
+        }
+        int size = Math.round(72 * context.getResources().getDisplayMetrics().density);
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, size, size);
+        drawable.draw(canvas);
+        taskIcons.put(key, bitmap);
+        return bitmap;
     }
 
     @DrawableRes
