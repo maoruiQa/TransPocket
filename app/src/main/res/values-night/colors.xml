@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Charcoal plate so the white mark stays visible when night mode is on. -->
-    <color name="splash_icon_plate">#1B1714</color>
-</resources>

@@ -23,7 +23,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
@@ -73,6 +72,11 @@ public final class ThemeManager {
 
     static final String LAUNCHER_GOLDEN = "LauncherGolden";
     static final String LAUNCHER_GOLDEN_ALT = "LauncherGoldenAlt";
+
+    // Manifest ".Launcher*" names resolve against the namespace, not applicationId.
+    // io.github.maoruiqa.transpocket.LauncherBamboo is not a component, so the home
+    // icon and the cold-start splash stay on the install-time golden activity.
+    static final String LAUNCHER_NAMESPACE = "nie.translator.rtranslator";
 
     // Index 0 is the install-time entry. Its manifest enabled value is true; every other entry is false.
     static final String[] LAUNCHER_CLASSES = new String[]{
@@ -132,7 +136,7 @@ public final class ThemeManager {
         try {
             for (int i = 0; i < LAUNCHER_CLASSES.length; i++) {
                 current[i] = packageManager.getComponentEnabledSetting(
-                        new ComponentName(packageName, packageName + "." + LAUNCHER_CLASSES[i]));
+                        launcherComponent(packageName, LAUNCHER_CLASSES[i]));
             }
         } catch (IllegalArgumentException ignored) {
             // Builds without these launcher activities must keep working; the theme is independent.
@@ -170,12 +174,20 @@ public final class ThemeManager {
     }
 
     /** Class name of the launcher activity for this palette. Must match the manifest component. */
-    public static String launcherClassName(String packageName, String palette) {
-        return launcherClassName(packageName, palette, false);
+    public static String launcherClassName(String palette) {
+        return launcherClassName(palette, false);
     }
 
-    public static String launcherClassName(String packageName, String palette, boolean goldenRetired) {
-        return packageName + "." + launcherSimpleName(palette, goldenRetired);
+    public static String launcherClassName(String palette, boolean goldenRetired) {
+        return LAUNCHER_NAMESPACE + "." + launcherSimpleName(palette, goldenRetired);
+    }
+
+    static String launcherComponentClass(String simpleName) {
+        return LAUNCHER_NAMESPACE + "." + simpleName;
+    }
+
+    static ComponentName launcherComponent(String applicationId, String simpleName) {
+        return new ComponentName(applicationId, launcherComponentClass(simpleName));
     }
 
     static String launcherSimpleName(String palette, boolean goldenRetired) {
@@ -274,7 +286,7 @@ public final class ThemeManager {
         }
         for (int i = 0; i < plan.classNames.length; i++) {
             packageManager.setComponentEnabledSetting(
-                    new ComponentName(packageName, packageName + "." + plan.classNames[i]),
+                    launcherComponent(packageName, plan.classNames[i]),
                     plan.states[i],
                     PackageManager.DONT_KILL_APP);
         }
@@ -287,7 +299,7 @@ public final class ThemeManager {
             ArrayList<PackageManager.ComponentEnabledSetting> settings = new ArrayList<>();
             for (int i = 0; i < plan.classNames.length; i++) {
                 settings.add(new PackageManager.ComponentEnabledSetting(
-                        new ComponentName(packageName, packageName + "." + plan.classNames[i]),
+                        launcherComponent(packageName, plan.classNames[i]),
                         plan.states[i],
                         PackageManager.DONT_KILL_APP));
             }
@@ -398,9 +410,7 @@ public final class ThemeManager {
     }
 
     private static Bitmap taskIconBitmap(Context context, String palette, @DrawableRes int iconRes) {
-        // The same mipmap id resolves to the dark mark or the light mark from uiMode.
-        int night = context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-        String key = normalizePalette(palette) + "@" + context.getResources().getDisplayMetrics().density + "@" + night;
+        String key = normalizePalette(palette) + "@" + context.getResources().getDisplayMetrics().density;
         Bitmap cached = taskIcons.get(key);
         if (cached != null && !cached.isRecycled()) {
             return cached;

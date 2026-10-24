@@ -27,7 +27,7 @@ These are the changes in this repository relative to upstream RTranslator 3.0.0-
 - Speech recognition can be Whisper Small, Whisper Large V3 Turbo, Qwen3-ASR 0.6B, or Qwen3-ASR 1.7B. The 1.7B model needs a phone with about 8 GB of memory.
 - Speech uses the phone's system text-to-speech engine. A sentence is spoken as soon as it is finished, and the next sentence waits in a queue. The whole passage is not synthesized in one request. With Bluetooth headphones, the media route is kept awake so the start of a sentence is not eaten by headphone sleep.
 - Model downloads continue after the app leaves the foreground. Loading and switching models show stage progress.
-- Five palettes: autumn gold, bamboo, indigo, sakura, and wisteria. Changing the palette also changes the launcher icon and the cold-start screen. Each icon has two marks. Light mode uses the dark mark. Dark mode uses the light mark. The palette color stays the background.
+- Five palettes: autumn gold, bamboo, indigo, sakura, and wisteria. Changing the palette also changes the launcher icon and the cold-start screen. Every icon uses the light mark on that palette color.
 - The displayed name is TransPocket.
 
 The dictionary, the Tatoeba sentence bank, and beam search remain part of text-translation quality. Voice modes use a beam width of 1. Do not change `EOS_PENALTY`, `WORD_REWARD`, `LENGTH_ALPHA`, `SIBLING_PENALTY`, or the beam width without a quality comparison.

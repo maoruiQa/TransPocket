@@ -166,8 +166,9 @@
         <!-- Set the splash screen background -->
         <item name="windowSplashScreenBackground">@color/golden_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/golden_primary_very_lite</item>
-        <!-- Set a background behind the splash screen icon. -->
-        <item name="windowSplashScreenIconBackgroundColor">@color/splash_icon_plate</item>
+        <!-- Light mark sits on the palette color, in light mode and dark mode. -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/golden_primary</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="31">@color/golden_primary</item>
         <!-- Use windowSplashScreenAnimatedIcon to add a drawable or an animated drawable. -->
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen</item>
@@ -180,6 +181,8 @@
     <style name="Theme.App.Starting.Bamboo" parent="Theme.App.Starting">
         <item name="windowSplashScreenBackground">@color/bamboo_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/bamboo_primary_very_lite</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/bamboo_primary</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="31">@color/bamboo_primary</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_bamboo</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_bamboo</item>
         <item name="postSplashScreenTheme">@style/Theme.Speech.Bamboo</item>
@@ -188,6 +191,8 @@
     <style name="Theme.App.Starting.Indigo" parent="Theme.App.Starting">
         <item name="windowSplashScreenBackground">@color/indigo_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/indigo_primary_very_lite</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/indigo_primary</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="31">@color/indigo_primary</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_indigo</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_indigo</item>
         <item name="postSplashScreenTheme">@style/Theme.Speech.Indigo</item>
@@ -196,6 +201,8 @@
     <style name="Theme.App.Starting.Sakura" parent="Theme.App.Starting">
         <item name="windowSplashScreenBackground">@color/sakura_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/sakura_primary_very_lite</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/sakura_primary</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="31">@color/sakura_primary</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_sakura</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_sakura</item>
         <item name="postSplashScreenTheme">@style/Theme.Speech.Sakura</item>
@@ -204,6 +211,8 @@
     <style name="Theme.App.Starting.Wisteria" parent="Theme.App.Starting">
         <item name="windowSplashScreenBackground">@color/wisteria_primary_very_lite</item>
         <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/wisteria_primary_very_lite</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/wisteria_primary</item>
+        <item name="android:windowSplashScreenIconBackgroundColor" tools:targetApi="31">@color/wisteria_primary</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_screen_wisteria</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">@drawable/splash_screen_wisteria</item>
         <item name="postSplashScreenTheme">@style/Theme.Speech.Wisteria</item>

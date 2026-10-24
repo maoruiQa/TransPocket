@@ -51,15 +51,32 @@ public class ThemeManagerTest {
 
     @Test
     public void launcherClassNameMatchesManifestComponents() {
-        String pkg = "nie.translator.rtranslator";
-        assertEquals(pkg + ".LauncherGolden", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_GOLDEN));
-        assertEquals(pkg + ".LauncherBamboo", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_BAMBOO));
-        assertEquals(pkg + ".LauncherIndigo", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_INDIGO));
-        assertEquals(pkg + ".LauncherSakura", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_SAKURA));
-        assertEquals(pkg + ".LauncherWisteria", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_WISTERIA));
-        assertEquals(pkg + ".LauncherGolden", ThemeManager.launcherClassName(pkg, "autumn_gold"));
-        assertEquals(pkg + ".LauncherGoldenAlt", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_GOLDEN, true));
-        assertEquals(pkg + ".LauncherBamboo", ThemeManager.launcherClassName(pkg, ThemeManager.PALETTE_BAMBOO, true));
+        assertEquals("nie.translator.rtranslator.LauncherGolden",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_GOLDEN));
+        assertEquals("nie.translator.rtranslator.LauncherBamboo",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_BAMBOO));
+        assertEquals("nie.translator.rtranslator.LauncherIndigo",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_INDIGO));
+        assertEquals("nie.translator.rtranslator.LauncherSakura",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_SAKURA));
+        assertEquals("nie.translator.rtranslator.LauncherWisteria",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_WISTERIA));
+        assertEquals("nie.translator.rtranslator.LauncherGolden",
+                ThemeManager.launcherClassName("autumn_gold"));
+        assertEquals("nie.translator.rtranslator.LauncherGoldenAlt",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_GOLDEN, true));
+        assertEquals("nie.translator.rtranslator.LauncherBamboo",
+                ThemeManager.launcherClassName(ThemeManager.PALETTE_BAMBOO, true));
+    }
+
+    @Test
+    public void launcherComponentClassStaysInTheNamespace() {
+        assertEquals("nie.translator.rtranslator.LauncherBamboo",
+                ThemeManager.launcherComponentClass("LauncherBamboo"));
+        assertEquals("nie.translator.rtranslator.LauncherGolden",
+                ThemeManager.launcherComponentClass(ThemeManager.LAUNCHER_GOLDEN));
+        assertFalse("io.github.maoruiqa.transpocket.LauncherBamboo"
+                .equals(ThemeManager.launcherComponentClass("LauncherBamboo")));
     }
 
     @Test
