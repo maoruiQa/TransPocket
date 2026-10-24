@@ -223,7 +223,8 @@ public class AccessActivity extends GeneralActivity {
                 global.getWhisperTurboDownloadInfo(),
                 global.getTatoebaDownloadInfo(),
                 global.getDictionaryDownloadInfo(),
-                global.getSileroVadDownloadInfo()
+                global.getVadDownloadInfo(Global.VAD_FIRERED),
+                global.getVadDownloadInfo(Global.VAD_SILERO)
         };
         ArrayList<DownloadGroupInfo> watched = new ArrayList<>();
         Collections.addAll(watched, groups);

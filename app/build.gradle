@@ -30,8 +30,8 @@ android {
     defaultConfig {
         applicationId "io.github.maoruiqa.transpocket"
         targetSdkVersion 37
-        versionName '0.1.0'
-        versionCode 28
+        versionName '0.1.1'
+        versionCode 29
         minSdkVersion 28
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
@@ -54,6 +54,9 @@ android {
                         '-DUSE_TCMALLOC=OFF',
                         '-DSSPLIT_USE_INTERNAL_PCRE2:BOOL=ON',
                         '-DUSE_PATHIECPP=ON',
+                        // The vendored Bergamot tree is complete. Its configure step runs
+                        // `git submodule update`, which cannot work on a copied checkout.
+                        '-DGIT_SUBMODULE=OFF',
                         '-DBUILD_ARCH=armv8-a',
                         '-GNinja',
                         //'-DCMAKE_C_FLAGS="-O3 -fPIC -march=armv8-a -mtune=generic -ffast-math -funroll-loops -fdata-sections -ffunction-sections"',

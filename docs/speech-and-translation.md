@@ -55,7 +55,7 @@ On first entry, Silero VAD v6.2.1 (about 2 MB, `VAD/silero_vad.onnx`) is on by d
 
 ## 2. How Whisper transcribes one utterance
 
-The implementation is `Recognizer`. The model is a split Whisper Small ONNX graph with a KV cache:
+The implementation is `Recognizer`. 3.0 runs `WhisperTurboEngine` (a merged-decoder graph) for Whisper Small and large-v3-turbo. The split Whisper Small graph below is kept for installs that predate the model bundle:
 
 | File | Role |
 | --- | --- |
@@ -107,6 +107,15 @@ The real `LanguageDetector` branch does not match its comment exactly:
 A normal-length utterance therefore often has its WalkieTalkie language chosen by Whisper's mean log probability, not by FastText.
 
 Conversation does not use two languages. It runs one recognition pass in the local `Global.getLanguage()`, sends the original text with the language code, and translates on the receiving phone.
+
+## 3.1 Language lock, guard, and the four ASR models
+
+`Global.isAsrLanguageLock()` (default `true`, settings key `asrLanguageLock`) decides whether a recognition may use a language other than the configured one.
+
+- **Whisper Small / large-v3-turbo** (`WhisperTurboEngine`): the language token comes from `AsrLanguages.whisperToken(code, largeV3)`. Large-v3 has 100 language tokens; Small has 99, so `yue` falls back to `zh`. In simultaneous mode a locked clause is decoded with the fixed token and skips the SOT probe. With the lock off, the probe may switch only to the session target language, and still needs the 2.0 hint bonus plus the 1.5 margin from `AsrLanguageHint`.
+- **Qwen3-ASR 0.6B / 1.7B** (`Qwen3AsrEngine`): `transcribe(samples, languageCode)` appends `language <Name>` to the assistant turn, so the model decodes the requested language instead of reporting one. The prefix uses the model's own byte-level vocabulary; when it cannot be encoded and decoded back to the same string, the call falls back to the free decode and logs `prefixFallback`.
+- **`AsrLanguageGuard`** checks the transcript against the selected language using Unicode script counts and, for Cyrillic, the exclusive letters `ыэё` (Russian) and `іїєґ` (Ukrainian). `CONFLICT` becomes `[(und)]` when the lock is on. Bilingual recognition vetoes a conflicting side so `compareResults` can use the other one. Text shorter than 12 letters is `WEAK` and is never dropped.
+- **Diagnostics**: `Log.i("asrLanguage", ...)` records the model, soft/hard mode, requested and chosen language, the top two language scores, the guard verdict, and the latency. It does not log transcript text.
 
 ## 4. Sentence splits before translation
 

@@ -126,7 +126,7 @@ public class Recorder {
     private boolean pendingStart;
     private volatile boolean clauseSegmentation;
     @Nullable
-    private SileroClauseVad clauseVad;
+    private ClauseVad clauseVad;
     @Nullable
     private ClauseVadSegmenter clauseSegmenter;
     private final short[] clauseFrame = new short[ClauseVadSegmenter.FRAME_SAMPLES];
@@ -389,7 +389,7 @@ public class Recorder {
      * frame probabilities instead of the fixed pause. Null keeps the pause.
      * Call before {@link #start()}. The audio thread is the only caller of the model.
      */
-    public void setClauseVad(@Nullable SileroClauseVad vad) {
+    public void setClauseVad(@Nullable ClauseVad vad) {
         clauseVad = vad;
         if (vad != null && clauseSegmenter == null) {
             clauseSegmenter = new ClauseVadSegmenter();
@@ -989,7 +989,7 @@ public class Recorder {
     }
 
     private void closeClauseVad() {
-        SileroClauseVad vad = clauseVad;
+        ClauseVad vad = clauseVad;
         clauseVad = null;
         if (vad != null) {
             vad.close();

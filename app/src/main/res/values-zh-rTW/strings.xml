@@ -46,6 +46,7 @@
     <string name="continue_text">繼續</string>
     <string name="ok">確定</string>
     <string name="translation_enhancements">翻譯增強</string>
+    <string name="description_translation_enhancements">預設關閉。Tatoeba 例句和翻譯詞典會替換模型自身的輸出，部分語言對的準確率可能會下降。</string>
     <string name="no">否</string>
     <string name="yes">是</string>
     <string name="general">一般</string>
@@ -156,7 +157,7 @@
     <string name="error_missing_madlad">您已選擇 Madlad 作為翻譯模型，但尚未下載。請先下載該模型，再進行選擇。</string>
     <string name="error_missing_mozilla_voice">您已啟用在 WalkieTalkie 和對話模式下使用 Mozilla 模型，但尚未下載任何 Mozilla 模型。請先下載後再啟用此選項。</string>
     <string name="error_missing_tatoeba">您已啟用 Tatoeba，但尚未下載。請先下載 Tatoeba，再啟用它。</string>
-    <string name="error_missing_vad">您已啟用同聲傳譯的 Silero VAD，但尚未下載。請先下載，再啟用它。</string>
+    <string name="error_missing_vad">您已啟用 VAD 斷句，但所選的 VAD 模型尚未下載。請先下載，再啟用它。</string>
     <string name="error_missing_general">缺少所需資源</string>
     <string name="error_apply_unknown">未知錯誤，請重試。</string>
     <string name="error_delete_last_download">這是最後一個已下載的翻譯模型，無法刪除所有翻譯模型。請先下載另一個翻譯模型，再刪除此模型。</string>
@@ -254,8 +255,11 @@
     <string name="description_mozilla_voice">在 WalkieTalkie 和對話模式下使用效能模型（Mozilla），以降低即時翻譯模式的延遲，但品質較差。</string>
     <string name="description_whisper_ram_reduction">將 Whisper 模型的記憶體占用從 900MB 降至 500MB，但執行速度會降低 24%。</string>
     <string name="description_tatoeba">用於改善部分句子翻譯效果的 Tatoeba 資料集</string>
-    <string name="title_vad_segmentation">Silero VAD</string>
-    <string name="description_vad_segmentation">同聲傳譯預設開啟，並在首次進入時一併下載。根據語音裡的停頓斷句。大約 2 MB。關閉時仍按固定停頓和標點斷句。</string>
+    <string name="title_vad_segmentation">VAD 斷句</string>
+    <string name="title_vad_model">VAD 模型</string>
+    <string name="vad_model_firered">FireRedVAD</string>
+    <string name="vad_model_silero">Silero VAD</string>
+    <string name="description_vad_segmentation">同聲傳譯預設開啟，並在首次進入時一併下載。根據語音裡的停頓斷句。預設使用 FireRedVAD，Silero VAD 為舊模型。大約 2 MB。關閉時仍按固定停頓和標點斷句。</string>
     <string name="description_dictionaries">用於改善單字翻譯效果的翻譯詞典。</string>
 
     <string name="preference_header_language">語言</string>

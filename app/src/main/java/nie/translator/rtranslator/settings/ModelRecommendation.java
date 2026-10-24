@@ -11,18 +11,14 @@ import nie.translator.rtranslator.voice_translation.neural_networks.translation.
 public class ModelRecommendation {
     public final int translationModel;
     public final boolean whisperReducedRam;
-    public final boolean useDictionaries;
-    public final boolean useTatoeba;
     public final boolean useMozillaForVoice;
     public final int messageRes;
     public final String totalRamGb;
     public final String freeStorageGb;
 
-    private ModelRecommendation(int translationModel, boolean whisperReducedRam, boolean useDictionaries, boolean useTatoeba, boolean useMozillaForVoice, int messageRes, String totalRamGb, String freeStorageGb) {
+    private ModelRecommendation(int translationModel, boolean whisperReducedRam, boolean useMozillaForVoice, int messageRes, String totalRamGb, String freeStorageGb) {
         this.translationModel = translationModel;
         this.whisperReducedRam = whisperReducedRam;
-        this.useDictionaries = useDictionaries;
-        this.useTatoeba = useTatoeba;
         this.useMozillaForVoice = useMozillaForVoice;
         this.messageRes = messageRes;
         this.totalRamGb = totalRamGb;
@@ -67,10 +63,8 @@ public class ModelRecommendation {
             message = R.string.model_recommendation_mozilla;
         }
 
-        boolean dictionaries = fits(usedBase + modelMb + 140, totalMb, redLine) && freeMb > modelMb + 800;
-        boolean tatoeba = fits(usedBase + modelMb + 5, totalMb, redLine) && freeMb > modelMb + 1600;
         boolean mozillaForVoice = model != Translator.MOZILLA && !fits(usedBase + modelMb, totalMb, redLine - 8f);
-        return new ModelRecommendation(model, whisperReduced, dictionaries, tatoeba, mozillaForVoice, message, gb(totalMb), gb(freeMb));
+        return new ModelRecommendation(model, whisperReduced, mozillaForVoice, message, gb(totalMb), gb(freeMb));
     }
 
     private static boolean fits(int usedMb, int totalMb, float redLinePercent) {

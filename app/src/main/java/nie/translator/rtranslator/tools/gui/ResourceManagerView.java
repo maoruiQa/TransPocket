@@ -306,12 +306,17 @@ public class ResourceManagerView extends ConstraintLayout {
     }
 
     public void setQuantChoices(String[] labels, int selectedIndex, QuantListener listener) {
+        setModelChoices(labels, selectedIndex, getContext().getString(R.string.asr_quantization), listener);
+    }
+
+    /** Same spinner as the quantisation choice, used for the VAD model list. */
+    public void setModelChoices(String[] labels, int selectedIndex, CharSequence contentDescription, QuantListener listener) {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), R.layout.item_asr_quant, labels);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         quantSpinner.setOnItemSelectedListener(null);
         quantSpinner.setAdapter(adapter);
         quantSpinner.setSelection(Math.max(0, Math.min(selectedIndex, labels.length - 1)));
-        quantSpinner.setContentDescription(getContext().getString(R.string.asr_quantization));
+        quantSpinner.setContentDescription(contentDescription);
         quantSpinner.setVisibility(VISIBLE);
         quantSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override

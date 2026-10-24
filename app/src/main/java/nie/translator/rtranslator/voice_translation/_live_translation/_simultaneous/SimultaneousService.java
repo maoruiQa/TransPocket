@@ -39,6 +39,8 @@ import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.RecognizerListener;
+import nie.translator.rtranslator.voice_translation.neural_networks.voice.ClauseVad;
+import nie.translator.rtranslator.voice_translation.neural_networks.voice.FireRedClauseVad;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recorder;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.SileroClauseVad;
 
@@ -130,7 +132,8 @@ public class SimultaneousService extends VoiceTranslationService {
                             clauseAudioMs.addLast(audioMs);
                             clauseUsedVad.addLast(mVoiceRecorder != null && mVoiceRecorder.usesClauseVad());
                         }
-                        speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceLanguage.getCode());
+                        String targetCode = targetLanguage != null ? targetLanguage.getCode() : null;
+                        speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceLanguage.getCode(), targetCode);
                     }
                 }
             }
@@ -561,7 +564,9 @@ public class SimultaneousService extends VoiceTranslationService {
             mVoiceRecorder = new Recorder(global, true, mVoiceCallback, null, global.getVad(), CAPTURE_BUFFER_MILLIS);
             mVoiceRecorder.setClauseSegmentation(true);
             if (global.isSimultaneousVadSegmentation()) {
-                SileroClauseVad clauseVad = SileroClauseVad.open(global.getSileroVadFile());
+                ClauseVad clauseVad = global.getVadModel() == Global.VAD_FIRERED
+                        ? FireRedClauseVad.open(global.getFireRedVadFile(), global.getFireRedVadCmvnFile())
+                        : SileroClauseVad.open(global.getSileroVadFile());
                 if (clauseVad == null) {
                     android.util.Log.i("simultaneous", "VAD segmentation unavailable, using pause and punctuation");
                 } else {

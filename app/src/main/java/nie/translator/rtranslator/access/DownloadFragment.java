@@ -312,7 +312,7 @@ public class DownloadFragment extends Fragment {
             groups.add(global.getTatoebaDownloadInfo());
         }
         if (global.isSimultaneousVadSegmentation()) {
-            groups.add(global.getSileroVadDownloadInfo());
+            groups.add(global.getVadDownloadInfo());
         }
         if (global.isUseTranslationDictionaries()) {
             groups.add(global.getDictionaryDownloadInfo());

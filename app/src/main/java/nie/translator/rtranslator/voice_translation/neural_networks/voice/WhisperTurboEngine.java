@@ -14,10 +14,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 import nie.translator.rtranslator.tools.AsrLanguageHint;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.AsrRepetition;
 
 import ai.onnxruntime.OnnxJavaType;
@@ -38,28 +38,6 @@ public class WhisperTurboEngine {
     private static final int HOP = 160;
     private static final int HEAD_DIM = 64;
 
-    private static final Map<String, Integer> LANGUAGE_IDS = new HashMap<>();
-
-    static {
-        String[] codes = {
-                "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi",
-                "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk",
-                "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw",
-                "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo",
-                "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue"
-        };
-        int[] ids = {
-                50259, 50260, 50261, 50262, 50263, 50264, 50265, 50266, 50267, 50268, 50269, 50270, 50271, 50272, 50273, 50274, 50275, 50276, 50277, 50278,
-                50279, 50280, 50281, 50282, 50283, 50284, 50285, 50286, 50287, 50288, 50289, 50290, 50291, 50292, 50293, 50294, 50295, 50296, 50297, 50298,
-                50299, 50300, 50301, 50302, 50303, 50304, 50305, 50306, 50307, 50308, 50309, 50310, 50311, 50312, 50313, 50314, 50315, 50316, 50317, 50318,
-                50319, 50320, 50321, 50322, 50323, 50324, 50325, 50326, 50327, 50328, 50329, 50330, 50331, 50332, 50333, 50334, 50335, 50336, 50337, 50338,
-                50339, 50340, 50341, 50342, 50343, 50344, 50345, 50346, 50347, 50348, 50349, 50350, 50351, 50352, 50353, 50354, 50355, 50356, 50357, 50358
-        };
-        for (int i = 0; i < codes.length; i++) {
-            LANGUAGE_IDS.put(codes[i], ids[i]);
-        }
-    }
-
     private final OrtEnvironment env;
     private final OrtSession encoder;
     private final OrtSession decoder;
@@ -78,6 +56,7 @@ public class WhisperTurboEngine {
     private int textLimit = 50257;
     private int firstLanguage = 50259;
     private int lastLanguage = 50358;
+    private final boolean largeV3;
     private final int[] byteToUnicode = new int[256];
     private final HashMap<Integer, Integer> unicodeToByte = new HashMap<>();
     private final float[] cosTable;
@@ -98,7 +77,7 @@ public class WhisperTurboEngine {
         // <|yue|> at 50358, so <|transcribe|> is 50360 and <|notimestamps|> is 50364.
         // whisper-small has no yue token and still uses 50359 / 50363. The small ids
         // make turbo read the prompt as translate + nospeech and emit <|transcribe|>.
-        boolean largeV3 = nMels >= 128;
+        largeV3 = nMels >= 128;
         sot = tokenId("<|startoftranscript|>", 50258);
         eos = tokenId("<|endoftext|>", 50257);
         transcribe = tokenId("<|transcribe|>", largeV3 ? 50360 : 50359);
@@ -140,7 +119,16 @@ public class WhisperTurboEngine {
     }
 
     public Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage) throws OrtException, IOException {
-        return transcribe(samples, languageCode, languageCode2, softLanguage, Integer.MAX_VALUE);
+        return transcribe(samples, languageCode, languageCode2, softLanguage, -1, Integer.MAX_VALUE);
+    }
+
+    /**
+     * @param allowedSwitchId absolute token the soft prompt may switch to, usually the
+     *                        target language. Any other language keeps the requested one.
+     */
+    public Transcripts transcribe(float[] samples, String languageCode, String languageCode2,
+                                  boolean softLanguage, int allowedSwitchId) throws OrtException, IOException {
+        return transcribe(samples, languageCode, languageCode2, softLanguage, allowedSwitchId, Integer.MAX_VALUE);
     }
 
     /**
@@ -148,10 +136,11 @@ public class WhisperTurboEngine {
      * enough to stall capture, so it runs before the microphone opens.
      */
     public void warmup() throws OrtException, IOException {
-        transcribe(new float[SAMPLE_RATE], "en", null, false, 1);
+        transcribe(new float[SAMPLE_RATE], "en", null, false, -1, 1);
     }
 
-    private Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage, int decoderSteps) throws OrtException, IOException {
+    private Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage,
+                                   int allowedSwitchId, int decoderSteps) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcripts("", 0, null, 0);
         }
@@ -179,18 +168,20 @@ public class WhisperTurboEngine {
         try {
             boolean hintLanguage = softLanguage && languageCode2 == null;
             int encoderFrames = encoderFrames(hidden);
-            Hypothesis first = decode(hidden, frames, encoderFrames, hintLanguage ? languageHint(languageCode) : languageId(languageCode), hintLanguage, decoderSteps);
+            Hypothesis first = decode(hidden, frames, encoderFrames, hintLanguage ? languageHint(languageCode) : languageId(languageCode),
+                    hintLanguage, hintLanguage ? allowedSwitchId : -1, decoderSteps);
             if (languageCode2 == null) {
                 return new Transcripts(first.text, first.score, null, 0);
             }
-            Hypothesis second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, decoderSteps);
+            Hypothesis second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, -1, decoderSteps);
             return new Transcripts(first.text, first.score, second.text, second.score);
         } finally {
             hidden.close();
         }
     }
 
-    private Hypothesis decode(OnnxTensor hidden, int frames, int encoderFrames, int languageId, boolean softLanguage, int decoderSteps) throws OrtException, IOException {
+    private Hypothesis decode(OnnxTensor hidden, int frames, int encoderFrames, int languageId, boolean softLanguage,
+                              int allowedSwitchId, int decoderSteps) throws OrtException, IOException {
         ArrayList<Integer> produced = new ArrayList<>();
         Map<String, OnnxTensor> cache = new HashMap<>();
         int position = 0;
@@ -199,13 +190,16 @@ public class WhisperTurboEngine {
             Step sotStep = runDecoder(hidden, encoderFrames, new int[]{sot}, 0, cache, true);
             cache = sotStep.cache;
             position = 1;
-            int chosen = AsrLanguageHint.choose(sotStep.languageLogits, firstLanguage, languageId);
+            boolean allowSwitch = allowedSwitchId >= firstLanguage && allowedSwitchId <= lastLanguage;
+            int chosen = AsrLanguageHint.choose(sotStep.languageLogits, firstLanguage, languageId, allowSwitch, allowedSwitchId);
             if (chosen < firstLanguage || chosen > lastLanguage) {
                 chosen = languageId >= firstLanguage && languageId <= lastLanguage ? languageId : firstLanguage;
             }
-            if (languageId >= firstLanguage && chosen != languageId) {
-                Log.i("recognizer", "simultaneous language token " + languageId + " -> " + chosen);
-            }
+            Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
+                    + " soft=true requested=" + AsrLanguages.whisperCode(languageId, largeV3)
+                    + " chosen=" + AsrLanguages.whisperCode(chosen, largeV3)
+                    + " allowed=" + (allowSwitch ? AsrLanguages.whisperCode(allowedSwitchId, largeV3) : "none")
+                    + " top2=" + topTwo(sotStep.languageLogits));
             prompt = new int[]{chosen, transcribe, noTimestamps};
         } else {
             prompt = new int[]{sot, languageId, transcribe, noTimestamps};
@@ -476,15 +470,10 @@ public class WhisperTurboEngine {
 
     private int languageId(String language) throws IOException {
         if (language == null || language.isEmpty()) {
-            return LANGUAGE_IDS.get("en");
+            return AsrLanguages.whisperToken("en", largeV3);
         }
-        String code = language.toLowerCase(Locale.US);
-        int dash = code.indexOf('-');
-        if (dash > 0) {
-            code = code.substring(0, dash);
-        }
-        Integer id = LANGUAGE_IDS.get(code);
-        if (id == null) {
+        int id = AsrLanguages.whisperToken(language, largeV3);
+        if (id < firstLanguage || id > lastLanguage) {
             throw new IOException("Whisper has no language " + language);
         }
         return id;
@@ -495,8 +484,35 @@ public class WhisperTurboEngine {
         if (language == null || language.isEmpty()) {
             return -1;
         }
-        Integer id = LANGUAGE_IDS.get(AsrLanguageHint.baseCode(language));
-        return id == null ? -1 : id;
+        int id = AsrLanguages.whisperToken(language, largeV3);
+        return id < firstLanguage || id > lastLanguage ? -1 : id;
+    }
+
+    /** Top two language scores for the diagnostics log. No transcript content. */
+    private String topTwo(float[] logits) {
+        if (logits == null || logits.length == 0) {
+            return "na";
+        }
+        int first = -1;
+        int second = -1;
+        for (int i = 0; i < logits.length; i++) {
+            if (first < 0 || logits[i] > logits[first]) {
+                second = first;
+                first = i;
+            } else if (second < 0 || logits[i] > logits[second]) {
+                second = i;
+            }
+        }
+        StringBuilder text = new StringBuilder();
+        text.append(AsrLanguages.whisperCode(firstLanguage + first, largeV3)).append(':').append(score(logits[first]));
+        if (second >= 0) {
+            text.append(',').append(AsrLanguages.whisperCode(firstLanguage + second, largeV3)).append(':').append(score(logits[second]));
+        }
+        return text.toString();
+    }
+
+    private static String score(float value) {
+        return Float.toString(Math.round(value * 10f) / 10f);
     }
 
     private String encoderInputName() throws OrtException {

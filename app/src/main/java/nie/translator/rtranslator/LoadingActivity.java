@@ -541,7 +541,7 @@ public class LoadingActivity extends GeneralActivity {
         if(global.isUseTatoeba() && !DownloadManager.isDownloadCompleted(saved, global.getTatoebaDownloadInfo())){
             return false;
         }
-        if (global.isSimultaneousVadSegmentation() && !DownloadManager.isDownloadCompleted(saved, global.getSileroVadDownloadInfo())) {
+        if (global.isSimultaneousVadSegmentation() && !DownloadManager.isDownloadCompleted(saved, global.getVadDownloadInfo())) {
             return false;
         }
         android.util.Log.i("performance", "checkIfResourcesPreferencesRespectDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");
@@ -614,8 +614,15 @@ public class LoadingActivity extends GeneralActivity {
             editor.putBoolean("useTatoeba", false);
             editor.apply();
         }
-        if (!DownloadManager.isDownloadCompleted(saved, global.getSileroVadDownloadInfo())) {
-            global.setSimultaneousVadSegmentation(false);
+        // FireRed is the default VAD, but an upgraded install may only have Silero.
+        // Move the preference to whatever is downloaded before disabling segmentation.
+        if (global.isSimultaneousVadSegmentation() && !DownloadManager.isDownloadCompleted(saved, global.getVadDownloadInfo())) {
+            int fallback = global.getVadModel() == Global.VAD_FIRERED ? Global.VAD_SILERO : Global.VAD_FIRERED;
+            if (DownloadManager.isDownloadCompleted(saved, global.getVadDownloadInfo(fallback))) {
+                global.setVadModel(fallback);
+            } else {
+                global.setSimultaneousVadSegmentation(false);
+            }
         }
         android.util.Log.i("performance", "adaptResourcesPreferencesToDownloads done in: " + (System.currentTimeMillis() - initTime) + "ms");
     }

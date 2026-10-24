@@ -21,7 +21,7 @@ import ai.onnxruntime.OrtSession;
  * LSTM state and the 64-sample context stay across clause cuts and are
  * cleared when the speaker stops.
  */
-public final class SileroClauseVad {
+public final class SileroClauseVad implements ClauseVad {
     private static final String TAG = "silero-vad";
     private static final int STATE_SIZE = 2 * 128;
 
@@ -58,6 +58,7 @@ public final class SileroClauseVad {
      * Speech probability for one 512-sample 16-bit frame.
      * Samples use the same scale as the recorder: full scale is 32768.
      */
+    @Override
     public float probability(short[] frame) throws OrtException {
         if (session == null) {
             throw new OrtException("clause VAD session is closed");
@@ -95,6 +96,7 @@ public final class SileroClauseVad {
      * the audio thread and overrun {@code AudioRecord}. Call this before
      * capture starts, then the state is cleared so the silence is not context.
      */
+    @Override
     public void warmup() {
         short[] silence = new short[ClauseVadSegmenter.FRAME_SAMPLES];
         try {
@@ -106,6 +108,7 @@ public final class SileroClauseVad {
         }
     }
 
+    @Override
     public void resetState() {
         for (int i = 0; i < state.length; i++) {
             state[i] = 0f;
@@ -113,6 +116,7 @@ public final class SileroClauseVad {
         window.reset();
     }
 
+    @Override
     public void close() {
         OrtSession open = session;
         session = null;

@@ -1,6 +1,7 @@
 package nie.translator.rtranslator.voice_translation.neural_networks.voice;
 
 import android.util.JsonReader;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -25,6 +26,7 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import nie.translator.rtranslator.tools.AsrLanguages;
 
 /**
  * Qwen3-ASR ONNX runner (encoder + decoder_init + decoder_step).
@@ -58,6 +60,7 @@ public class Qwen3AsrEngine {
     private final long[] eosIds;
     private final HashMap<Integer, String> idToToken = new HashMap<>();
     private final HashMap<String, Integer> tokenToId = new HashMap<>();
+    private int maxTokenLength = 1;
     private final File embedFile;
     private final int[] byteToUnicode = new int[256];
     private final HashMap<Integer, Integer> unicodeToByte = new HashMap<>();
@@ -119,7 +122,23 @@ public class Qwen3AsrEngine {
     }
 
     public Transcript transcribe(float[] samples) throws OrtException, IOException {
-        return transcribe(samples, Integer.MAX_VALUE);
+        return transcribe(samples, Integer.MAX_VALUE, null, null);
+    }
+
+    /**
+     * Transcribes with the configured language written into the assistant turn.
+     * The model normally starts with {@code language <Name><asr_text>}; feeding
+     * that prefix back as prompt tokens turns the self-reported language into a
+     * condition. Falls back to the free decode when the prefix cannot be encoded.
+     */
+    public Transcript transcribe(float[] samples, String languageCode) throws OrtException, IOException {
+        String name = AsrLanguages.qwenName(languageCode);
+        long[] prefix = name == null ? null : tokenizePrefix("language " + name);
+        if (prefix == null) {
+            Log.i("asrLanguage", "model=qwen prefixFallback requested=" + languageCode);
+            return transcribe(samples, Integer.MAX_VALUE, null, null);
+        }
+        return transcribe(samples, Integer.MAX_VALUE, prefix, languageCode);
     }
 
     /**
@@ -127,10 +146,10 @@ public class Qwen3AsrEngine {
      * enough to stall capture, so it runs before the microphone opens.
      */
     public void warmup() throws OrtException, IOException {
-        transcribe(new float[SAMPLE_RATE], 2);
+        transcribe(new float[SAMPLE_RATE], 2, null, null);
     }
 
-    private Transcript transcribe(float[] samples, int decoderSteps) throws OrtException, IOException {
+    private Transcript transcribe(float[] samples, int decoderSteps, long[] prefix, String forcedLanguage) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcript("", null);
         }
@@ -153,6 +172,12 @@ public class Qwen3AsrEngine {
         // Empty system turn, then the user audio turn. The ONNX decoder scatters
         // encoder features at the first <|audio_pad|>, so the offset is that index.
         long[] prompt = buildPrompt(audioTokens, roles[0], roles[1], roles[2], roles[3]);
+        if (prefix != null && prefix.length > 0) {
+            long[] forcedPrompt = new long[prompt.length + prefix.length];
+            System.arraycopy(prompt, 0, forcedPrompt, 0, prompt.length);
+            System.arraycopy(prefix, 0, forcedPrompt, prompt.length, prefix.length);
+            prompt = forcedPrompt;
+        }
         int promptLen = prompt.length;
         int audioOffset = 0;
         for (int i = 0; i < promptLen; i++) {
@@ -189,11 +214,15 @@ public class Qwen3AsrEngine {
         int last = (int) logits.shape[1] - 1;
         long token = argmax(logits.data, last * vocab, vocab);
         ArrayList<Long> generated = new ArrayList<>();
-        generated.add(token);
         int cap = tokenCap(samples.length);
         long position = promptLen;
         boolean eos = isEos(token);
         int stepLimit = Math.min(cap, Math.max(1, decoderSteps));
+        // The teacher-forced prefix ends at the language name, so the expected next
+        // token is <|asr_text|>; it separates the prefix from the transcript.
+        if (!eos && !(forcedLanguage != null && token == ASR_TEXT)) {
+            generated.add(token);
+        }
         for (int step = 1; step < stepLimit && !eos; step++) {
             float[] embed = lookupEmbed(token);
             OnnxTensor embedTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(embed), new long[]{1, 1, hiddenSize});
@@ -222,6 +251,9 @@ public class Qwen3AsrEngine {
                 break;
             }
             generated.add(token);
+        }
+        if (forcedLanguage != null) {
+            return decodeForced(generated, forcedLanguage);
         }
         return decode(generated);
     }
@@ -254,6 +286,30 @@ public class Qwen3AsrEngine {
             }
         }
         return new Transcript(text, language);
+    }
+
+    /** The forced prefix already contains the language, so only the tail is text. */
+    private Transcript decodeForced(ArrayList<Long> generated, String languageCode) {
+        int split = -1;
+        for (int i = 0; i < generated.size(); i++) {
+            if (generated.get(i) == ASR_TEXT) {
+                split = i;
+                break;
+            }
+        }
+        String text;
+        if (split >= 0) {
+            text = decodeIds(generated, split + 1, generated.size()).trim();
+        } else {
+            text = decodeIds(generated, 0, generated.size()).trim();
+            if (text.startsWith("language ")) {
+                int newline = text.indexOf('\n');
+                if (newline > 9) {
+                    text = text.substring(newline + 1).trim();
+                }
+            }
+        }
+        return new Transcript(text, languageCode, true);
     }
 
     private String decodeIds(ArrayList<Long> ids, int from, int to) {
@@ -295,22 +351,68 @@ public class Qwen3AsrEngine {
         if (name.startsWith("language ")) {
             name = name.substring(9).trim();
         }
-        String[][] table = new String[][]{
-                {"Chinese", "zh"}, {"English", "en"}, {"Cantonese", "yue"}, {"Arabic", "ar"},
-                {"German", "de"}, {"French", "fr"}, {"Spanish", "es"}, {"Portuguese", "pt"},
-                {"Indonesian", "id"}, {"Italian", "it"}, {"Korean", "ko"}, {"Russian", "ru"},
-                {"Thai", "th"}, {"Vietnamese", "vi"}, {"Japanese", "ja"}, {"Turkish", "tr"},
-                {"Hindi", "hi"}, {"Malay", "ms"}, {"Dutch", "nl"}, {"Swedish", "sv"},
-                {"Danish", "da"}, {"Finnish", "fi"}, {"Polish", "pl"}, {"Czech", "cs"},
-                {"Filipino", "fil"}, {"Persian", "fa"}, {"Greek", "el"}, {"Hungarian", "hu"},
-                {"Macedonian", "mk"}, {"Romanian", "ro"}
-        };
-        for (String[] row : table) {
-            if (row[0].equalsIgnoreCase(name)) {
-                return row[1];
-            }
+        String code = AsrLanguages.qwenCode(name);
+        return code.isEmpty() ? name.toLowerCase(Locale.US) : code;
+    }
+
+    /** Encodes "language <Name>" and verifies the byte-level round trip. */
+    private long[] tokenizePrefix(String text) {
+        int[] ids = tokenize(text, tokenToId, maxTokenLength, byteToUnicode);
+        if (ids == null || ids.length == 0) {
+            return null;
         }
-        return name.toLowerCase(Locale.US);
+        ArrayList<Long> boxed = new ArrayList<>(ids.length);
+        for (int id : ids) {
+            boxed.add((long) id);
+        }
+        if (!text.equals(decodeIds(boxed, 0, boxed.size()))) {
+            return null;
+        }
+        long[] out = new long[ids.length];
+        for (int i = 0; i < ids.length; i++) {
+            out[i] = ids[i];
+        }
+        return out;
+    }
+
+    /**
+     * Byte-level BPE greedy match. The Qwen vocabulary is part of the downloaded
+     * model, so this runs with the same token strings the decoder uses.
+     */
+    static int[] tokenize(String text, Map<String, Integer> vocab, int maxTokenLength, int[] byteToUnicode) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        StringBuilder mapped = new StringBuilder(bytes.length);
+        for (byte b : bytes) {
+            mapped.append((char) byteToUnicode[b & 0xff]);
+        }
+        ArrayList<Integer> ids = new ArrayList<>();
+        int index = 0;
+        while (index < mapped.length()) {
+            int found = -1;
+            int length = 0;
+            int max = Math.min(maxTokenLength, mapped.length() - index);
+            for (int candidate = max; candidate >= 1; candidate--) {
+                Integer id = vocab.get(mapped.substring(index, index + candidate));
+                if (id != null) {
+                    found = id;
+                    length = candidate;
+                    break;
+                }
+            }
+            if (found < 0) {
+                return null;
+            }
+            ids.add(found);
+            index += length;
+        }
+        int[] out = new int[ids.size()];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = ids.get(i);
+        }
+        return out;
     }
 
     private float[] lookupEmbed(long tokenId) throws IOException {
@@ -510,6 +612,9 @@ public class Qwen3AsrEngine {
                                 int id = reader.nextInt();
                                 idToToken.put(id, token);
                                 tokenToId.put(token, id);
+                                if (token.length() > maxTokenLength) {
+                                    maxTokenLength = token.length();
+                                }
                             }
                             reader.endObject();
                         } else {
@@ -647,10 +752,17 @@ public class Qwen3AsrEngine {
     public static final class Transcript {
         public final String text;
         public final String languageCode;
+        /** True when the language was forced into the prompt instead of detected. */
+        public final boolean forced;
 
         Transcript(String text, String languageCode) {
+            this(text, languageCode, false);
+        }
+
+        Transcript(String text, String languageCode, boolean forced) {
             this.text = text == null ? "" : text;
             this.languageCode = languageCode;
+            this.forced = forced;
         }
     }
 

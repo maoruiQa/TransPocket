@@ -55,7 +55,7 @@ TalkBack 正在播时，如果没有走蓝牙 SCO，`readAudio` 会把刚读到�
 
 ## 2. Whisper 怎么转写这一句
 
-实现在 `Recognizer`。模型是拆开的 Whisper Small ONNX，带 KV cache：
+实现在 `Recognizer`。3.0 用 `WhisperTurboEngine`（合并解码器图）跑 Whisper Small 和 large-v3-turbo。下面这套拆开的 Whisper Small 图只用于早于模型包的旧安装：
 
 | 文件 | 作用 |
 | --- | --- |
@@ -107,6 +107,15 @@ WalkieTalkie 对同一段音频调用 `recognize(data, beam, lang1, lang2)`。�
 因此一句正常长度的话，WalkieTalkie 的语言选择经常落到 Whisper 的平均对数概率上，而不是 FastText。
 
 Conversation 不走双语言。它只用本机 `Global.getLanguage()` 做一次单语言识别，原文连同语言码发给对方，翻译在接收端做。
+
+## 3.1 语言锁定、输出守卫与四款 ASR 模型
+
+`Global.isAsrLanguageLock()`（默认 `true`，设置项 `asrLanguageLock`）决定一次识别能不能用所选语言以外的语言。
+
+- **Whisper Small / large-v3-turbo**（`WhisperTurboEngine`）：语言 token 来自 `AsrLanguages.whisperToken(code, largeV3)`。large-v3 有 100 个语言 token，Small 只有 99 个，所以 `yue` 回退到 `zh`。同声传译锁定时直接用固定 token 解码，不跑 SOT 探测。关闭锁定后，探测也只能切到本次会话的目标语言，并且仍要满足 `AsrLanguageHint` 的 2.0 提示加成和 1.5 切换余量。
+- **Qwen3-ASR 0.6B / 1.7B**（`Qwen3AsrEngine`）：`transcribe(samples, languageCode)` 在 assistant 回合后追加 `language <Name>`，让模型按指定语言解码，而不是自报语言。前缀用模型自己的 byte-level 词表编码；如果编码后无法还原成同一字符串，就退回无约束解码并记录 `prefixFallback`。
+- **`AsrLanguageGuard`**：按 Unicode 文字系统统计判断文本是否像所选语言；西里尔文再查专属字符 `ыэё`（俄语）和 `іїєґ`（乌克兰语）。锁定开启时 `CONFLICT` 变成 `[(und)]`。双语识别会否决冲突的一侧，让 `compareResults` 使用另一侧。少于 12 个字母的文本只算 `WEAK`，不拦截。
+- **诊断日志**：`Log.i("asrLanguage", ...)` 记录模型、软/硬模式、请求语言与最终语言、前二语言分数、守卫结论和耗时，不记录识别文本。
 
 ## 4. 翻译前的分句
 

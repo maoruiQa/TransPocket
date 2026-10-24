@@ -44,7 +44,9 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.extensions.OrtxPackage;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.AsrLanguageGuard;
 import nie.translator.rtranslator.tools.AsrLanguageHint;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.AsrRepetition;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
@@ -65,6 +67,8 @@ public class Recognizer extends NeuralNetworkApi {
     private final Object lock = new Object();
     private final Object warmupLock = new Object();
 
+    // Same order as AsrLanguages.whisperCodes(true). getLanguageID() resolves the
+    // code through AsrLanguages so Whisper Small never receives a large-v3-only id.
     private static final String[] LANGUAGES = {
             "en",
             "zh",
@@ -332,7 +336,14 @@ public class Recognizer extends NeuralNetworkApi {
      * the queue, in order. The source language is a hint, not a forced token.
      */
     public void recognizeLatest(final float[] data, int beamSize, final String languageCode) {
-        enqueue(new DataContainer(data, beamSize, languageCode, true));
+        recognizeLatest(data, beamSize, languageCode, null);
+    }
+
+    /**
+     * @param targetLanguageCode the only language an unlocked session may switch to
+     */
+    public void recognizeLatest(final float[] data, int beamSize, final String languageCode, final String targetLanguageCode) {
+        enqueue(new DataContainer(data, beamSize, languageCode, targetLanguageCode, true));
     }
 
     /**
@@ -549,13 +560,20 @@ public class Recognizer extends NeuralNetworkApi {
                     boolean isFirstIteration = true;  //It is used to avoid closing initialResult
                     int j = 1;
                     //first we run the decoder with the first 3 fixed values (START_TOKEN_ID, languageID, TRANSCRIBE_TOKEN_ID, NO_TIMESTAMPS_TOKEN_ID)
+                    final int firstLanguageToken = START_TOKEN_ID + 1;
+                    final int lastLanguageToken = TRANSCRIBE_TOKEN_ID - 2;
                     int languageID = getLanguageID(data.languageCode);
+                    if (languageID < firstLanguageToken || languageID > lastLanguageToken) {
+                        // A negative id would reach the embedding as the last vocabulary row.
+                        throw new IllegalArgumentException("Whisper Small has no language token for " + data.languageCode);
+                    }
                     int languageID2 = -1;
                     if(batchSize == 2){
                         languageID2 = getLanguageID(data.languageCode2);
+                        if (languageID2 < firstLanguageToken || languageID2 > lastLanguageToken) {
+                            throw new IllegalArgumentException("Whisper Small has no language token for " + data.languageCode2);
+                        }
                     }
-                    final int firstLanguageToken = START_TOKEN_ID + 1;
-                    final int lastLanguageToken = TRANSCRIBE_TOKEN_ID - 2;
                     int hintedLanguage = languageID;
                     if (hintedLanguage < firstLanguageToken || hintedLanguage > lastLanguageToken) {
                         hintedLanguage = -1;
@@ -619,10 +637,19 @@ public class Recognizer extends NeuralNetworkApi {
                             if (data.softLanguage && batchSize == 1 && j == 1 && outputValues.length > lastLanguageToken) {
                                 float[] languageLogits = new float[lastLanguageToken - firstLanguageToken + 1];
                                 System.arraycopy(outputValues, firstLanguageToken, languageLogits, 0, languageLogits.length);
-                                int picked = AsrLanguageHint.choose(languageLogits, firstLanguageToken, hintedLanguage);
+                                int picked;
+                                if (global.isAsrLanguageLock()) {
+                                    picked = hintedLanguage;
+                                } else {
+                                    int allowed = AsrLanguages.whisperToken(data.languageCodeSwitch, false);
+                                    picked = AsrLanguageHint.choose(languageLogits, firstLanguageToken, hintedLanguage,
+                                            allowed >= firstLanguageToken && allowed <= lastLanguageToken, allowed);
+                                }
                                 if (picked >= firstLanguageToken && picked <= lastLanguageToken) {
                                     if (hintedLanguage >= 0 && picked != hintedLanguage) {
-                                        Log.i("recognizer", "simultaneous language token " + hintedLanguage + " -> " + picked);
+                                        Log.i("asrLanguage", "model=whisper-small-legacy requested="
+                                                + AsrLanguages.whisperCode(hintedLanguage, false)
+                                                + " chosen=" + AsrLanguages.whisperCode(picked, false));
                                     }
                                     chosenLanguage = picked;
                                 }
@@ -699,7 +726,7 @@ public class Recognizer extends NeuralNetworkApi {
                         android.util.Log.i("score", "score: " + outputProbability1);
 
                         outputs.close();
-                        notifyResult(correctText(finalText), data.languageCode, outputProbability1, true);
+                        notifyResult(guardSingle(correctText(finalText), data.languageCode), data.languageCode, outputProbability1, true);
 
                     }else{
                         String firstText = UNDEFINED_TEXT;
@@ -728,7 +755,8 @@ public class Recognizer extends NeuralNetworkApi {
                         android.util.Log.i("result", "score 1: " + outputProbability1);
                         android.util.Log.i("result", "score 2: " + outputProbability2);
 
-                        notifyMultiResult(correctText(firstText), data.languageCode, outputProbability1, correctText(secondText), data.languageCode2, outputProbability2);
+                        String[] guarded = guardPair(correctText(firstText), data.languageCode, correctText(secondText), data.languageCode2);
+                        notifyMultiResult(guarded[0], data.languageCode, outputProbability1, guarded[1], data.languageCode2, outputProbability2);
                     }
                     //closing all results
                     outputs.close();
@@ -836,12 +864,30 @@ public class Recognizer extends NeuralNetworkApi {
 
     private void recognizeWithTurbo(DataContainer data) {
         try {
+            long started = SystemClock.elapsedRealtime();
             boolean softLanguage = data.softLanguage && data.languageCode2 == null;
-            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2, softLanguage);
+            boolean largeV3 = global.getAsrModel() == Global.ASR_WHISPER_TURBO;
+            int allowedSwitchId = -1;
+            if (softLanguage) {
+                if (global.isAsrLanguageLock()) {
+                    // A locked clause is decoded with the configured token, so it cannot drift.
+                    softLanguage = false;
+                } else {
+                    allowedSwitchId = AsrLanguages.whisperToken(data.languageCodeSwitch, largeV3);
+                }
+            }
+            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2, softLanguage, allowedSwitchId);
+            Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
+                    + " soft=" + softLanguage + " requested=" + data.languageCode
+                    + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
             if (data.languageCode2 == null) {
-                notifyResult(correctText(transcripts.firstText), data.languageCode, transcripts.firstScore, true);
+                String text = guardSingle(correctText(transcripts.firstText), data.languageCode);
+                notifyResult(text, data.languageCode, transcripts.firstScore, true);
             } else {
-                notifyMultiResult(correctText(transcripts.firstText), data.languageCode, transcripts.firstScore, correctText(transcripts.secondText), data.languageCode2, transcripts.secondScore);
+                String first = correctText(transcripts.firstText);
+                String second = correctText(transcripts.secondText);
+                String[] guarded = guardPair(first, data.languageCode, second, data.languageCode2);
+                notifyMultiResult(guarded[0], data.languageCode, transcripts.firstScore, guarded[1], data.languageCode2, transcripts.secondScore);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -851,15 +897,48 @@ public class Recognizer extends NeuralNetworkApi {
 
     private void recognizeWithQwen(DataContainer data) {
         try {
+            long started = SystemClock.elapsedRealtime();
+            String model = global.getAsrModel() == Global.ASR_QWEN3_17 ? "qwen1.7b" : "qwen0.6b";
+            if (data.languageCode2 == null) {
+                String requested = data.languageCode;
+                Qwen3AsrEngine.Transcript transcript = requested != null && !requested.isEmpty()
+                        ? qwenEngine.transcribe(data.data, requested)
+                        : qwenEngine.transcribe(data.data);
+                String text = correctText(transcript.text);
+                String language = requested != null && !requested.isEmpty() ? requested : transcript.languageCode;
+                Log.i("asrLanguage", "model=" + model + " soft=false requested=" + language
+                        + " forced=" + transcript.forced + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
+                notifyResult(guardSingle(text, language), language, 1, true);
+                return;
+            }
             Qwen3AsrEngine.Transcript transcript = qwenEngine.transcribe(data.data);
             String text = correctText(transcript.text);
-            if (data.languageCode2 == null) {
-                String language = data.languageCode != null ? data.languageCode : transcript.languageCode;
-                notifyResult(text, language, 1, true);
-            } else if (sameLanguage(data.languageCode2, transcript.languageCode) && !sameLanguage(data.languageCode, transcript.languageCode)) {
-                notifyMultiResult(UNDEFINED_TEXT, data.languageCode, 0, text, data.languageCode2, 1);
+            boolean second = sameLanguage(data.languageCode2, transcript.languageCode)
+                    && !sameLanguage(data.languageCode, transcript.languageCode);
+            String language = second ? data.languageCode2 : data.languageCode;
+            if (AsrLanguageGuard.analyze(text, language).verdict == AsrLanguageGuard.Verdict.CONFLICT) {
+                // One bounded retry with the other side forced into the prompt.
+                String other = second ? data.languageCode : data.languageCode2;
+                Qwen3AsrEngine.Transcript forced = qwenEngine.transcribe(data.data, other);
+                String forcedText = correctText(forced.text);
+                // MATCH, not just "no conflict": a short forced result has no evidence.
+                if (forced.forced && AsrLanguageGuard.analyze(forcedText, other).verdict == AsrLanguageGuard.Verdict.MATCH) {
+                    Log.i("asrLanguage", "model=qwen retry=" + AsrLanguages.displayName(other));
+                    text = forcedText;
+                    second = !second;
+                }
+            }
+            Log.i("asrLanguage", "model=" + model + " soft=false requested="
+                    + (second ? data.languageCode2 : data.languageCode)
+                    + " detected=" + transcript.languageCode
+                    + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
+            String[] guarded = second
+                    ? guardPair(UNDEFINED_TEXT, data.languageCode, text, data.languageCode2)
+                    : guardPair(text, data.languageCode, UNDEFINED_TEXT, data.languageCode2);
+            if (second) {
+                notifyMultiResult(guarded[0], data.languageCode, 0, guarded[1], data.languageCode2, 1);
             } else {
-                notifyMultiResult(text, data.languageCode, 1, UNDEFINED_TEXT, data.languageCode2, 0);
+                notifyMultiResult(guarded[0], data.languageCode, 1, guarded[1], data.languageCode2, 0);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -868,31 +947,61 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     private static boolean sameLanguage(String requested, String detected) {
-        if (requested == null || detected == null || requested.isEmpty() || detected.isEmpty()) {
-            return false;
+        return AsrLanguages.sameLanguage(requested, detected);
+    }
+
+    /**
+     * A conflict is only vetoed when the lock is on; with the lock off the old
+     * behaviour is kept and the diagnostics log is the only change.
+     */
+    private String guardSingle(String text, String languageCode) {
+        if (!hasText(text)) {
+            return text;
         }
-        String left = requested.toLowerCase(java.util.Locale.US);
-        String right = detected.toLowerCase(java.util.Locale.US);
-        int dash = left.indexOf('-');
-        if (dash > 0) {
-            left = left.substring(0, dash);
+        AsrLanguageGuard.Result result = logGuard(text, languageCode);
+        if (result.verdict == AsrLanguageGuard.Verdict.CONFLICT && global.isAsrLanguageLock()) {
+            Log.i("asrLanguage", "veto=single reason=" + result.reason + " requested=" + AsrLanguages.displayName(languageCode));
+            return UNDEFINED_TEXT;
         }
-        dash = right.indexOf('-');
-        if (dash > 0) {
-            right = right.substring(0, dash);
+        return text;
+    }
+
+    /** Vetoes one side of a bilingual result only when the other side has no conflict. */
+    private String[] guardPair(String firstText, String firstLanguage, String secondText, String secondLanguage) {
+        AsrLanguageGuard.Result first = hasText(firstText) ? logGuard(firstText, firstLanguage) : null;
+        AsrLanguageGuard.Result second = hasText(secondText) ? logGuard(secondText, secondLanguage) : null;
+        boolean firstConflict = first != null && first.verdict == AsrLanguageGuard.Verdict.CONFLICT;
+        boolean secondConflict = second != null && second.verdict == AsrLanguageGuard.Verdict.CONFLICT;
+        if (firstConflict && !secondConflict) {
+            Log.i("asrLanguage", "veto=first reason=" + first.reason);
+            return new String[]{UNDEFINED_TEXT, secondText};
         }
-        return left.equals(right);
+        if (secondConflict && !firstConflict) {
+            Log.i("asrLanguage", "veto=second reason=" + second.reason);
+            return new String[]{firstText, UNDEFINED_TEXT};
+        }
+        return new String[]{firstText, secondText};
+    }
+
+    private static boolean hasText(String text) {
+        return text != null && !text.isEmpty() && !UNDEFINED_TEXT.equals(text);
+    }
+
+    private AsrLanguageGuard.Result logGuard(String text, String languageCode) {
+        AsrLanguageGuard.Result result = AsrLanguageGuard.analyze(text, languageCode);
+        Log.i("asrLanguage", "guard=" + result.verdict + " reason=" + result.reason
+                + " requested=" + AsrLanguages.displayName(languageCode)
+                + " letters=" + result.letters + " len=" + text.length());
+        return result;
     }
 
     public int getLanguageID(String language){
-        String code = AsrLanguageHint.baseCode(language);
-        for (int i = 0; i < LANGUAGES.length; i++) {
-            if (LANGUAGES[i].equals(code)) {
-                return START_TOKEN_ID + i + 1;
-            }
+        // The old split graph is Whisper Small, so large-v3-only tokens are not valid here.
+        int id = AsrLanguages.whisperToken(language, false);
+        if (id < 0) {
+            Log.e("recognizer", "Error converting language code " + language + " to a Whisper Small token");
         }
-        Log.e("error", "Error Converting Language code " + language + " to Whisper code");
-        return -1;
+        return id;
     }
 
     /** Drops a trailing end token and a repeated tail. An empty result is left for the caller to skip. */
@@ -971,6 +1080,7 @@ public class Recognizer extends NeuralNetworkApi {
         private float[] data;
         private String languageCode;
         private String languageCode2;
+        private String languageCodeSwitch;
         private int beamSize;
         private boolean softLanguage;
 
@@ -986,6 +1096,14 @@ public class Recognizer extends NeuralNetworkApi {
             this.beamSize = beamSize;
             this.languageCode = languageCode;
             this.languageCode2 = languageCode2;
+        }
+
+        private DataContainer(float[] data, int beamSize, String languageCode, String targetLanguageCode, boolean softLanguage){
+            this.data = data;
+            this.beamSize = beamSize;
+            this.languageCode = languageCode;
+            this.languageCodeSwitch = targetLanguageCode;
+            this.softLanguage = softLanguage;
         }
     }
 }

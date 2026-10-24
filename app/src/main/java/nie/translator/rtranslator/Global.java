@@ -126,9 +126,11 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private final Object lock = new Object();
     private boolean useTatoeba;
     private boolean simultaneousVadSegmentation;
+    private int vadModel;
     private boolean useTranslationDictionaries;
     private boolean useMozillaForVoiceTranslation;
     private boolean whisperReducedRam;
+    private boolean asrLanguageLock;
     private int translationMode;
     public static final int ASR_WHISPER = 0;
     public static final int ASR_QWEN3_06 = 1;
@@ -138,6 +140,10 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public static final int ASR_QUANT_INT8 = 1;
     public static final int ASR_QUANT_FP16 = 2;
     public static final int ASR_QUANT_FP32 = 3;
+    /** Order matches res/values/arrays.xml vad_model_entries. FireRed is the default choice. */
+    public static final int VAD_FIRERED = 0;
+    public static final int VAD_SILERO = 1;
+    public static final int DEFAULT_VAD_MODEL = VAD_FIRERED;
     public static final String GEMMA_THINKING_OFF = "off";
     public static final String GEMMA_THINKING_LOW = "low";
     public static final String GEMMA_THINKING_MEDIUM = "medium";
@@ -169,8 +175,12 @@ public class Global extends Application implements DefaultLifecycleObserver {
         useTranslationDictionaries = sharedPreferences.getBoolean("useTranslationDictionaries", false);
         useMozillaForVoiceTranslation = sharedPreferences.getBoolean("useMozillaForVoiceTranslation", false);
         whisperReducedRam = sharedPreferences.getBoolean("whisperReducedRam", getTotalRamSize() <= 7000);
+        // The configured source language is the decoder condition by default; simultaneous
+        // interpretation can opt back into clause-by-clause switching.
+        asrLanguageLock = sharedPreferences.getBoolean("asrLanguageLock", true);
         translationMode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
         asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_WHISPER);
+        vadModel = sharedPreferences.getInt("selectedVadModel", DEFAULT_VAD_MODEL) == VAD_SILERO ? VAD_SILERO : VAD_FIRERED;
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             REQUIRED_PERMISSIONS_PAIRING = new String[]{
@@ -586,6 +596,64 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public File getSileroVadFile() {
         return new File(getFilesDir(), "VAD/silero_vad.onnx");
+    }
+
+    /** The VAD model chosen in the model manager. Both use the same folder. */
+    public DownloadGroupInfo getVadDownloadInfo() {
+        return getVadDownloadInfo(vadModel);
+    }
+
+    public DownloadGroupInfo getVadDownloadInfo(int model) {
+        if (model != VAD_FIRERED) {
+            return getSileroVadDownloadInfo();
+        }
+        String folder = getFilesDir().getAbsolutePath() + "/VAD";
+        // Pinned to FireRedVAD commit 71352f2c (2026-03-12). The stream model needs the
+        // 8x128x19 packed cache ONNX and its CMVN statistics, 2306042 + 1311 bytes.
+        String baseUrl = "https://raw.githubusercontent.com/FireRedTeam/FireRedVAD/71352f2c93c110410189e0ed98ab85ea24e8ad1c/pretrained_models/onnx_models/";
+        return new DownloadGroupInfo(new DownloadInfo[]{
+                new DownloadInfo(
+                        "fireredvad_stream_vad_with_cache.onnx",
+                        baseUrl + "fireredvad_stream_vad_with_cache.onnx",
+                        folder,
+                        2252,
+                        false,
+                        false),
+                new DownloadInfo(
+                        "cmvn.ark",
+                        baseUrl + "cmvn.ark",
+                        folder,
+                        2,
+                        false,
+                        false)
+        });
+    }
+
+    public int getVadModel() {
+        return vadModel;
+    }
+
+    public void setVadModel(int model) {
+        vadModel = model == VAD_SILERO ? VAD_SILERO : VAD_FIRERED;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putInt("selectedVadModel", vadModel);
+        editor.apply();
+    }
+
+    public int vadDownloadSizeMb() {
+        long kb = 0;
+        for (DownloadInfo info : getVadDownloadInfo().downloadsInfo) {
+            kb += info.getSize();
+        }
+        return (int) Math.max(1L, (kb + 512L) / 1024L);
+    }
+
+    public File getFireRedVadFile() {
+        return new File(getFilesDir(), "VAD/fireredvad_stream_vad_with_cache.onnx");
+    }
+
+    public File getFireRedVadCmvnFile() {
+        return new File(getFilesDir(), "VAD/cmvn.ark");
     }
 
     public DownloadGroupInfo getTatoebaDownloadInfo(){
@@ -1512,6 +1580,17 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public boolean isUseTatoeba(){
         return useTatoeba;
+    }
+
+    public boolean isAsrLanguageLock() {
+        return asrLanguageLock;
+    }
+
+    public void setAsrLanguageLock(boolean lock) {
+        asrLanguageLock = lock;
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putBoolean("asrLanguageLock", lock);
+        editor.apply();
     }
 
     public boolean isSimultaneousVadSegmentation() {

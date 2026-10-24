@@ -34,6 +34,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.SwitchPreference;
 import androidx.preference.PreferenceGroupAdapter;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -158,6 +159,17 @@ public class SettingsFragment extends PreferenceFragmentCompat {
         micSensitivityExtendedPreference.setFragment(this);
         EchoCancellationPreference echoCancellationPreference = (EchoCancellationPreference) findPreference("echoCancellation");
         echoCancellationPreference.setFragment(this);
+
+        // The rest of the app reads the "default" file, not PreferenceManager's default.
+        SwitchPreference asrLanguageLockPreference = (SwitchPreference) findPreference("asrLanguageLock");
+        asrLanguageLockPreference.setChecked(global.isAsrLanguageLock());
+        asrLanguageLockPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setAsrLanguageLock((Boolean) newValue);
+                return true;
+            }
+        });
 
         // language support option with low quality initialization
         supportLanguagesQualityPreference = (SupportLanguagesQuality) findPreference("languagesNNQualityLow");

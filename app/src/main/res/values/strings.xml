@@ -184,7 +184,7 @@
     <string name="error_missing_madlad">You selected Madlad as a translation model, but it hasn\'t been downloaded yet. Please download the model before selecting it.</string>
     <string name="error_missing_mozilla_voice">You enabled the use of Mozilla models for WalkieTalkie and Conversation modes, but there are no downloaded Mozilla models. Please download them before enabling this option.</string>
     <string name="error_missing_tatoeba">You enabled Tatoeba but it hasn\'t been downloaded yet. Please download Tatoeba before enabling it.</string>
-    <string name="error_missing_vad">You enabled Silero VAD for simultaneous interpretation, but it hasn\'t been downloaded yet. Please download it before enabling it.</string>
+    <string name="error_missing_vad">You enabled VAD segmentation, but the selected VAD model hasn\'t been downloaded yet. Please download it before enabling it.</string>
     <string name="error_missing_general">Missing resource download</string>
     <string name="error_apply_unknown">Unknown error, please retry.</string>
     <string name="error_delete_last_download">This is the last downloaded translation model, you cannot delete all the translation models, please download another translation model before deleting this one.</string>
@@ -276,6 +276,7 @@
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
     <string name="description_asr_qwen17">Qwen3-ASR 1.7B. More accurate than the 0.6B model. Needs a phone with at least 8 GB of RAM.</string>
     <string name="asr_quantization">Quantization</string>
+    <string name="description_asr_quantization_advice">For Russian, Ukrainian, Bulgarian, and Macedonian, int8 or fp16 detects the language more reliably than int4.</string>
     <string name="error_missing_asr">Download the selected speech model before using it.</string>
     <string name="error_asr_ram">This phone does not have enough memory for the selected speech model.</string>
     <string name="model_recommendation_madlad">Recommended: Madlad. HY-MT is tight on this phone. Madlad fits and covers more languages. About %1$s GB of memory, %2$s GB free.</string>
@@ -287,9 +288,13 @@
     <string name="description_mozilla_voice">Use peformance models (Mozilla) for WalkieTalkie and Conversation modes to reduce latency in Real-Time translation modes, but with worse quality.</string>
     <string name="description_whisper_ram_reduction">Reduce RAM consumption of Whisper model from 900MB to 500MB, but reduces its execution speed by 24%.</string>
     <string name="description_tatoeba">Tatoeba dataset that will be used to improve the translation of some sentences</string>
-    <string name="title_vad_segmentation">Silero VAD</string>
-    <string name="description_vad_segmentation">On by default for simultaneous interpretation, and included in the first-time download. It cuts sentences on pauses in the voice. About 2 MB. When this is off, sentences are cut by a fixed pause and by punctuation.</string>
+    <string name="title_vad_segmentation">VAD segmentation</string>
+    <string name="title_vad_model">VAD model</string>
+    <string name="vad_model_firered">FireRedVAD</string>
+    <string name="vad_model_silero">Silero VAD</string>
+    <string name="description_vad_segmentation">On by default for simultaneous interpretation, and included in the first-time download. It cuts sentences on pauses in the voice. FireRedVAD is the default model; Silero VAD is the older one. About 2 MB. When this is off, sentences are cut by a fixed pause and by punctuation.</string>
     <string name="description_dictionaries">Translation dictionaries that will be used to improve the translation of single words.</string>
+    <string name="description_translation_enhancements">Off by default. Tatoeba examples and the translation dictionaries can replace the model output, so accuracy may drop for some language pairs.</string>
 
     <string name="preference_header_language">Language</string>
     <string name="preference_header_output">Output</string>
@@ -299,6 +304,8 @@
     <string name="preference_title_mic_sensitivity">Microphone sensitivity</string>
     <string name="preference_title_mic_sensitivity_extended">Extended sensitivity</string>
     <string name="preference_title_languages_quality">Support low quality languages</string>
+    <string name="preference_title_asr_language_lock">Lock speech recognition language</string>
+    <string name="preference_description_asr_language_lock">Keep the selected language for every recognition. Turn this off to let simultaneous interpretation switch to the target language. Recognition never switches to a third language.</string>
     <string name="preference_title_show_original_transcription">Show original transcriptions beyond the translation</string>
     <string name="preference_title_support_tts_quality">Support languages with low quality tts</string>
     <string name="preference_title_language">Personal language</string>

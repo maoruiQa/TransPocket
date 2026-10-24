@@ -89,6 +89,13 @@
             android:title="@string/preference_title_languages_quality"
             android:summary="@string/preference_description_languages_quality"
             app:iconSpaceReserved="false" />
+        <androidx.preference.SwitchPreference
+            android:defaultValue="true"
+            android:key="asrLanguageLock"
+            android:persistent="false"
+            android:title="@string/preference_title_asr_language_lock"
+            android:summary="@string/preference_description_asr_language_lock"
+            app:iconSpaceReserved="false" />
         <nie.translator.rtranslator.settings.SupportTtsQualityPreference
             android:defaultValue="false"
             android:key="languagesQualityLow"

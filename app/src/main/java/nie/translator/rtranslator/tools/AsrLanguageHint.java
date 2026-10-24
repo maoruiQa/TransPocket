@@ -1,11 +1,10 @@
 package nie.translator.rtranslator.tools;
 
-import java.util.Locale;
-
 /**
- * Picks a Whisper language token when simultaneous interpretation must not
- * lock the decoder to one language. The configured language receives a limited
- * bonus. Another language is used only when it still leads after that bonus.
+ * Picks a Whisper language token. The configured language receives a limited
+ * bonus. A locked session keeps it. An unlocked session may switch, but only to
+ * the language the user is translating into, and only when that language still
+ * leads after the bonus.
  */
 public final class AsrLanguageHint {
     public static final float HINT_BONUS = 2f;
@@ -16,19 +15,7 @@ public final class AsrLanguageHint {
 
     /** Language subtag only, so {@code zh-CN} and {@code zh_CN} both become {@code zh}. */
     public static String baseCode(String language) {
-        if (language == null) {
-            return "";
-        }
-        String code = language.trim().toLowerCase(Locale.US);
-        int dash = code.indexOf('-');
-        if (dash > 0) {
-            code = code.substring(0, dash);
-        }
-        int underscore = code.indexOf('_');
-        if (underscore > 0) {
-            code = code.substring(0, underscore);
-        }
-        return code;
+        return AsrLanguages.baseCode(language);
     }
 
     /**
@@ -37,10 +24,50 @@ public final class AsrLanguageHint {
      * @return absolute token id, or -1 when there are no logits and the hint is unusable
      */
     public static int choose(float[] languageLogits, int firstLanguageId, int hintedId) {
-        return choose(languageLogits, firstLanguageId, hintedId, HINT_BONUS, SWITCH_MARGIN);
+        return chooseAny(languageLogits, firstLanguageId, hintedId, HINT_BONUS, SWITCH_MARGIN);
+    }
+
+    /**
+     * @param allowSwitch false keeps the configured language. True still requires the
+     *                    alternative to be {@code allowedSwitchId}.
+     * @param allowedSwitchId absolute token id the session may switch to, usually the target language
+     */
+    public static int choose(float[] languageLogits, int firstLanguageId, int hintedId,
+                             boolean allowSwitch, int allowedSwitchId) {
+        return choose(languageLogits, firstLanguageId, hintedId, HINT_BONUS, SWITCH_MARGIN,
+                allowSwitch, allowedSwitchId);
     }
 
     static int choose(float[] languageLogits, int firstLanguageId, int hintedId, float hintBonus, float switchMargin) {
+        return chooseAny(languageLogits, firstLanguageId, hintedId, hintBonus, switchMargin);
+    }
+
+    static int choose(float[] languageLogits, int firstLanguageId, int hintedId, float hintBonus, float switchMargin,
+                      boolean allowSwitch, int allowedSwitchId) {
+        int count = languageLogits == null ? 0 : languageLogits.length;
+        if (count == 0) {
+            return hintedId >= firstLanguageId ? hintedId : -1;
+        }
+        int hintIndex = hintedId - firstLanguageId;
+        if (hintIndex < 0 || hintIndex >= count) {
+            return firstLanguageId + argMax(languageLogits);
+        }
+        if (!allowSwitch) {
+            return hintedId;
+        }
+        int allowedIndex = allowedSwitchId - firstLanguageId;
+        if (allowedIndex < 0 || allowedIndex >= count || allowedIndex == hintIndex) {
+            return hintedId;
+        }
+        float hintedScore = languageLogits[hintIndex] + hintBonus;
+        if (languageLogits[allowedIndex] >= hintedScore + switchMargin) {
+            return allowedSwitchId;
+        }
+        return hintedId;
+    }
+
+    private static int chooseAny(float[] languageLogits, int firstLanguageId, int hintedId,
+                                 float hintBonus, float switchMargin) {
         int count = languageLogits == null ? 0 : languageLogits.length;
         if (count == 0) {
             if (hintedId >= firstLanguageId) {

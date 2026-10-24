@@ -48,6 +48,29 @@ public class AsrLanguageHintTest {
         assertEquals("", AsrLanguageHint.baseCode(null));
     }
 
+    @Test
+    public void lockedSessionKeepsTheHint() {
+        float[] logits = new float[]{20f, 0f, 0f};
+        assertEquals(50261, AsrLanguageHint.choose(logits, FIRST, 50261, false, FIRST));
+    }
+
+    @Test
+    public void unlockedSessionOnlySwitchesToTheTarget() {
+        float[] logits = new float[]{20f, 0f, 0f};
+        // English leads, but the session is set to German: keep German.
+        assertEquals(50261, AsrLanguageHint.choose(logits, FIRST, 50261, true, 50263));
+        // The target is English: the same logits switch.
+        assertEquals(FIRST, AsrLanguageHint.choose(logits, FIRST, 50261, true, FIRST));
+    }
+
+    @Test
+    public void targetStillNeedsTheSwitchMargin() {
+        float[] logits = new float[]{3f, 0f, 0f};
+        assertEquals(50261, AsrLanguageHint.choose(logits, FIRST, 50261, true, FIRST));
+        logits[0] = 4f;
+        assertEquals(FIRST, AsrLanguageHint.choose(logits, FIRST, 50261, true, FIRST));
+    }
+
     private static float[] scores(int first, int hinted, float hintedScore, float otherScore) {
         float[] logits = new float[3];
         logits[hinted - first] = hintedScore;

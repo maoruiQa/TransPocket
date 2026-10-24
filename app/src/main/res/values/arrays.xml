@@ -31,4 +31,10 @@
         <item>sakura</item>
         <item>wisteria</item>
     </string-array>
+
+    <!-- First item is the default. Order must match Global.VAD_FIRERED / VAD_SILERO. -->
+    <string-array name="vad_model_entries">
+        <item>@string/vad_model_firered</item>
+        <item>@string/vad_model_silero</item>
+    </string-array>
 </resources>

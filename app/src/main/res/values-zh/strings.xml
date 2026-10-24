@@ -46,6 +46,7 @@
     <string name="continue_text">继续</string>
     <string name="ok">确定</string>
     <string name="translation_enhancements">翻译增强</string>
+    <string name="description_translation_enhancements">默认关闭。Tatoeba 例句和翻译词典会替换模型自身的输出，部分语言对的准确率可能会下降。</string>
     <string name="no">否</string>
     <string name="yes">是</string>
     <string name="general">常规</string>
@@ -156,7 +157,7 @@
     <string name="error_missing_madlad">您已选择 Madlad 作为翻译模型，但尚未下载。请先下载该模型，再进行选择。</string>
     <string name="error_missing_mozilla_voice">您已启用在 WalkieTalkie 和对话模式下使用 Mozilla 模型，但尚未下载任何 Mozilla 模型。请先下载后再启用此选项。</string>
     <string name="error_missing_tatoeba">您已启用 Tatoeba，但尚未下载。请先下载 Tatoeba，再启用它。</string>
-    <string name="error_missing_vad">您已启用同声传译的 Silero VAD，但尚未下载。请先下载，再启用它。</string>
+    <string name="error_missing_vad">您已启用 VAD 断句，但所选的 VAD 模型尚未下载。请先下载，再启用它。</string>
     <string name="error_missing_general">缺少所需资源</string>
     <string name="error_apply_unknown">未知错误，请重试。</string>
     <string name="error_delete_last_download">这是最后一个已下载的翻译模型，无法删除所有翻译模型。请先下载另一个翻译模型，再删除此模型。</string>
@@ -240,6 +241,7 @@
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>
     <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo。比 Whisper Small 更准。手机至少要有 6 GB 内存。</string>
     <string name="asr_quantization">量化</string>
+    <string name="description_asr_quantization_advice">俄语、乌克兰语、保加利亚语和马其顿语建议使用 int8 或 fp16，语言判别比 int4 更稳定。</string>
     <string name="title_asr_qwen06">Qwen3-ASR 0.6B</string>
     <string name="description_asr_qwen06">Qwen3-ASR 0.6B。</string>
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
@@ -255,8 +257,11 @@
     <string name="description_mozilla_voice">在 WalkieTalkie 和对话模式下使用性能模型（Mozilla），以降低实时翻译模式的延迟，但质量较差。</string>
     <string name="description_whisper_ram_reduction">将 Whisper 模型的内存占用从 900MB 降至 500MB，但运行速度会降低 24%。</string>
     <string name="description_tatoeba">用于改善部分句子翻译效果的 Tatoeba 数据集</string>
-    <string name="title_vad_segmentation">Silero VAD</string>
-    <string name="description_vad_segmentation">同声传译默认开启，并在首次进入时一并下载。根据语音里的停顿断句。大约 2 MB。关闭时仍按固定停顿和标点断句。</string>
+    <string name="title_vad_segmentation">VAD 断句</string>
+    <string name="title_vad_model">VAD 模型</string>
+    <string name="vad_model_firered">FireRedVAD</string>
+    <string name="vad_model_silero">Silero VAD</string>
+    <string name="description_vad_segmentation">同声传译默认开启，并在首次进入时一并下载。根据语音里的停顿断句。默认使用 FireRedVAD，Silero VAD 为旧模型。大约 2 MB。关闭时仍按固定停顿和标点断句。</string>
     <string name="description_dictionaries">用于改善单词翻译效果的翻译词典。</string>
 
     <string name="preference_header_language">语言</string>
@@ -267,6 +272,8 @@
     <string name="preference_title_mic_sensitivity">麦克风灵敏度</string>
     <string name="preference_title_mic_sensitivity_extended">扩展灵敏度</string>
     <string name="preference_title_languages_quality">支持低质量语言</string>
+    <string name="preference_title_asr_language_lock">锁定语音识别语言</string>
+    <string name="preference_description_asr_language_lock">每次识别都使用所选语言。关闭后，同声传译可以切换到目标语言，但不会切换到第三种语言。</string>
     <string name="preference_title_support_tts_quality">支持低质量 TTS 语言</string>
     <string name="preference_title_language">个人语言</string>
     <string name="preference_title_tts">文字转语音</string>

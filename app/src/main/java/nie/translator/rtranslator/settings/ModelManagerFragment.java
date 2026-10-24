@@ -123,6 +123,7 @@ public class ModelManagerFragment extends Fragment {
     private int baselineTurboQuant;
     private int baselineQwen06Quant;
     private int baselineQwen17Quant;
+    private int baselineVadModel;
     private ArrayList<DownloadGroupInfo> savedDownloadStatus;
     private int managerLoadGeneration = 0;
 
@@ -188,7 +189,7 @@ public class ModelManagerFragment extends Fragment {
         resourceManagers.put("qwen06Manager", new ResourceManager(activity, global.getQwen3Asr06DownloadInfo(), qwen06ManagerView, downloadManager));
         resourceManagers.put("qwen17Manager", new ResourceManager(activity, global.getQwen3Asr17DownloadInfo(), qwen17ManagerView, downloadManager));
         resourceManagers.put("tatoebaManager", new ResourceManager(activity, global.getTatoebaDownloadInfo(), tatoebaManagerView, downloadManager));
-        resourceManagers.put("vadManager", new ResourceManager(activity, global.getSileroVadDownloadInfo(), vadManagerView, downloadManager));
+        resourceManagers.put("vadManager", new ResourceManager(activity, global.getVadDownloadInfo(), vadManagerView, downloadManager));
 
         // initialize GUI based on shared preferences
         restoreGuiPreferenceState();
@@ -372,9 +373,9 @@ public class ModelManagerFragment extends Fragment {
         // switches initialization
         switchMozillaForVoiceModes.setChecked(sharedPreferences.contains("useMozillaForVoiceTranslation") ? global.isUseMozillaForVoiceTranslation() : recommendation.useMozillaForVoice);
         switchWhisperReducedRam.setChecked(sharedPreferences.contains("whisperReducedRam") ? global.isWhisperReducedRam() : recommendation.whisperReducedRam);
-        switchTatoeba.setChecked(sharedPreferences.contains("useTatoeba") ? global.isUseTatoeba() : recommendation.useTatoeba);
+        switchTatoeba.setChecked(sharedPreferences.contains("useTatoeba") ? global.isUseTatoeba() : false);
         switchVadSegmentation.setChecked(sharedPreferences.contains("simultaneousVadSegmentation") ? global.isSimultaneousVadSegmentation() : true);
-        switchTranslationDict.setChecked(sharedPreferences.contains("useTranslationDictionaries") ? global.isUseTranslationDictionaries() : recommendation.useDictionaries);
+        switchTranslationDict.setChecked(sharedPreferences.contains("useTranslationDictionaries") ? global.isUseTranslationDictionaries() : false);
         switch (global.getAsrModel()) {
             case Global.ASR_QWEN3_17:
                 asrRadioGroup.check(R.id.radioQwen17);
@@ -411,6 +412,7 @@ public class ModelManagerFragment extends Fragment {
         bindAsrQuant(Global.ASR_WHISPER_TURBO, whisperTurboManagerView, "whisperTurboManager");
         bindAsrQuant(Global.ASR_QWEN3_06, qwen06ManagerView, "qwen06Manager");
         bindAsrQuant(Global.ASR_QWEN3_17, qwen17ManagerView, "qwen17Manager");
+        bindVadModel();
         captureSettingsBaseline();
     }
 
@@ -439,6 +441,27 @@ public class ModelManagerFragment extends Fragment {
             }
             view.setModelSize(global.asrDownloadSizeMb(model));
             updateRamUsageSpeechRecognition();
+            updateTextRamUsage();
+        });
+    }
+
+    private void bindVadModel() {
+        final String[] labels = getResources().getStringArray(R.array.vad_model_entries);
+        int selected = global.getVadModel() == Global.VAD_FIRERED ? 0 : 1;
+        vadManagerView.setModelSize(global.vadDownloadSizeMb());
+        vadManagerView.setModelChoices(labels, selected, getString(R.string.title_vad_model), index -> {
+            int model = index == 0 ? Global.VAD_FIRERED : Global.VAD_SILERO;
+            if (model == global.getVadModel()) {
+                return;
+            }
+            global.setVadModel(model);
+            ResourceManager manager = resourceManagers.get("vadManager");
+            if (manager != null) {
+                manager.replaceDownload(global.getVadDownloadInfo());
+                refreshManagerState(manager);
+            }
+            vadManagerView.setModelSize(global.vadDownloadSizeMb());
+            updateRamUsageTranslationEnhancements();
             updateTextRamUsage();
         });
     }
@@ -490,6 +513,7 @@ public class ModelManagerFragment extends Fragment {
         baselineTurboQuant = global.getAsrQuant(Global.ASR_WHISPER_TURBO);
         baselineQwen06Quant = global.getAsrQuant(Global.ASR_QWEN3_06);
         baselineQwen17Quant = global.getAsrQuant(Global.ASR_QWEN3_17);
+        baselineVadModel = global.getVadModel();
     }
 
     private void restoreGuiDownloadState(ArrayList<DownloadGroupInfo> downloadStatus){
@@ -540,7 +564,8 @@ public class ModelManagerFragment extends Fragment {
                 || global.getAsrQuant(Global.ASR_WHISPER) != baselineWhisperQuant
                 || global.getAsrQuant(Global.ASR_WHISPER_TURBO) != baselineTurboQuant
                 || global.getAsrQuant(Global.ASR_QWEN3_06) != baselineQwen06Quant
-                || global.getAsrQuant(Global.ASR_QWEN3_17) != baselineQwen17Quant;
+                || global.getAsrQuant(Global.ASR_QWEN3_17) != baselineQwen17Quant
+                || global.getVadModel() != baselineVadModel;
     }
 
     public void applySettings() {
@@ -1034,7 +1059,7 @@ public class ModelManagerFragment extends Fragment {
         if (switchTatoeba.isChecked() && !isGroupDownloaded(global.getTatoebaDownloadInfo())) {
             return true;
         }
-        if (switchVadSegmentation.isChecked() && !isGroupDownloaded(global.getSileroVadDownloadInfo())) {
+        if (switchVadSegmentation.isChecked() && !isGroupDownloaded(global.getVadDownloadInfo())) {
             return true;
         }
         if (switchTranslationDict.isChecked() && !isGroupDownloaded(global.getDictionaryDownloadInfo())) {
