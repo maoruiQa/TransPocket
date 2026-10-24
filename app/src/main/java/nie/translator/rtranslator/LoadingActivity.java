@@ -45,6 +45,7 @@ import nie.translator.rtranslator.settings.SettingsActivity;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.DownloaderTools;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.ModelStartupGate;
 import nie.translator.rtranslator.tools.ImageActivity;
 import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationActivity;
@@ -58,9 +59,32 @@ public class LoadingActivity extends GeneralActivity {
     private boolean isVisible = false;
     private Global global;
     private boolean startingActivity = false;
-    private boolean showingError = false;
     private boolean contentReady = false;
     private boolean startupStarted = false;
+    private boolean navigationStarted = false;
+    private boolean errorDialogShowing = false;
+    private boolean failurePresentQueued = false;
+    private final ModelStartupGate.Observer startupObserver = new ModelStartupGate.Observer() {
+        @Override
+        public void onReady() {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    openNextAfterModelsReady();
+                }
+            });
+        }
+
+        @Override
+        public void onFailed(int[] reasons, long value) {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    presentStartupFailure();
+                }
+            });
+        }
+    };
     private TextView loadingStage;
     private ProgressBar loadingProgress;
 
@@ -126,11 +150,21 @@ public class LoadingActivity extends GeneralActivity {
         if (!startupStarted) {
             startupStarted = true;
             beginStartup();
+            return;
         }
+        // This instance was stopped while a load was already running. Ask again; the result may have arrived in the background.
+        syncStartupUi();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (global != null) {
+            global.removeModelStartupObserver(startupObserver);
+        }
+        super.onDestroy();
     }
 
     private void beginStartup() {
-        showStage(0);
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -139,41 +173,134 @@ public class LoadingActivity extends GeneralActivity {
                         @Override
                         public void run() {
                             if (!isFinishing()) {
+                                // Access downloads files and then opens a new loading screen. A previous failure must not block that screen.
+                                if (global != null) {
+                                    global.clearModelStartupFailure();
+                                }
+                                showStage(0);
                                 startAccessActivity();
                             }
                         }
                     });
                     return;
                 }
-                boolean modelsReady = global.getTranslator() != null && (Global.ONLY_TEXT_TRANSLATION_MODE || global.getSpeechRecognizer() != null);
-                if (modelsReady) {
-                    final boolean resourcesMatch = checkIfResourcesPreferencesRespectDownloads();
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (isFinishing()) {
-                                return;
-                            }
-                            showStage(3);
-                            if (resourcesMatch) {
-                                startVoiceTranslationActivity();
-                            } else {
-                                startSettingsActivityWithModelManager();
-                            }
-                        }
-                    });
-                } else {
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (!isFinishing()) {
-                                initializeApp(false);
-                            }
-                        }
-                    });
-                }
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        joinStartup(false);
+                    }
+                });
             }
         }, "appStartup").start();
+    }
+
+    private void syncStartupUi() {
+        if (isFinishing() || global == null) {
+            return;
+        }
+        if (global.areModelsLoaded()) {
+            openNextAfterModelsReady();
+        } else if (global.hasModelStartupFailure()) {
+            presentStartupFailure();
+        }
+    }
+
+    /**
+     * Joins the one startup load kept on Global. A screen created after the user leaves must not
+     * treat a non-null Translator or Recognizer as ready: those objects exist before the sessions do.
+     */
+    private void joinStartup(boolean ignoreTTSError) {
+        if (isFinishing() || global == null) {
+            return;
+        }
+        ModelStartupGate.Join join = global.beginOrJoinModelStartup(startupObserver);
+        if (global.areModelsLoaded()) {
+            openNextAfterModelsReady();
+            return;
+        }
+        if (global.hasModelStartupFailure()) {
+            presentStartupFailure();
+            return;
+        }
+        if (join.start) {
+            showStage(0);
+            initializeApp(ignoreTTSError, join.runId);
+            return;
+        }
+        showJoinedStage();
+    }
+
+    private void showJoinedStage() {
+        if (global.isSpeechInitRunning() || global.isSpeechInitReady()) {
+            showStage(2);
+        } else if (global.isTranslatorInitRunning() || global.isTranslatorInitReady()) {
+            showStage(1);
+        } else {
+            showStage(0);
+        }
+    }
+
+    private void openNextAfterModelsReady() {
+        if (!isVisible || isFinishing() || isDestroyed() || navigationStarted || global == null || !global.areModelsLoaded()) {
+            return;
+        }
+        navigationStarted = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final boolean resourcesMatch = checkIfResourcesPreferencesRespectDownloads();
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed() || !isVisible) {
+                            navigationStarted = false;
+                            return;
+                        }
+                        showStage(3);
+                        if (resourcesMatch) {
+                            startVoiceTranslationActivity();
+                        } else {
+                            startSettingsActivityWithModelManager();
+                        }
+                    }
+                });
+            }
+        }, "appStartup").start();
+    }
+
+    private void retryStartup(boolean ignoreTTSError) {
+        errorDialogShowing = false;
+        failurePresentQueued = false;
+        navigationStarted = false;
+        if (global != null) {
+            global.clearModelStartupFailure();
+        }
+        joinStartup(ignoreTTSError);
+    }
+
+    private void presentStartupFailure() {
+        if (!isVisible || isFinishing() || errorDialogShowing || failurePresentQueued || global == null) {
+            return;
+        }
+        if (global.getModelStartupFailureReasons() == null) {
+            return;
+        }
+        failurePresentQueued = true;
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                failurePresentQueued = false;
+                if (!isVisible || isFinishing() || errorDialogShowing || global == null) {
+                    return;
+                }
+                int[] reasons = global.getModelStartupFailureReasons();
+                if (reasons == null) {
+                    return;
+                }
+                errorDialogShowing = true;
+                onFailure(reasons, global.getModelStartupFailureValue());
+            }
+        });
     }
 
     private void showStage(int stage) {
@@ -248,26 +375,36 @@ public class LoadingActivity extends GeneralActivity {
         }
     }
 
-    private void initializeApp(boolean ignoreTTSError) {
+    private void initializeApp(final boolean ignoreTTSError, final int runId) {
         Log.i("app", "App initialization");
         showStage(0);
         new Thread(new Runnable() {
             @Override
             public void run() {
-                adaptResourcesPreferencesToDownloads();
+                try {
+                    adaptResourcesPreferencesToDownloads();
+                } catch (RuntimeException e) {
+                    e.printStackTrace();
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            global.failModelStartup(runId, new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
+                        }
+                    });
+                    return;
+                }
+                // Keep going after this screen is destroyed. The result is stored on Global for the screen the user comes back to.
                 mainHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        if (!isFinishing()) {
-                            continueInitializeApp(ignoreTTSError);
-                        }
+                        continueInitializeApp(ignoreTTSError, runId);
                     }
                 });
             }
         }, "appStartup").start();
     }
 
-    private void continueInitializeApp(boolean ignoreTTSError) {
+    private void continueInitializeApp(final boolean ignoreTTSError, final int runId) {
         showStage(1);
         global.getLanguagesAndCheckTTS(false, ignoreTTSError, new Global.GetLocalesListListener() {
             @Override
@@ -279,22 +416,16 @@ public class LoadingActivity extends GeneralActivity {
                         NeuralNetworkApi.InitListener speechRecognizerInitListener = new NeuralNetworkApi.InitListener() {
                             @Override
                             public void onInitializationFinished() {
-                                mainHandler.post(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        global.setModelsLoaded(true);
-                                        showStage(3);
-                                        if (isVisible) {
-                                            startVoiceTranslationActivity();
-                                        }
-                                    }
-                                });
+                                global.completeModelStartup(runId);
                             }
 
                             @Override
                             public void onError(int[] reasons, long value) {
-                                global.deleteSpeechRecognizer();  //we do this to ensure the restart of the loading of models when the app is restarted
-                                LoadingActivity.this.onFailure(reasons, value);
+                                try {
+                                    global.deleteSpeechRecognizer();  //we do this to ensure the restart of the loading of models when the app is restarted
+                                } finally {
+                                    global.failModelStartup(runId, reasons, value);
+                                }
                             }
                         };
                         if(Global.ONLY_TEXT_TRANSLATION_MODE) {
@@ -306,15 +437,18 @@ public class LoadingActivity extends GeneralActivity {
 
                     @Override
                     public void onFailure(int[] reasons, long value) {
-                        global.deleteTranslator();   //we do this to ensure the restart of the loading of models when the app is restarted
-                        LoadingActivity.this.onFailure(reasons, value);
+                        try {
+                            global.deleteTranslator();   //we do this to ensure the restart of the loading of models when the app is restarted
+                        } finally {
+                            global.failModelStartup(runId, reasons, value);
+                        }
                     }
                 });
             }
 
             @Override
             public void onFailure(int[] reasons, long value) {
-                LoadingActivity.this.onFailure(reasons, value);
+                global.failModelStartup(runId, reasons, value);
             }
         });
     }
@@ -494,10 +628,14 @@ public class LoadingActivity extends GeneralActivity {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
+                if (!isVisible || isFinishing()) {
+                    errorDialogShowing = false;
+                    return;
+                }
                 showGoogleTTSErrorDialog(new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        initializeApp(true);
+                        retryStartup(true);
                     }
                 });
             }
@@ -508,27 +646,29 @@ public class LoadingActivity extends GeneralActivity {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (isVisible) {
-                    // creation of the dialog.
-                    AlertDialog.Builder builder = new AlertDialog.Builder(LoadingActivity.this);
-                    //builder.setCancelable(true);
-                    builder.setMessage(R.string.error_internet_lack_loading);
-                    builder.setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            finish();
-                        }
-                    });
-                    builder.setPositiveButton(R.string.retry, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialogInterface, int i) {
-                            initializeApp(false);
-                        }
-                    });
-                    AlertDialog dialog = builder.create();
-                    dialog.setCanceledOnTouchOutside(false);
-                    dialog.show();
+                if (!isVisible || isFinishing()) {
+                    errorDialogShowing = false;
+                    return;
                 }
+                // creation of the dialog.
+                AlertDialog.Builder builder = new AlertDialog.Builder(LoadingActivity.this);
+                //builder.setCancelable(true);
+                builder.setMessage(R.string.error_internet_lack_loading);
+                builder.setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        finish();
+                    }
+                });
+                builder.setPositiveButton(R.string.retry, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        retryStartup(false);
+                    }
+                });
+                AlertDialog dialog = builder.create();
+                dialog.setCanceledOnTouchOutside(false);
+                dialog.show();
             }
         });
     }
@@ -537,29 +677,31 @@ public class LoadingActivity extends GeneralActivity {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (isVisible) {
-                    // creation of the dialog.
-                    AlertDialog.Builder builder = new AlertDialog.Builder(LoadingActivity.this);
-                    //builder.setCancelable(true);
-                    builder.setMessage(R.string.error_models_loading);
-                    builder.setPositiveButton(R.string.fix, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            if(global != null){
-                                restartDownload();
-                            }
-                        }
-                    });
-                    builder.setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            finish();
-                        }
-                    });
-                    AlertDialog dialog = builder.create();
-                    dialog.setCanceledOnTouchOutside(false);
-                    dialog.show();
+                if (!isVisible || isFinishing()) {
+                    errorDialogShowing = false;
+                    return;
                 }
+                // creation of the dialog.
+                AlertDialog.Builder builder = new AlertDialog.Builder(LoadingActivity.this);
+                //builder.setCancelable(true);
+                builder.setMessage(R.string.error_models_loading);
+                builder.setPositiveButton(R.string.fix, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        if(global != null){
+                            restartDownload();
+                        }
+                    }
+                });
+                builder.setNegativeButton(R.string.exit, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        finish();
+                    }
+                });
+                AlertDialog dialog = builder.create();
+                dialog.setCanceledOnTouchOutside(false);
+                dialog.show();
             }
         });
     }
@@ -568,14 +710,16 @@ public class LoadingActivity extends GeneralActivity {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (isVisible) {
-                    showMissingGoogleTTSDialog(new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            initializeApp(true);
-                        }
-                    });
+                if (!isVisible || isFinishing()) {
+                    errorDialogShowing = false;
+                    return;
                 }
+                showMissingGoogleTTSDialog(new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        retryStartup(true);
+                    }
+                });
             }
         });
     }
@@ -597,6 +741,8 @@ public class LoadingActivity extends GeneralActivity {
         editor = sharedPreferences.edit();
         editor.putString("lastTransferFailure", "");
         editor.apply();
+        // The failed startup must not be shown again after the files are downloaded once more.
+        global.clearModelStartupFailure();
         //we restart the download (only the corrupted files will be re-downloaded)
         global.setFirstStart(true);
         Intent intent = new Intent(LoadingActivity.this, AccessActivity.class);
@@ -610,20 +756,16 @@ public class LoadingActivity extends GeneralActivity {
         for (int aReason : reasons) {
             switch (aReason) {
                 case ErrorCodes.ERROR_LOADING_MODEL:
-                    showingError = true;
                     notifyModelsLoadingError();
                     break;
                 case ErrorCodes.SAFETY_NET_EXCEPTION:
                 case ErrorCodes.MISSED_CONNECTION:
-                    showingError = true;
                     notifyInternetLack();
                     break;
                 case ErrorCodes.MISSING_GOOGLE_TTS:
-                    showingError = true;
                     notifyMissingGoogleTTSDialog();
                     break;
                 case ErrorCodes.GOOGLE_TTS_ERROR:
-                    showingError = true;
                     notifyGoogleTTSErrorDialog();
                     break;
                 default:

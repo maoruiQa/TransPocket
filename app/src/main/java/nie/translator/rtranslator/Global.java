@@ -52,6 +52,8 @@ import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
+import nie.translator.rtranslator.tools.ModelStartupGate;
+import nie.translator.rtranslator.tools.SessionInitGate;
 
 import nie.translator.rtranslator.tools.TTS;
 import nie.translator.rtranslator.voice_translation._conversation_mode._conversation.ConversationService;
@@ -147,7 +149,9 @@ public class Global extends Application implements DefaultLifecycleObserver {
     @Nullable
     private String runningAsrSignature;
     private VadSilero vad;
-    private boolean modelsLoaded = false;
+    private final ModelStartupGate modelStartup = new ModelStartupGate();
+    private final SessionInitGate translatorInit = new SessionInitGate();
+    private final SessionInitGate speechInit = new SessionInitGate();
 
     @Override
     public void onCreate() {
@@ -190,12 +194,34 @@ public class Global extends Application implements DefaultLifecycleObserver {
         }
     }
 
-    public void initializeTranslator(Translator.GeneralListener initListener){
-        if(translator == null) {
-            translator = new Translator(this, getTranslationMode(), isUseMozillaForVoiceTranslation(), isUseTatoeba(), isUseTranslationDictionaries(), initListener);
-        }else{
-            initListener.onSuccess();
+    public void initializeTranslator(final Translator.GeneralListener initListener) {
+        // The Translator object exists before its sessions do. A second caller waits for that attempt.
+        SessionInitGate.Join join = translatorInit.join(new SessionInitGate.Listener() {
+            @Override
+            public void onSuccess() {
+                initListener.onSuccess();
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                initListener.onFailure(reasons, value);
+            }
+        });
+        if (!join.start) {
+            return;
         }
+        final int generation = join.generation;
+        translator = new Translator(this, getTranslationMode(), isUseMozillaForVoiceTranslation(), isUseTatoeba(), isUseTranslationDictionaries(), new Translator.GeneralListener() {
+            @Override
+            public void onSuccess() {
+                translatorInit.succeed(generation);
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                translatorInit.fail(generation, reasons, value);
+            }
+        });
     }
 
     public void initializeSpeechRecognizer(NeuralNetworkApi.InitListener initListener){
@@ -205,8 +231,24 @@ public class Global extends Application implements DefaultLifecycleObserver {
     /**
      * @param async false runs session creation on the caller thread. The apply-settings path uses that so stop, close, and open stay on one background thread.
      */
-    public void initializeSpeechRecognizer(NeuralNetworkApi.InitListener initListener, boolean async){
-        if(speechRecognizer == null) {
+    public void initializeSpeechRecognizer(final NeuralNetworkApi.InitListener initListener, boolean async) {
+        // Same constraint as the translator: non-null does not mean the sessions are ready.
+        SessionInitGate.Join join = speechInit.join(new SessionInitGate.Listener() {
+            @Override
+            public void onSuccess() {
+                initListener.onInitializationFinished();
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                initListener.onError(reasons, value);
+            }
+        });
+        if (!join.start) {
+            return;
+        }
+        final int generation = join.generation;
+        try {
             vad = Vad.builder()
                     .setContext(this)
                     .setSampleRate(SampleRate.SAMPLE_RATE_16K)
@@ -215,9 +257,19 @@ public class Global extends Application implements DefaultLifecycleObserver {
                     .setSilenceDurationMs(300)
                     .setSpeechDurationMs(50)
                     .build();
-            speechRecognizer = new Recognizer(this, true, initListener, async);
-        }else{
-            initListener.onInitializationFinished();
+            speechRecognizer = new Recognizer(this, true, new NeuralNetworkApi.InitListener() {
+                @Override
+                public void onInitializationFinished() {
+                    speechInit.succeed(generation);
+                }
+
+                @Override
+                public void onError(int[] reasons, long value) {
+                    speechInit.fail(generation, reasons, value);
+                }
+            }, async);
+        } catch (RuntimeException e) {
+            speechInit.fail(generation, new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
         }
     }
 
@@ -251,11 +303,61 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public boolean areModelsLoaded() {
-        return modelsLoaded;
+        return modelStartup.isReady();
     }
 
     public void setModelsLoaded(boolean areModelsLoaded) {
-        this.modelsLoaded = areModelsLoaded;
+        if (areModelsLoaded) {
+            modelStartup.completeSuccess(modelStartup.currentRunId());
+        }
+    }
+
+    public ModelStartupGate.Join beginOrJoinModelStartup(ModelStartupGate.Observer observer) {
+        return modelStartup.beginOrJoin(observer);
+    }
+
+    public void removeModelStartupObserver(ModelStartupGate.Observer observer) {
+        modelStartup.remove(observer);
+    }
+
+    public void completeModelStartup(int runId) {
+        modelStartup.completeSuccess(runId);
+    }
+
+    public void failModelStartup(int runId, int[] reasons, long value) {
+        modelStartup.completeFailure(runId, reasons, value);
+    }
+
+    public void clearModelStartupFailure() {
+        modelStartup.clearFailure();
+    }
+
+    public boolean hasModelStartupFailure() {
+        return modelStartup.hasFailure();
+    }
+
+    public int[] getModelStartupFailureReasons() {
+        return modelStartup.failureReasons();
+    }
+
+    public long getModelStartupFailureValue() {
+        return modelStartup.failureValue();
+    }
+
+    public boolean isTranslatorInitRunning() {
+        return translatorInit.isRunning();
+    }
+
+    public boolean isTranslatorInitReady() {
+        return translatorInit.isReady();
+    }
+
+    public boolean isSpeechInitRunning() {
+        return speechInit.isRunning();
+    }
+
+    public boolean isSpeechInitReady() {
+        return speechInit.isReady();
     }
 
     public void getLanguagesAndCheckTTS(final boolean recycleResult, boolean ignoreTTSError, final GetLocalesListListener responseListener) {
@@ -945,12 +1047,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
         }
         new Thread(() -> {
             try {
-            Recognizer previous = speechRecognizer;
-            if (previous != null) {
-                previous.stop();
-                previous.destroy();
-            }
-            speechRecognizer = null;
+            deleteSpeechRecognizer();
             initializeSpeechRecognizer(new NeuralNetworkApi.InitListener() {
                 @Override
                 public void onInitializationFinished() {
@@ -999,6 +1096,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
 
     public void deleteTranslator(){
         translator = null;
+        translatorInit.reset();
     }
 
     @Nullable
@@ -1007,9 +1105,12 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public void deleteSpeechRecognizer(){
-        if (speechRecognizer != null) {
-            speechRecognizer.stop();
-            speechRecognizer.destroy();
+        Recognizer previous = speechRecognizer;
+        // Invalidate in-flight callbacks before stop, so that attempt cannot complete a later one.
+        speechInit.reset();
+        if (previous != null) {
+            previous.stop();
+            previous.destroy();
         }
         speechRecognizer = null;
     }
