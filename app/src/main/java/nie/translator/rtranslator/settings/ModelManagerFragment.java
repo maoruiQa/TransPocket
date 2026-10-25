@@ -771,6 +771,7 @@ public class ModelManagerFragment extends Fragment {
                         break;
                     case MOZILLA_FOR_VOICE:
                         textView.setText(getString(R.string.error_missing_mozilla_voice));
+                        break;
                     case TATOEBA:
                         textView.setText(getString(R.string.error_missing_tatoeba));
                         break;

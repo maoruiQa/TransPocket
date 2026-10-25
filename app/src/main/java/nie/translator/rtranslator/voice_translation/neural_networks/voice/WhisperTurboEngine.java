@@ -109,7 +109,10 @@ public class WhisperTurboEngine {
         TensorInfo encoderInfo = (TensorInfo) encoder.getInputInfo().get(encoderInput).getInfo();
         encoderInputType = encoderInfo.type;
         long[] encoderShape = encoderInfo.getShape();
-        fixedFrames = encoderShape.length > 2 && encoderShape[2] > 0 ? (int) encoderShape[2] : -1;
+        // The merged export can declare a dynamic frame axis while its positional
+        // embedding is fixed at 1500 positions (3000 mel frames). A shorter input
+        // fails in the encoder Add node, so pad to the full 30 s window either way.
+        fixedFrames = encoderShape.length > 2 && encoderShape[2] > 0 ? (int) encoderShape[2] : 3000;
         logitsName = logitsOutputName();
     }
 
@@ -167,13 +170,32 @@ public class WhisperTurboEngine {
         }
         try {
             boolean hintLanguage = softLanguage && languageCode2 == null;
+            int hintedId;
+            if (hintLanguage) {
+                hintedId = languageHint(languageCode);
+            } else {
+                try {
+                    hintedId = languageId(languageCode);
+                } catch (IOException e) {
+                    // A language outside this model must not abort the utterance.
+                    Log.w("asrLanguage", "no token for " + languageCode + " in this Whisper model; auto-detect");
+                    hintedId = languageHint(languageCode);
+                    hintLanguage = true;
+                }
+            }
             int encoderFrames = encoderFrames(hidden);
-            Hypothesis first = decode(hidden, frames, encoderFrames, hintLanguage ? languageHint(languageCode) : languageId(languageCode),
+            Hypothesis first = decode(hidden, frames, encoderFrames, hintedId,
                     hintLanguage, hintLanguage ? allowedSwitchId : -1, decoderSteps);
             if (languageCode2 == null) {
                 return new Transcripts(first.text, first.score, null, 0);
             }
-            Hypothesis second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, -1, decoderSteps);
+            Hypothesis second;
+            try {
+                second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, -1, decoderSteps);
+            } catch (IOException e) {
+                Log.w("asrLanguage", "no token for " + languageCode2 + " in this Whisper model; second side empty");
+                second = new Hypothesis("", 0);
+            }
             return new Transcripts(first.text, first.score, second.text, second.score);
         } finally {
             hidden.close();

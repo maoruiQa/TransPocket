@@ -71,6 +71,11 @@ public final class AsrLanguageGuard {
         return analyze(text, languageCode).verdict;
     }
 
+    /** A result with no evidence, used when the guard itself cannot run. */
+    public static Result weak(String reason) {
+        return new Result(Verdict.WEAK, reason, 0, 0);
+    }
+
     public static String reason(String text, String languageCode) {
         return analyze(text, languageCode).reason;
     }

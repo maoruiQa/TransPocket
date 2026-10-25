@@ -272,9 +272,9 @@
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>
     <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo. More accurate than Whisper Small. Needs a phone with at least 6 GB of RAM.</string>
     <string name="title_asr_qwen06">Qwen3-ASR 0.6B</string>
-    <string name="description_asr_qwen06">Qwen3-ASR 0.6B.</string>
+    <string name="description_asr_qwen06">Qwen3-ASR 0.6B. Lower latency and more accurate than Whisper on the same phone.</string>
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
-    <string name="description_asr_qwen17">Qwen3-ASR 1.7B. More accurate than the 0.6B model. Needs a phone with at least 8 GB of RAM.</string>
+    <string name="description_asr_qwen17">Qwen3-ASR 1.7B. Lower latency and more accurate than Whisper; best accuracy, needs a phone with at least 8 GB of RAM.</string>
     <string name="asr_quantization">Quantization</string>
     <string name="description_asr_quantization_advice">For Russian, Ukrainian, Bulgarian, and Macedonian, int8 or fp16 detects the language more reliably than int4.</string>
     <string name="error_missing_asr">Download the selected speech model before using it.</string>

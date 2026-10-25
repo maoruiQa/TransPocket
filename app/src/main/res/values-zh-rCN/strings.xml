@@ -251,9 +251,9 @@
     <string name="title_asr_whisper_turbo">Whisper Large V3 Turbo</string>
     <string name="description_asr_whisper_turbo">OpenAI Whisper large-v3-turbo。比 Whisper Small 更准。手机至少要有 6 GB 内存。</string>
     <string name="title_asr_qwen06">Qwen3-ASR 0.6B</string>
-    <string name="description_asr_qwen06">Qwen3-ASR 0.6B。</string>
+    <string name="description_asr_qwen06">Qwen3-ASR 0.6B。同机对比 Whisper 延迟更低、更准确。</string>
     <string name="title_asr_qwen17">Qwen3-ASR 1.7B</string>
-    <string name="description_asr_qwen17">Qwen3-ASR 1.7B。比 0.6B 更准。手机至少要有 8 GB 内存。</string>
+    <string name="description_asr_qwen17">Qwen3-ASR 1.7B。同机对比 Whisper 延迟更低、更准确；精度最高，手机至少要有 8 GB 内存。</string>
     <string name="error_missing_asr">请先下载所选的语音模型。</string>
     <string name="error_asr_ram">这台手机的内存不够运行所选的语音模型。</string>
     <string name="model_recommendation_madlad">推荐：Madlad。这部手机跑 HY-MT 会比较紧。Madlad 放得下，而且语言更多。大约 %1$s GB 内存、%2$s GB 可用空间。</string>

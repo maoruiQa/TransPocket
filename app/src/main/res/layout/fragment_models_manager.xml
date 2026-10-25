@@ -277,56 +277,6 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content">
                         <RadioButton
-                            android:id="@+id/radioWhisper"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="16dp"
-                            android:layout_marginTop="16dp"
-                            android:contentDescription="@string/title_asr_whisper"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent" />
-                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
-                            android:id="@+id/modelWhisper"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginEnd="16dp"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toEndOf="@+id/radioWhisper"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:modelDescription="@string/description_asr_whisper"
-                            app:modelSize="290"
-                            app:modelTitle="@string/title_asr_whisper" />
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <RadioButton
-                            android:id="@+id/radioWhisperTurbo"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="16dp"
-                            android:layout_marginTop="16dp"
-                            android:contentDescription="@string/title_asr_whisper_turbo"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent" />
-                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
-                            android:id="@+id/modelWhisperTurbo"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginEnd="16dp"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toEndOf="@+id/radioWhisperTurbo"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:modelDescription="@string/description_asr_whisper_turbo"
-                            app:modelSize="1036"
-                            app:modelTitle="@string/title_asr_whisper_turbo" />
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <RadioButton
                             android:id="@+id/radioQwen06"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -372,6 +322,56 @@
                             app:modelDescription="@string/description_asr_qwen17"
                             app:modelSize="3940"
                             app:modelTitle="@string/title_asr_qwen17" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <RadioButton
+                            android:id="@+id/radioWhisper"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginTop="16dp"
+                            android:contentDescription="@string/title_asr_whisper"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent" />
+                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
+                            android:id="@+id/modelWhisper"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginEnd="16dp"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toEndOf="@+id/radioWhisper"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:modelDescription="@string/description_asr_whisper"
+                            app:modelSize="485"
+                            app:modelTitle="@string/title_asr_whisper" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <RadioButton
+                            android:id="@+id/radioWhisperTurbo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginTop="16dp"
+                            android:contentDescription="@string/title_asr_whisper_turbo"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent" />
+                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
+                            android:id="@+id/modelWhisperTurbo"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginEnd="16dp"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toEndOf="@+id/radioWhisperTurbo"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:modelDescription="@string/description_asr_whisper_turbo"
+                            app:modelSize="1610"
+                            app:modelTitle="@string/title_asr_whisper_turbo" />
                     </androidx.constraintlayout.widget.ConstraintLayout>
                 </LinearLayout>
             </worker8.com.github.radiogroupplus.RadioGroupPlus>

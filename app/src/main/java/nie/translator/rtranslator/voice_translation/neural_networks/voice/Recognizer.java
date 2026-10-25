@@ -197,6 +197,7 @@ public class Recognizer extends NeuralNetworkApi {
      */
     public Recognizer(Global global, final boolean returnResultOnlyAtTheEnd, final NeuralNetworkApi.InitListener initListener, boolean async) {
         this.global = global;
+        Log.i("recognizer", "ASR load: model=" + global.getAsrModel() + " quant=" + global.getAsrQuant(global.getAsrModel()));
         if (global.getAsrModel() == Global.ASR_QWEN3_06 || global.getAsrModel() == Global.ASR_QWEN3_17) {
             onnxEnv = OrtEnvironment.getEnvironment();
             loadAsync(async, new Runnable() {
@@ -769,6 +770,11 @@ public class Recognizer extends NeuralNetworkApi {
                 e.printStackTrace();
                 notifyError(new int[]{ErrorCodes.ERROR_EXECUTING_MODEL}, 0);
             }
+        } else {
+            // Nothing was loaded: the old code dropped the utterance without a symptom.
+            Log.e("recognizer", "no speech engine ready: model=" + global.getAsrModel()
+                    + " quant=" + global.getAsrQuant(global.getAsrModel()));
+            notifyError(new int[]{ErrorCodes.ERROR_LOADING_MODEL}, 0);
         }
     }
 
@@ -869,16 +875,22 @@ public class Recognizer extends NeuralNetworkApi {
             boolean largeV3 = global.getAsrModel() == Global.ASR_WHISPER_TURBO;
             int allowedSwitchId = -1;
             if (softLanguage) {
-                if (global.isAsrLanguageLock()) {
+                if (global.isAsrLanguageLock() && AsrLanguages.isWhisperLanguage(data.languageCode, largeV3)) {
                     // A locked clause is decoded with the configured token, so it cannot drift.
                     softLanguage = false;
-                } else {
+                } else if (!global.isAsrLanguageLock()) {
                     allowedSwitchId = AsrLanguages.whisperToken(data.languageCodeSwitch, largeV3);
                 }
+            }
+            if (!softLanguage && data.languageCode2 == null && !AsrLanguages.isWhisperLanguage(data.languageCode, largeV3)) {
+                // Keep the parser alive for a code this model does not know.
+                Log.w("asrLanguage", "no token for " + data.languageCode + " in this Whisper model; auto-detect");
+                softLanguage = true;
             }
             WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2, softLanguage, allowedSwitchId);
             Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
                     + " soft=" + softLanguage + " requested=" + data.languageCode
+                    + " rawLen=" + (transcripts.firstText == null ? 0 : transcripts.firstText.length())
                     + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
             if (data.languageCode2 == null) {
                 String text = guardSingle(correctText(transcripts.firstText), data.languageCode);
@@ -951,34 +963,32 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     /**
-     * A conflict is only vetoed when the lock is on; with the lock off the old
-     * behaviour is kept and the diagnostics log is the only change.
+     * The guard is advisory. A transcript is never dropped because a script
+     * heuristic disagrees: suppressing text here made Whisper look broken when
+     * the user switched languages or mixed a name into a sentence. The chosen
+     * language token still comes from the lock; this only records the evidence.
      */
     private String guardSingle(String text, String languageCode) {
         if (!hasText(text)) {
             return text;
         }
         AsrLanguageGuard.Result result = logGuard(text, languageCode);
-        if (result.verdict == AsrLanguageGuard.Verdict.CONFLICT && global.isAsrLanguageLock()) {
-            Log.i("asrLanguage", "veto=single reason=" + result.reason + " requested=" + AsrLanguages.displayName(languageCode));
-            return UNDEFINED_TEXT;
+        if (result.verdict == AsrLanguageGuard.Verdict.CONFLICT) {
+            Log.i("asrLanguage", "conflict=single reason=" + result.reason
+                    + " requested=" + AsrLanguages.displayName(languageCode) + " kept=true");
         }
         return text;
     }
 
-    /** Vetoes one side of a bilingual result only when the other side has no conflict. */
+    /** Both sides stay available; the existing meta/confidence path still picks one. */
     private String[] guardPair(String firstText, String firstLanguage, String secondText, String secondLanguage) {
         AsrLanguageGuard.Result first = hasText(firstText) ? logGuard(firstText, firstLanguage) : null;
         AsrLanguageGuard.Result second = hasText(secondText) ? logGuard(secondText, secondLanguage) : null;
-        boolean firstConflict = first != null && first.verdict == AsrLanguageGuard.Verdict.CONFLICT;
-        boolean secondConflict = second != null && second.verdict == AsrLanguageGuard.Verdict.CONFLICT;
-        if (firstConflict && !secondConflict) {
-            Log.i("asrLanguage", "veto=first reason=" + first.reason);
-            return new String[]{UNDEFINED_TEXT, secondText};
+        if (first != null && first.verdict == AsrLanguageGuard.Verdict.CONFLICT) {
+            Log.i("asrLanguage", "conflict=first reason=" + first.reason + " kept=true");
         }
-        if (secondConflict && !firstConflict) {
-            Log.i("asrLanguage", "veto=second reason=" + second.reason);
-            return new String[]{firstText, UNDEFINED_TEXT};
+        if (second != null && second.verdict == AsrLanguageGuard.Verdict.CONFLICT) {
+            Log.i("asrLanguage", "conflict=second reason=" + second.reason + " kept=true");
         }
         return new String[]{firstText, secondText};
     }
@@ -988,7 +998,14 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     private AsrLanguageGuard.Result logGuard(String text, String languageCode) {
-        AsrLanguageGuard.Result result = AsrLanguageGuard.analyze(text, languageCode);
+        AsrLanguageGuard.Result result;
+        try {
+            result = AsrLanguageGuard.analyze(text, languageCode);
+        } catch (RuntimeException e) {
+            // A diagnostic must never turn a valid transcript into a recognition error.
+            Log.w("asrLanguage", "guard failed", e);
+            return AsrLanguageGuard.weak("guard-error");
+        }
         Log.i("asrLanguage", "guard=" + result.verdict + " reason=" + result.reason
                 + " requested=" + AsrLanguages.displayName(languageCode)
                 + " letters=" + result.letters + " len=" + text.length());

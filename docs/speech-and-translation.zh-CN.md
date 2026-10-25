@@ -113,8 +113,9 @@ Conversation 不走双语言。它只用本机 `Global.getLanguage()` 做一次�
 `Global.isAsrLanguageLock()`（默认 `true`，设置项 `asrLanguageLock`）决定一次识别能不能用所选语言以外的语言。
 
 - **Whisper Small / large-v3-turbo**（`WhisperTurboEngine`）：语言 token 来自 `AsrLanguages.whisperToken(code, largeV3)`。large-v3 有 100 个语言 token，Small 只有 99 个，所以 `yue` 回退到 `zh`。同声传译锁定时直接用固定 token 解码，不跑 SOT 探测。关闭锁定后，探测也只能切到本次会话的目标语言，并且仍要满足 `AsrLanguageHint` 的 2.0 提示加成和 1.5 切换余量。
+- **固定 30 秒窗口**：合并导出的编码器可能声明动态帧轴，但位置编码固定为 1500 个位置（3000 个 mel 帧）。因此 `WhisperTurboEngine` 在取不到静态帧数时默认用 3000，并把每段音频补齐。mel 短于 3000 时，编码器的 `Add` 节点会报广播错误（`50 by 1500`），Whisper 完全不出文本。
 - **Qwen3-ASR 0.6B / 1.7B**（`Qwen3AsrEngine`）：`transcribe(samples, languageCode)` 在 assistant 回合后追加 `language <Name>`，让模型按指定语言解码，而不是自报语言。前缀用模型自己的 byte-level 词表编码；如果编码后无法还原成同一字符串，就退回无约束解码并记录 `prefixFallback`。
-- **`AsrLanguageGuard`**：按 Unicode 文字系统统计判断文本是否像所选语言；西里尔文再查专属字符 `ыэё`（俄语）和 `іїєґ`（乌克兰语）。锁定开启时 `CONFLICT` 变成 `[(und)]`。双语识别会否决冲突的一侧，让 `compareResults` 使用另一侧。少于 12 个字母的文本只算 `WEAK`，不拦截。
+- **`AsrLanguageGuard`**：按 Unicode 文字系统统计判断文本是否像所选语言；西里尔文再查专属字符 `ыэё`（俄语）和 `іїєґ`（乌克兰语）。它只做诊断：`CONFLICT` 只记录日志，文本仍然保留，避免脚本启发式把正常识别结果吞掉。少于 12 个字母的文本只算 `WEAK`。
 - **诊断日志**：`Log.i("asrLanguage", ...)` 记录模型、软/硬模式、请求语言与最终语言、前二语言分数、守卫结论和耗时，不记录识别文本。
 
 ## 4. 翻译前的分句

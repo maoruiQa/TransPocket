@@ -179,7 +179,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
         // interpretation can opt back into clause-by-clause switching.
         asrLanguageLock = sharedPreferences.getBoolean("asrLanguageLock", true);
         translationMode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
-        asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_WHISPER);
+        asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_QWEN3_06);
         vadModel = sharedPreferences.getInt("selectedVadModel", DEFAULT_VAD_MODEL) == VAD_SILERO ? VAD_SILERO : VAD_FIRERED;
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
@@ -860,17 +860,37 @@ public class Global extends Application implements DefaultLifecycleObserver {
         SharedPreferences prefs = getSharedPreferences("default", Context.MODE_PRIVATE);
         String key = asrQuantKey(model);
         if (!prefs.contains(key)) {
-            // Turbo used to download only the int8 pair. Keep that install until a level is chosen.
-            if (model == ASR_WHISPER_TURBO && whisperQuantPresent(model, ASR_QUANT_INT8) && !whisperQuantPresent(model, ASR_QUANT_INT4)) {
-                return ASR_QUANT_INT8;
-            }
-            return ASR_QUANT_INT4;
+            return defaultAsrQuant(model);
         }
-        int quant = prefs.getInt(key, ASR_QUANT_INT4);
+        int quant = prefs.getInt(key, defaultAsrQuant(model));
         for (int choice : asrQuantChoices(model)) {
             if (choice == quant) {
                 return quant;
             }
+        }
+        return defaultAsrQuant(model);
+    }
+
+    /**
+     * Whisper defaults to fp16. A pre-existing int4/int8 download keeps working
+     * until the user changes the level, so an app update never makes Whisper
+     * unusable while the old files are still on disk.
+     */
+    private int defaultAsrQuant(int model) {
+        if (model == ASR_WHISPER || model == ASR_WHISPER_TURBO) {
+            if (whisperQuantPresent(model, ASR_QUANT_FP16)) {
+                return ASR_QUANT_FP16;
+            }
+            if (whisperQuantPresent(model, ASR_QUANT_INT4)) {
+                return ASR_QUANT_INT4;
+            }
+            if (whisperQuantPresent(model, ASR_QUANT_INT8)) {
+                return ASR_QUANT_INT8;
+            }
+            if (whisperQuantPresent(model, ASR_QUANT_FP32)) {
+                return ASR_QUANT_FP32;
+            }
+            return ASR_QUANT_FP16;
         }
         return ASR_QUANT_INT4;
     }
