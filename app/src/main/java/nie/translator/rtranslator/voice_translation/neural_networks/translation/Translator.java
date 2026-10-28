@@ -493,7 +493,7 @@ public class Translator extends NeuralNetworkApi {
             @Override
             public void onSuccess(String languageCode) {
                 if (languageCode == null || languageCode.equals("und")) {
-                    responseListener.onFailure(new int[ErrorCodes.LANGUAGE_UNKNOWN], 0);
+                    responseListener.onFailure(new int[]{ErrorCodes.LANGUAGE_UNKNOWN}, 0);
                     Log.i("language detection", "Can't identify language.");
                 } else {
                     result.setLanguage(new CustomLocale(languageCode));
@@ -555,6 +555,17 @@ public class Translator extends NeuralNetworkApi {
 
     public abstract static class DetectLanguageListener extends TranslatorListener {
         public abstract void onDetectedText(NeuralNetworkApiResult result);
+    }
+
+    /** Language of a typed text with no candidate list, "und" when unsure. The listener runs on the main thread. */
+    public void detectTextLanguage(String text, final LanguageDetector.DetectLanguageListener responseListener) {
+        this.languageDetector.detectAnyLanguage(text, 0.3F, new LanguageDetector.DetectLanguageListener() {
+            @Override
+            public void onSuccess(String languageCode) {
+                Log.i("language detection", "Text language: " + languageCode);
+                mainHandler.post(() -> responseListener.onSuccess(languageCode));
+            }
+        });
     }
 
     public abstract static class DetectMultiLanguageListener extends TranslatorListener {

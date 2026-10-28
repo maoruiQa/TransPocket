@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import nie.translator.rtranslator.tools.AsrLanguageFilter;
 import nie.translator.rtranslator.tools.AsrLanguageHint;
 import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.AsrRepetition;
@@ -122,7 +123,7 @@ public class WhisperTurboEngine {
     }
 
     public Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage) throws OrtException, IOException {
-        return transcribe(samples, languageCode, languageCode2, softLanguage, -1, Integer.MAX_VALUE);
+        return transcribe(samples, languageCode, languageCode2, softLanguage, -1, null, Integer.MAX_VALUE);
     }
 
     /**
@@ -131,7 +132,17 @@ public class WhisperTurboEngine {
      */
     public Transcripts transcribe(float[] samples, String languageCode, String languageCode2,
                                   boolean softLanguage, int allowedSwitchId) throws OrtException, IOException {
-        return transcribe(samples, languageCode, languageCode2, softLanguage, allowedSwitchId, Integer.MAX_VALUE);
+        return transcribe(samples, languageCode, languageCode2, softLanguage, allowedSwitchId, null, Integer.MAX_VALUE);
+    }
+
+    /**
+     * @param acceptedIds absolute language tokens of the session. When the language ID is
+     *                    clearly outside them the clause is not decoded and comes back
+     *                    {@link Transcripts#rejected}. Null keeps every clause.
+     */
+    public Transcripts transcribe(float[] samples, String languageCode, String languageCode2,
+                                  boolean softLanguage, int allowedSwitchId, int[] acceptedIds) throws OrtException, IOException {
+        return transcribe(samples, languageCode, languageCode2, softLanguage, allowedSwitchId, acceptedIds, Integer.MAX_VALUE);
     }
 
     /**
@@ -139,13 +150,16 @@ public class WhisperTurboEngine {
      * enough to stall capture, so it runs before the microphone opens.
      */
     public void warmup() throws OrtException, IOException {
-        transcribe(new float[SAMPLE_RATE], "en", null, false, -1, 1);
+        transcribe(new float[SAMPLE_RATE], "en", null, false, -1, null, 1);
     }
 
     private Transcripts transcribe(float[] samples, String languageCode, String languageCode2, boolean softLanguage,
-                                   int allowedSwitchId, int decoderSteps) throws OrtException, IOException {
+                                   int allowedSwitchId, int[] acceptedIds, int decoderSteps) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcripts("", 0, null, 0);
+        }
+        if (samples.length < AsrLanguageFilter.MIN_SAMPLES) {
+            acceptedIds = null;
         }
         float[] mel = logMel(fitLength(samples));
         int frames = mel.length / nMels;
@@ -185,43 +199,59 @@ public class WhisperTurboEngine {
             }
             int encoderFrames = encoderFrames(hidden);
             Hypothesis first = decode(hidden, frames, encoderFrames, hintedId,
-                    hintLanguage, hintLanguage ? allowedSwitchId : -1, decoderSteps);
+                    hintLanguage, hintLanguage ? allowedSwitchId : -1, acceptedIds, decoderSteps);
+            if (first.rejected) {
+                return Transcripts.rejected(first.language);
+            }
             if (languageCode2 == null) {
-                return new Transcripts(first.text, first.score, null, 0);
+                return new Transcripts(first.text, first.score, null, 0, first.language);
             }
             Hypothesis second;
             try {
-                second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, -1, decoderSteps);
+                second = decode(hidden, frames, encoderFrames, languageId(languageCode2), false, -1, null, decoderSteps);
             } catch (IOException e) {
                 Log.w("asrLanguage", "no token for " + languageCode2 + " in this Whisper model; second side empty");
-                second = new Hypothesis("", 0);
+                second = new Hypothesis("", 0, "");
             }
-            return new Transcripts(first.text, first.score, second.text, second.score);
+            return new Transcripts(first.text, first.score, second.text, second.score, first.language);
         } finally {
             hidden.close();
         }
     }
 
     private Hypothesis decode(OnnxTensor hidden, int frames, int encoderFrames, int languageId, boolean softLanguage,
-                              int allowedSwitchId, int decoderSteps) throws OrtException, IOException {
+                              int allowedSwitchId, int[] acceptedIds, int decoderSteps) throws OrtException, IOException {
         ArrayList<Integer> produced = new ArrayList<>();
         Map<String, OnnxTensor> cache = new HashMap<>();
         int position = 0;
         int[] prompt;
-        if (softLanguage) {
+        int chosen = languageId;
+        if (softLanguage || acceptedIds != null) {
+            // The start token alone yields the language scores; with the cache this split costs nothing.
             Step sotStep = runDecoder(hidden, encoderFrames, new int[]{sot}, 0, cache, true);
             cache = sotStep.cache;
             position = 1;
-            boolean allowSwitch = allowedSwitchId >= firstLanguage && allowedSwitchId <= lastLanguage;
-            int chosen = AsrLanguageHint.choose(sotStep.languageLogits, firstLanguage, languageId, allowSwitch, allowedSwitchId);
-            if (chosen < firstLanguage || chosen > lastLanguage) {
-                chosen = languageId >= firstLanguage && languageId <= lastLanguage ? languageId : firstLanguage;
+            int foreign = AsrLanguageFilter.foreignLanguage(sotStep.languageLogits, firstLanguage, acceptedIds);
+            if (foreign >= 0) {
+                closeTensors(cache);
+                Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
+                        + " rejected=" + AsrLanguages.whisperCode(foreign, largeV3)
+                        + " requested=" + AsrLanguages.whisperCode(languageId, largeV3)
+                        + " top2=" + topTwo(sotStep.languageLogits));
+                return Hypothesis.rejected(AsrLanguages.whisperCode(foreign, largeV3));
             }
-            Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
-                    + " soft=true requested=" + AsrLanguages.whisperCode(languageId, largeV3)
-                    + " chosen=" + AsrLanguages.whisperCode(chosen, largeV3)
-                    + " allowed=" + (allowSwitch ? AsrLanguages.whisperCode(allowedSwitchId, largeV3) : "none")
-                    + " top2=" + topTwo(sotStep.languageLogits));
+            if (softLanguage) {
+                boolean allowSwitch = allowedSwitchId >= firstLanguage && allowedSwitchId <= lastLanguage;
+                chosen = AsrLanguageHint.choose(sotStep.languageLogits, firstLanguage, languageId, allowSwitch, allowedSwitchId);
+                if (chosen < firstLanguage || chosen > lastLanguage) {
+                    chosen = languageId >= firstLanguage && languageId <= lastLanguage ? languageId : firstLanguage;
+                }
+                Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
+                        + " soft=true requested=" + AsrLanguages.whisperCode(languageId, largeV3)
+                        + " chosen=" + AsrLanguages.whisperCode(chosen, largeV3)
+                        + " allowed=" + (allowSwitch ? AsrLanguages.whisperCode(allowedSwitchId, largeV3) : "none")
+                        + " top2=" + topTwo(sotStep.languageLogits));
+            }
             prompt = new int[]{chosen, transcribe, noTimestamps};
         } else {
             prompt = new int[]{sot, languageId, transcribe, noTimestamps};
@@ -261,7 +291,7 @@ public class WhisperTurboEngine {
             }
         }
         double mean = scored == 0 ? 0 : score / scored;
-        return new Hypothesis(decodeIds(produced), mean);
+        return new Hypothesis(decodeIds(produced), mean, AsrLanguages.whisperCode(chosen, largeV3));
     }
 
     private Step runDecoder(OnnxTensor hidden, int encoderFrames, int[] ids, int position, Map<String, OnnxTensor> cache, boolean captureLanguage) throws OrtException, IOException {
@@ -855,22 +885,52 @@ public class WhisperTurboEngine {
         public final double firstScore;
         public final String secondText;
         public final double secondScore;
+        /** Language token the first text was decoded with, "" when unknown. */
+        public final String firstLanguage;
+        /** The clause was in a language outside the accepted set and was not decoded. */
+        public final boolean rejected;
 
         Transcripts(String firstText, double firstScore, String secondText, double secondScore) {
+            this(firstText, firstScore, secondText, secondScore, "", false);
+        }
+
+        Transcripts(String firstText, double firstScore, String secondText, double secondScore, String firstLanguage) {
+            this(firstText, firstScore, secondText, secondScore, firstLanguage, false);
+        }
+
+        private Transcripts(String firstText, double firstScore, String secondText, double secondScore, String firstLanguage, boolean rejected) {
             this.firstText = firstText;
             this.firstScore = firstScore;
             this.secondText = secondText;
             this.secondScore = secondScore;
+            this.firstLanguage = firstLanguage == null ? "" : firstLanguage;
+            this.rejected = rejected;
+        }
+
+        static Transcripts rejected(String language) {
+            return new Transcripts("", 0, null, 0, language, true);
         }
     }
 
     private static final class Hypothesis {
         final String text;
         final double score;
+        final String language;
+        final boolean rejected;
 
-        Hypothesis(String text, double score) {
+        Hypothesis(String text, double score, String language) {
+            this(text, score, language, false);
+        }
+
+        private Hypothesis(String text, double score, String language, boolean rejected) {
             this.text = text;
             this.score = score;
+            this.language = language;
+            this.rejected = rejected;
+        }
+
+        static Hypothesis rejected(String language) {
+            return new Hypothesis("", 0, language, true);
         }
     }
 

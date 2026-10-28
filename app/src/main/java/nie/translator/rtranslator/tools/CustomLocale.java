@@ -34,6 +34,8 @@ public class CustomLocale implements Comparable<CustomLocale>, Serializable {
     private String cachedDisplayName;
     @Nullable
     private String cachedIso3Language = null;
+    /** Label of the "detect the spoken language" entry. Global sets it from the resources. */
+    private static String autoDisplayName = "Auto-detect";
 
     public CustomLocale(String language, String country, String variant) {
         locale = new Locale(language, country, variant);
@@ -53,6 +55,21 @@ public class CustomLocale implements Comparable<CustomLocale>, Serializable {
     public CustomLocale(@NonNull Locale locale) {
         this.locale = locale;
         initCacheValues();
+    }
+
+    /** Entry for "detect the spoken language". It is never passed to a model or a TTS engine. */
+    public static CustomLocale getAuto() {
+        return new CustomLocale(AsrLanguages.AUTO);
+    }
+
+    public static void setAutoDisplayName(String name) {
+        if (name != null && !name.isEmpty()) {
+            autoDisplayName = name;
+        }
+    }
+
+    public boolean isAuto() {
+        return AsrLanguages.AUTO.equals(locale.getLanguage());
     }
 
     public static CustomLocale getInstance(String code) {
@@ -173,7 +190,7 @@ public class CustomLocale implements Comparable<CustomLocale>, Serializable {
 
     public String getDisplayName(ArrayList<CustomLocale> ttsLanguages) {
         String name = getDisplayNameWithoutTTS();
-        if (containsLanguage(ttsLanguages, this)) {
+        if (isAuto() || containsLanguage(ttsLanguages, this)) {
             return name;
         } else {
             return name + " (no TTS)";    // Notice that users cannot use TTS for this language.
@@ -186,6 +203,9 @@ public class CustomLocale implements Comparable<CustomLocale>, Serializable {
          * are relatively heavy operations (circa 1 ms), and without cache this can impact the performance where this method
          * is called for operations regarding a lot of languages (> 400), for example in the languages list dialogs.
          */
+        if (isAuto()) {
+            return autoDisplayName;
+        }
         if (cachedDisplayName != null) {
             return cachedDisplayName;
         }

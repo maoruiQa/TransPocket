@@ -310,4 +310,19 @@
     <string name="conversation_mode_running" >對話模式正在運行...</string>
     <string name="walkietalkie_mode" >對講機模式</string>
     <string name="walkietalkie_mode_running" >對講機模式正在運行...</string>
+    <string name="auto_detect_language">自動偵測</string>
+    <string name="preference_title_asr_ignore_other_languages">忽略其他語言的語音</string>
+    <string name="preference_description_asr_ignore_other_languages">明顯不是目前模式所用語言的語音會被丟棄，而不是強行按所選語言辨識。被丟棄的語音不會被翻譯、朗讀，也不會進入上下文。</string>
+    <string name="preference_title_auto_check_updates">自動檢查更新</string>
+    <string name="preference_description_auto_check_updates">每天最多一次向 GitHub 查詢是否有新版本 TransPocket，只傳送應用程式版本號。</string>
+    <string name="preference_title_check_updates">檢查更新</string>
+    <string name="preference_description_check_updates">目前版本：%1$s</string>
+    <string name="update_checking">正在檢查更新…</string>
+    <string name="update_check_failed">無法檢查更新</string>
+    <string name="update_up_to_date">已是最新版本（%1$s）</string>
+    <string name="update_available_title">發現新版本 %1$s</string>
+    <string name="update_available_message">目前版本：%1$s\n最新版本：%2$s</string>
+    <string name="update_download">下載</string>
+    <string name="update_later">稍後</string>
+    <string name="update_skip_version">略過此版本</string>
 </resources>

@@ -13,6 +13,11 @@ public final class AsrLanguages {
     /** Token id of {@code <|en|>}: the first language after {@code <|startoftranscript|>}. */
     public static final int WHISPER_FIRST_LANGUAGE_ID = 50259;
     public static final int WHISPER_SMALL_LANGUAGE_COUNT = 99;
+    /**
+     * Request code for "detect the spoken language". It is the ISO 639-2 code for an
+     * undetermined language, so no ASR table maps it to a token.
+     */
+    public static final String AUTO = "und";
 
     private static final String[] WHISPER_CODES = {
             "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi",
@@ -41,6 +46,9 @@ public final class AsrLanguages {
     private static final Map<String, String> NAME_BY_CODE = new HashMap<>();
     private static final Map<String, String> CODE_BY_NAME = new HashMap<>();
     private static final Map<String, String> QWEN_NAME_OVERRIDES = new HashMap<>();
+    private static final String[][] RELATED_GROUPS = {
+            {"zh", "yue"}, {"no", "nn"}, {"hr", "sr", "bs"}, {"ms", "id"}, {"hi", "ur"}
+    };
 
     static {
         addAlias("iw", "he");
@@ -205,6 +213,34 @@ public final class AsrLanguages {
             return canonical;
         }
         return "";
+    }
+
+    public static boolean isAuto(String language) {
+        return AUTO.equals(baseCode(language));
+    }
+
+    /** True for a code in the Whisper table, the superset of what both ASR models emit. */
+    public static boolean isKnownCode(String language) {
+        return NAME_BY_CODE.containsKey(canonicalCode(language));
+    }
+
+    /**
+     * The code itself plus the languages the ASR models routinely mistake it for.
+     * A clause labelled with one of these is not evidence of a foreign speaker.
+     */
+    public static String[] relatedCodes(String language) {
+        String code = canonicalCode(language);
+        if (code.isEmpty()) {
+            return new String[0];
+        }
+        for (String[] group : RELATED_GROUPS) {
+            for (String member : group) {
+                if (member.equals(code)) {
+                    return group.clone();
+                }
+            }
+        }
+        return new String[]{code};
     }
 
     public static boolean sameLanguage(String left, String right) {

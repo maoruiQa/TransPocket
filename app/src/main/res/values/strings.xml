@@ -357,4 +357,19 @@
     <string name="walkietalkie_mode" >WalkieTalkie</string>
     <string name="walkietalkie_mode_running" >WalkieTalkie mode is running...</string>
 
+    <string name="auto_detect_language">Auto-detect</string>
+    <string name="preference_title_asr_ignore_other_languages">Ignore speech in other languages</string>
+    <string name="preference_description_asr_ignore_other_languages">Drop speech that is clearly in a language this mode does not use, instead of forcing it into the selected language. Dropped speech is not translated, spoken or kept as context.</string>
+    <string name="preference_title_auto_check_updates">Check for updates automatically</string>
+    <string name="preference_description_auto_check_updates">At most once a day, ask GitHub whether a newer TransPocket release exists. Only the app version is sent.</string>
+    <string name="preference_title_check_updates">Check for updates</string>
+    <string name="preference_description_check_updates">Current version: %1$s</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_check_failed">Could not check for updates</string>
+    <string name="update_up_to_date">TransPocket %1$s is the latest version</string>
+    <string name="update_available_title">TransPocket %1$s is available</string>
+    <string name="update_available_message">Installed: %1$s\nLatest: %2$s</string>
+    <string name="update_download">Download</string>
+    <string name="update_later">Later</string>
+    <string name="update_skip_version">Skip this version</string>
 </resources>

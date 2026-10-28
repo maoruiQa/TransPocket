@@ -29,6 +29,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 
 import nie.translator.rtranslator.Global;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.BluetoothRouteWake;
 import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.bluetooth.Message;
@@ -61,6 +62,10 @@ public class SimultaneousService extends VoiceTranslationService {
     private RecognizerListener speechRecognizerCallback;
     private CustomLocale sourceLanguage;
     private CustomLocale targetLanguage;
+    /** Each clause is translated from its detected language; sourceLanguage is only the first guess. */
+    private boolean sourceAuto;
+    /** Source language whose translation resources were requested last. */
+    private CustomLocale loadedSourceLanguage;
     private boolean callbacksAttached = false;
     private final ArrayDeque<PendingClause> pendingClauses = new ArrayDeque<>();
     private final ArrayDeque<Long> clauseSubmittedAt = new ArrayDeque<>();
@@ -106,6 +111,7 @@ public class SimultaneousService extends VoiceTranslationService {
         isAudioMute = SimultaneousAutoSpeak.isMuted(autoSpeak, Recorder.headphonesConnected(this));
         sourceLanguage = global.getSimultaneousSourceLanguage(true);
         targetLanguage = global.getSimultaneousTargetLanguage(true);
+        sourceAuto = global.isLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE);
         translator = global.getTranslator();
         speechRecognizer = global.getSpeechRecognizer();
         mVoiceCallback = new Recorder.Callback() {
@@ -133,7 +139,8 @@ public class SimultaneousService extends VoiceTranslationService {
                             clauseUsedVad.addLast(mVoiceRecorder != null && mVoiceRecorder.usesClauseVad());
                         }
                         String targetCode = targetLanguage != null ? targetLanguage.getCode() : null;
-                        speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceLanguage.getCode(), targetCode);
+                        String sourceCode = sourceAuto ? AsrLanguages.AUTO : sourceLanguage.getCode();
+                        speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceCode, targetCode);
                     }
                 }
             }
@@ -171,7 +178,11 @@ public class SimultaneousService extends VoiceTranslationService {
                         }
                         case CHANGE_SOURCE_LANGUAGE: {
                             CustomLocale language = (CustomLocale) message.getData().getSerializable("language");
-                            if (language != null) {
+                            if (language != null && language.isAuto()) {
+                                sourceAuto = true;
+                                clearClauseContext();
+                            } else if (language != null) {
+                                sourceAuto = false;
                                 sourceLanguage = language;
                                 clearClauseContext();
                                 reloadLanguages();
@@ -205,7 +216,7 @@ public class SimultaneousService extends VoiceTranslationService {
                     audioMs = clauseAudioMs.pollFirst();
                     usedVad = clauseUsedVad.pollFirst();
                 }
-                mainHandler.post(() -> handleRecognition(text, isFinal, submitted == null ? asrDone : submitted, asrDone, audioMs == null ? 0 : audioMs, Boolean.TRUE.equals(usedVad)));
+                mainHandler.post(() -> handleRecognition(text, languageCode, isFinal, submitted == null ? asrDone : submitted, asrDone, audioMs == null ? 0 : audioMs, Boolean.TRUE.equals(usedVad)));
             }
 
             @Override
@@ -227,6 +238,7 @@ public class SimultaneousService extends VoiceTranslationService {
             if (source != null) {
                 sourceLanguage = source;
             }
+            sourceAuto = global.isLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE);
             if (target != null) {
                 targetLanguage = target;
             }
@@ -266,6 +278,7 @@ public class SimultaneousService extends VoiceTranslationService {
             notifyModelLoading(0, PREPARE_MAX);
         }
         final int generation = ++prepareGeneration;
+        loadedSourceLanguage = sourceLanguage;
         translator.loadLanguageResources(sourceLanguage, targetLanguage, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.GeneralListener() {
             @Override
             public void onSuccess() {
@@ -428,12 +441,21 @@ public class SimultaneousService extends VoiceTranslationService {
         });
     }
 
-    private void handleRecognition(String text, boolean isFinal, long submittedAt, long asrDone, int audioMs, boolean vadClause) {
+    private void handleRecognition(String text, String languageCode, boolean isFinal, long submittedAt, long asrDone, int audioMs, boolean vadClause) {
         if (text != null && !text.isEmpty() && isFinal) {
             android.util.Log.i("simultaneous", "recognized vad=" + vadClause + " audioMs=" + audioMs + " text=" + text);
         }
         if (text == null || text.isEmpty() || isMetaText(text) || !isFinal || sourceLanguage == null || targetLanguage == null) {
             return;
+        }
+        CustomLocale clauseLanguage = sourceLanguage;
+        if (sourceAuto) {
+            clauseLanguage = global.findDetectedLanguage(languageCode, Global.RTranslatorMode.SIMULTANEOUS_MODE);
+            // Speech already in the target language has nothing to translate and would only pollute the context.
+            if (clauseLanguage == null || clauseLanguage.equalsLanguage(targetLanguage)) {
+                android.util.Log.i("simultaneous", "skipped clause detected=" + languageCode);
+                return;
+            }
         }
         long asrMs = Math.max(0, asrDone - submittedAt);
         ArrayList<String> clauses = vadClause ? vadClauses(text) : ClauseSplitter.split(text);
@@ -444,6 +466,7 @@ public class SimultaneousService extends VoiceTranslationService {
             PendingClause pending = new PendingClause();
             pending.id = nextMessageId++;
             pending.text = clause;
+            pending.language = clauseLanguage;
             pending.audioMs = audioMs;
             pending.asrMs = asrMs;
             pending.submittedAt = submittedAt;
@@ -475,10 +498,33 @@ public class SimultaneousService extends VoiceTranslationService {
             clauseFinished();
             return;
         }
+        if (!clause.language.equals(loadedSourceLanguage)) {
+            // The previous clause was in another language; its context would mislead this one.
+            clearClauseContext();
+            loadedSourceLanguage = clause.language;
+            translator.loadLanguageResources(clause.language, targetLanguage, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.GeneralListener() {
+                @Override
+                public void onSuccess() {
+                    performTranslation(clause);
+                }
+
+                @Override
+                public void onFailure(int[] reasons, long value) {
+                    loadedSourceLanguage = null;
+                    SimultaneousService.super.notifyError(reasons, value);
+                    clauseFinished();
+                }
+            });
+            return;
+        }
+        performTranslation(clause);
+    }
+
+    private void performTranslation(PendingClause clause) {
         final String contextSource = previousSource;
         final String contextTranslation = previousTranslation;
         final long translateStarted = SystemClock.elapsedRealtime();
-        translator.translate(clause.text, contextSource, contextTranslation, sourceLanguage, targetLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.TranslateListener() {
+        translator.translate(clause.text, contextSource, contextTranslation, clause.language, targetLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.TranslateListener() {
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, @Nullable String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
                 String shown = translatedText == null ? "" : translatedText;
@@ -506,7 +552,7 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     private void publishClause(PendingClause clause, String translation, boolean isFinal) {
-        GuiMessage message = new GuiMessage(new Message(clause.text, SimultaneousService.this, translation), sourceLanguage, targetLanguage, clause.id, false, isFinal);
+        GuiMessage message = new GuiMessage(new Message(clause.text, SimultaneousService.this, translation), clause.language, targetLanguage, clause.id, false, isFinal);
         notifyMessage(message);
         addOrUpdateMessage(message);
     }
@@ -547,6 +593,7 @@ public class SimultaneousService extends VoiceTranslationService {
     private static final class PendingClause {
         private long id;
         private String text;
+        private CustomLocale language;
         private String spoken = "";
         private int audioMs;
         private long asrMs;

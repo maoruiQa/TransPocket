@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.BluetoothHeadsetUtils;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.SimultaneousText;
@@ -102,7 +103,8 @@ public class ConversationService extends VoiceTranslationService {
                     CustomLocale language = global.getLanguage(true);
                     int sampleRate = getVoiceRecorderSampleRate();
                     if (sampleRate != 0) {
-                        mVoiceRecognizer.recognize(data, SPEECH_BEAM_SIZE, language.getCode());
+                        String code = global.isLanguageAuto(Global.AUTO_LANGUAGE) ? AsrLanguages.AUTO : language.getCode();
+                        mVoiceRecognizer.recognize(data, SPEECH_BEAM_SIZE, code);
                     }
                 }
             }
@@ -238,7 +240,22 @@ public class ConversationService extends VoiceTranslationService {
             @Override
             public void onSpeechRecognizedResult(String text, String languageCode, double confidenceScore, boolean isFinal) {
                 if (text != null && languageCode != null && !text.equals("") && !isMetaText(text)) {
-                    CustomLocale language = CustomLocale.getInstance(languageCode);
+                    CustomLocale language;
+                    if (global.isLanguageAuto(Global.AUTO_LANGUAGE)) {
+                        language = global.findDetectedLanguage(languageCode, Global.RTranslatorMode.CONVERSATION_MODE);
+                        if (language == null) {
+                            Log.i("conversation", "skipped utterance in unsupported language " + languageCode);
+                            return;
+                        }
+                        if (!language.equals(global.getLanguage(true))) {
+                            // Received messages are translated into the language this user speaks,
+                            // and the peers are told so they can load it.
+                            final CustomLocale spoken = language;
+                            mainHandler.post(() -> global.setLanguage(spoken));
+                        }
+                    } else {
+                        language = CustomLocale.getInstance(languageCode);
+                    }
                     GuiMessage guiMessage = new GuiMessage(new Message(global, text), language, language, global.getTranslator().incrementCurrentResultID(), true, isFinal);
                     if (isFinal) {
                         // send the message

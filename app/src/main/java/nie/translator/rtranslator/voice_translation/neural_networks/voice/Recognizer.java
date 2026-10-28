@@ -44,6 +44,7 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.extensions.OrtxPackage;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.AsrLanguageFilter;
 import nie.translator.rtranslator.tools.AsrLanguageGuard;
 import nie.translator.rtranslator.tools.AsrLanguageHint;
 import nie.translator.rtranslator.tools.AsrLanguages;
@@ -327,9 +328,11 @@ public class Recognizer extends NeuralNetworkApi {
      * is returned from onVoice.
      *
      * @param data The audio data.
+     * @param languageCode {@link AsrLanguages#AUTO} decodes with the detected language and
+     *                     reports it in the result.
      */
     public void recognize(final float[] data, int beamSize, final String languageCode) {
-        enqueue(new DataContainer(data, beamSize, languageCode, false));
+        enqueue(new DataContainer(data, beamSize, languageCode, AsrLanguages.isAuto(languageCode)));
     }
 
     /**
@@ -563,7 +566,12 @@ public class Recognizer extends NeuralNetworkApi {
                     //first we run the decoder with the first 3 fixed values (START_TOKEN_ID, languageID, TRANSCRIBE_TOKEN_ID, NO_TIMESTAMPS_TOKEN_ID)
                     final int firstLanguageToken = START_TOKEN_ID + 1;
                     final int lastLanguageToken = TRANSCRIBE_TOKEN_ID - 2;
-                    int languageID = getLanguageID(data.languageCode);
+                    final boolean autoLanguage = batchSize == 1 && AsrLanguages.isAuto(data.languageCode);
+                    final boolean softLanguage = batchSize == 1 && (data.softLanguage || autoLanguage);
+                    final int[] acceptedIds = acceptedWhisperIds(data, false);
+                    String rejectedLanguage = null;
+                    // Auto has no token to force; the first step picks it from the language scores.
+                    int languageID = autoLanguage ? firstLanguageToken : getLanguageID(data.languageCode);
                     if (languageID < firstLanguageToken || languageID > lastLanguageToken) {
                         // A negative id would reach the embedding as the last vocabulary row.
                         throw new IllegalArgumentException("Whisper Small has no language token for " + data.languageCode);
@@ -575,7 +583,7 @@ public class Recognizer extends NeuralNetworkApi {
                             throw new IllegalArgumentException("Whisper Small has no language token for " + data.languageCode2);
                         }
                     }
-                    int hintedLanguage = languageID;
+                    int hintedLanguage = autoLanguage ? -1 : languageID;
                     if (hintedLanguage < firstLanguageToken || hintedLanguage > lastLanguageToken) {
                         hintedLanguage = -1;
                     }
@@ -588,7 +596,7 @@ public class Recognizer extends NeuralNetworkApi {
                         time = System.currentTimeMillis();
                         if (j <= 4) {
                             int token = decoderInitialInputIDs[j-1];
-                            if (data.softLanguage && batchSize == 1 && j == 2) {
+                            if (softLanguage && j == 2) {
                                 token = chosenLanguage;
                             }
                             if(batchSize == 1) {
@@ -632,14 +640,24 @@ public class Recognizer extends NeuralNetworkApi {
                         decoderOutput = (OnnxTensor) result.get("logits").get();
                         value = (float[][][]) decoderOutput.getValue();
                         outputValues = value[0][0];
+                        if (j == 1 && acceptedIds != null && outputValues.length > lastLanguageToken) {
+                            // Both batch rows start from the same token, so row 0 holds the language scores.
+                            float[] languageLogits = new float[lastLanguageToken - firstLanguageToken + 1];
+                            System.arraycopy(outputValues, firstLanguageToken, languageLogits, 0, languageLogits.length);
+                            int foreign = AsrLanguageFilter.foreignLanguage(languageLogits, firstLanguageToken, acceptedIds);
+                            if (foreign >= 0) {
+                                rejectedLanguage = AsrLanguages.whisperCode(foreign, false);
+                                break;
+                            }
+                        }
                         if(!finished1) {
                             max = Utils.getIndexOfLargest(outputValues);
                             completeOutput.add(max);
-                            if (data.softLanguage && batchSize == 1 && j == 1 && outputValues.length > lastLanguageToken) {
+                            if (softLanguage && j == 1 && outputValues.length > lastLanguageToken) {
                                 float[] languageLogits = new float[lastLanguageToken - firstLanguageToken + 1];
                                 System.arraycopy(outputValues, firstLanguageToken, languageLogits, 0, languageLogits.length);
                                 int picked;
-                                if (global.isAsrLanguageLock()) {
+                                if (global.isAsrLanguageLock() && !autoLanguage) {
                                     picked = hintedLanguage;
                                 } else {
                                     int allowed = AsrLanguages.whisperToken(data.languageCodeSwitch, false);
@@ -705,6 +723,15 @@ public class Recognizer extends NeuralNetworkApi {
                         j++;
                     }
 
+                    if (rejectedLanguage != null) {
+                        result.close();
+                        outputs.close();
+                        outputInit.close();
+                        initResult.close();
+                        notifyRejected(data, rejectedLanguage);
+                        return;
+                    }
+
                     if(batchSize == 2) {
                         //we normalize the scores based on the number of tokens of the respective sequence
                         outputProbability1 = outputProbability1 / completeOutput.size();
@@ -727,7 +754,11 @@ public class Recognizer extends NeuralNetworkApi {
                         android.util.Log.i("score", "score: " + outputProbability1);
 
                         outputs.close();
-                        notifyResult(guardSingle(correctText(finalText), data.languageCode), data.languageCode, outputProbability1, true);
+                        if (autoLanguage) {
+                            notifyResult(correctText(finalText), AsrLanguages.whisperCode(chosenLanguage, false), outputProbability1, true);
+                        } else {
+                            notifyResult(guardSingle(correctText(finalText), data.languageCode), data.languageCode, outputProbability1, true);
+                        }
 
                     }else{
                         String firstText = UNDEFINED_TEXT;
@@ -871,10 +902,11 @@ public class Recognizer extends NeuralNetworkApi {
     private void recognizeWithTurbo(DataContainer data) {
         try {
             long started = SystemClock.elapsedRealtime();
-            boolean softLanguage = data.softLanguage && data.languageCode2 == null;
+            boolean autoLanguage = data.languageCode2 == null && AsrLanguages.isAuto(data.languageCode);
+            boolean softLanguage = (data.softLanguage || autoLanguage) && data.languageCode2 == null;
             boolean largeV3 = global.getAsrModel() == Global.ASR_WHISPER_TURBO;
             int allowedSwitchId = -1;
-            if (softLanguage) {
+            if (softLanguage && !autoLanguage) {
                 if (global.isAsrLanguageLock() && AsrLanguages.isWhisperLanguage(data.languageCode, largeV3)) {
                     // A locked clause is decoded with the configured token, so it cannot drift.
                     softLanguage = false;
@@ -887,12 +919,19 @@ public class Recognizer extends NeuralNetworkApi {
                 Log.w("asrLanguage", "no token for " + data.languageCode + " in this Whisper model; auto-detect");
                 softLanguage = true;
             }
-            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2, softLanguage, allowedSwitchId);
+            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, data.languageCode2,
+                    softLanguage, allowedSwitchId, acceptedWhisperIds(data, largeV3));
+            if (transcripts.rejected) {
+                notifyRejected(data, transcripts.firstLanguage);
+                return;
+            }
             Log.i("asrLanguage", "model=" + (largeV3 ? "whisper-turbo" : "whisper-small")
                     + " soft=" + softLanguage + " requested=" + data.languageCode
                     + " rawLen=" + (transcripts.firstText == null ? 0 : transcripts.firstText.length())
                     + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
-            if (data.languageCode2 == null) {
+            if (autoLanguage) {
+                notifyResult(correctText(transcripts.firstText), transcripts.firstLanguage, transcripts.firstScore, true);
+            } else if (data.languageCode2 == null) {
                 String text = guardSingle(correctText(transcripts.firstText), data.languageCode);
                 notifyResult(text, data.languageCode, transcripts.firstScore, true);
             } else {
@@ -911,19 +950,45 @@ public class Recognizer extends NeuralNetworkApi {
         try {
             long started = SystemClock.elapsedRealtime();
             String model = global.getAsrModel() == Global.ASR_QWEN3_17 ? "qwen1.7b" : "qwen0.6b";
+            boolean filter = isFilteringLanguages(data);
             if (data.languageCode2 == null) {
                 String requested = data.languageCode;
-                Qwen3AsrEngine.Transcript transcript = requested != null && !requested.isEmpty()
-                        ? qwenEngine.transcribe(data.data, requested)
-                        : qwenEngine.transcribe(data.data);
+                boolean autoLanguage = requested == null || requested.isEmpty() || AsrLanguages.isAuto(requested);
+                if (autoLanguage || filter) {
+                    // A free decode reports the spoken language; a forced one cannot.
+                    Qwen3AsrEngine.Transcript free = qwenEngine.transcribe(data.data);
+                    String detected = free.languageCode == null ? "" : free.languageCode;
+                    if (autoLanguage) {
+                        Log.i("asrLanguage", "model=" + model + " auto detected=" + detected
+                                + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
+                        notifyResult(correctText(free.text), detected, 1, true);
+                        return;
+                    }
+                    if (AsrLanguageFilter.isForeign(detected, requested)) {
+                        notifyRejected(data, detected);
+                        return;
+                    }
+                    if (sameLanguage(requested, detected)) {
+                        Log.i("asrLanguage", "model=" + model + " soft=false requested=" + requested
+                                + " detected=" + detected + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
+                        notifyResult(guardSingle(correctText(free.text), requested), requested, 1, true);
+                        return;
+                    }
+                    // Unknown or a related language: the forced decode below keeps the configured one.
+                }
+                Qwen3AsrEngine.Transcript transcript = qwenEngine.transcribe(data.data, requested);
                 String text = correctText(transcript.text);
-                String language = requested != null && !requested.isEmpty() ? requested : transcript.languageCode;
+                String language = requested;
                 Log.i("asrLanguage", "model=" + model + " soft=false requested=" + language
                         + " forced=" + transcript.forced + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
                 notifyResult(guardSingle(text, language), language, 1, true);
                 return;
             }
             Qwen3AsrEngine.Transcript transcript = qwenEngine.transcribe(data.data);
+            if (filter && AsrLanguageFilter.isForeign(transcript.languageCode, data.languageCode, data.languageCode2)) {
+                notifyRejected(data, transcript.languageCode);
+                return;
+            }
             String text = correctText(transcript.text);
             boolean second = sameLanguage(data.languageCode2, transcript.languageCode)
                     && !sameLanguage(data.languageCode, transcript.languageCode);
@@ -960,6 +1025,45 @@ public class Recognizer extends NeuralNetworkApi {
 
     private static boolean sameLanguage(String requested, String detected) {
         return AsrLanguages.sameLanguage(requested, detected);
+    }
+
+    /** The session drops clauses in other languages. Auto accepts every language. */
+    private boolean isFilteringLanguages(DataContainer data) {
+        return global.isAsrIgnoreOtherLanguages()
+                && !AsrLanguages.isAuto(data.languageCode)
+                && !AsrLanguages.isAuto(data.languageCode2)
+                && data.data.length >= AsrLanguageFilter.MIN_SAMPLES;
+    }
+
+    /**
+     * Whisper tokens of the session languages, or null when nothing is filtered. A session
+     * language without a token in this model turns the filter off, or its speech would be dropped.
+     */
+    private int[] acceptedWhisperIds(DataContainer data, boolean largeV3) {
+        if (!isFilteringLanguages(data)) {
+            return null;
+        }
+        String[] languages = data.languageCode2 == null
+                ? new String[]{data.languageCode}
+                : new String[]{data.languageCode, data.languageCode2};
+        for (String language : languages) {
+            if (AsrLanguageFilter.whisperIds(largeV3, language).length == 0) {
+                return null;
+            }
+        }
+        return AsrLanguageFilter.whisperIds(largeV3, languages);
+    }
+
+    /** Callers already skip {@link #UNDEFINED_TEXT}, so a dropped clause reaches no translation or context. */
+    private void notifyRejected(DataContainer data, String detected) {
+        Log.i("asrLanguage", "dropped clause detected=" + AsrLanguages.displayName(detected)
+                + " requested=" + AsrLanguages.displayName(data.languageCode)
+                + (data.languageCode2 == null ? "" : "," + AsrLanguages.displayName(data.languageCode2)));
+        if (data.languageCode2 == null) {
+            notifyResult(UNDEFINED_TEXT, data.languageCode, 0, true);
+        } else {
+            notifyMultiResult(UNDEFINED_TEXT, data.languageCode, 0, UNDEFINED_TEXT, data.languageCode2, 0);
+        }
     }
 
     /**

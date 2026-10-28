@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.SimultaneousText;
@@ -37,6 +38,7 @@ import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
 import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetworkApiResult;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.LanguageDetector;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.RecognizerListener;
@@ -75,6 +77,14 @@ public class WalkieTalkieService extends VoiceTranslationService {
     private Recognizer speechRecognizer;
     private CustomLocale firstLanguage;
     private CustomLocale secondLanguage;
+    /**
+     * One side may be detected instead of fixed. Its language field then holds the language
+     * that side spoke last, which is also where the fixed side is translated into.
+     */
+    private boolean firstAuto;
+    private boolean secondAuto;
+    /** The pending single-language request asked the recognizer to detect the language. */
+    private boolean autoRecognition;
     private Translator.TranslateListener firstResultTranslateListener;
     private Translator.TranslateListener secondResultTranslateListener;
     // Holds the microphone until the final TTS chunk of the current translation is queued.
@@ -127,15 +137,17 @@ public class WalkieTalkieService extends VoiceTranslationService {
                             }
                             case CHANGE_FIRST_LANGUAGE:
                                 CustomLocale newFirstLanguage = (CustomLocale) message.getData().getSerializable("language");
-                                if (!firstLanguage.equals(newFirstLanguage)) {
+                                if (newFirstLanguage != null && !newFirstLanguage.isAuto() && !firstLanguage.equals(newFirstLanguage)) {
                                     firstLanguage = newFirstLanguage;
                                 }
+                                readAutoLanguages();
                                 break;
                             case CHANGE_SECOND_LANGUAGE:
                                 CustomLocale newSecondLanguage = (CustomLocale) message.getData().getSerializable("language");
-                                if (!secondLanguage.equals(newSecondLanguage)) {
+                                if (newSecondLanguage != null && !newSecondLanguage.isAuto() && !secondLanguage.equals(newSecondLanguage)) {
                                     secondLanguage = newSecondLanguage;
                                 }
+                                readAutoLanguages();
                                 break;
                             case GET_FIRST_LANGUAGE:
                                 Bundle bundle = new Bundle();
@@ -155,6 +167,16 @@ public class WalkieTalkieService extends VoiceTranslationService {
                                     //we stop speech recognition
                                     stopVoiceRecorder();
                                     notifyMicDeactivated();   // we notify the client
+                                    if (firstAuto || secondAuto) {
+                                        // A detected side can be any language, so the text is not limited to the two.
+                                        translator.detectTextLanguage(text, new LanguageDetector.DetectLanguageListener() {
+                                            @Override
+                                            public void onSuccess(String languageCode) {
+                                                translateDetected(text, languageCode);
+                                            }
+                                        });
+                                        break;
+                                    }
                                     translator.detectLanguage(new NeuralNetworkApiResult(text), true, new CustomLocale[]{firstLanguage, secondLanguage}, new Translator.DetectLanguageListener() {
                                         @Override
                                         public void onDetectedText(final NeuralNetworkApiResult result) {
@@ -168,7 +190,24 @@ public class WalkieTalkieService extends VoiceTranslationService {
 
                                         @Override
                                         public void onFailure(int[] reasons, long value) {
-                                            WalkieTalkieService.super.notifyError(reasons,value);
+                                            // detectLanguage leaves texts of MIN_WORDS words or more to the speech
+                                            // confidence, which typed text does not have; FastText decides those.
+                                            translator.detectTextLanguage(text, new LanguageDetector.DetectLanguageListener() {
+                                                @Override
+                                                public void onSuccess(String languageCode) {
+                                                    CustomLocale detected = ((Global) getApplication()).findDetectedLanguage(languageCode, Global.RTranslatorMode.WALKIE_TALKIE_MODE);
+                                                    if (detected != null && detected.equalsLanguage(firstLanguage)) {
+                                                        translate(text, firstLanguage, secondLanguage, TRANSLATOR_BEAM_SIZE, false, firstResultTranslateListener);
+                                                    } else if (detected != null && detected.equalsLanguage(secondLanguage)) {
+                                                        translate(text, secondLanguage, firstLanguage, TRANSLATOR_BEAM_SIZE, false, secondResultTranslateListener);
+                                                    } else {
+                                                        WalkieTalkieService.super.notifyError(reasons, value);
+                                                        // The mic was stopped for this text; nothing else turns it back on.
+                                                        startVoiceRecorder();
+                                                        notifyMicActivated();
+                                                    }
+                                                }
+                                            });
                                         }
                                     });
                                 }
@@ -259,19 +298,27 @@ public class WalkieTalkieService extends VoiceTranslationService {
                 super.onVoice(data,size);
                 if(manualRecognizingFirstLanguage){
                     // we start the speech recognition in only the first language
-                    speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, firstLanguage.getCode());
+                    if (firstAuto) {
+                        recognizeAutoLanguage(data);
+                    } else {
+                        speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, firstLanguage.getCode());
+                    }
 
                 } else if (manualRecognizingSecondLanguage) {
                     // we start the speech recognition in only the second language
-                    speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, secondLanguage.getCode());
+                    if (secondAuto) {
+                        recognizeAutoLanguage(data);
+                    } else {
+                        speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, secondLanguage.getCode());
+                    }
 
-                }else if(manualRecognizingAutoLanguage){
-                    // we start the speech recognition in both languages
-                    speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, firstLanguage.getCode(), secondLanguage.getCode());
-
-                }else if(isMicAutomatic) {
-                    // we start the speech recognition in both languages
-                    speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, firstLanguage.getCode(), secondLanguage.getCode());
+                }else if(manualRecognizingAutoLanguage || isMicAutomatic){
+                    if (firstAuto || secondAuto) {
+                        recognizeAutoLanguage(data);
+                    } else {
+                        // we start the speech recognition in both languages
+                        speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, firstLanguage.getCode(), secondLanguage.getCode());
+                    }
                 }
             }
 
@@ -301,8 +348,15 @@ public class WalkieTalkieService extends VoiceTranslationService {
             public void onSpeechRecognizedResult(String text1, String languageCode1, double confidenceScore1, String text2, String languageCode2, double confidenceScore2) {
                 NeuralNetworkApiResult firstResult = new NeuralNetworkApiResult(text1, confidenceScore1, true);
                 NeuralNetworkApiResult secondResult = new NeuralNetworkApiResult(text2, confidenceScore2, true);
-                compareResults(firstResult, secondResult);
                 manualRecognizingAutoLanguage = false;
+                if (isMetaText(text1) && isMetaText(text2)) {
+                    // Neither side heard its language, e.g. a clause in a third language that was dropped.
+                    Log.i("walkieTalkie", "skipped utterance without a session language");
+                    startVoiceRecorder();
+                    notifyMicActivated();
+                    return;
+                }
+                compareResults(firstResult, secondResult);
             }
 
             @Override
@@ -316,6 +370,14 @@ public class WalkieTalkieService extends VoiceTranslationService {
         speechRecognizerSingleCallback = new RecognizerListener() {
             @Override
             public void onSpeechRecognizedResult(String text, String languageCode, double confidenceScore, boolean isFinal) {
+                if (autoRecognition) {
+                    autoRecognition = false;
+                    manualRecognizingFirstLanguage = false;
+                    manualRecognizingSecondLanguage = false;
+                    manualRecognizingAutoLanguage = false;
+                    mainHandler.post(() -> translateDetected(text, languageCode));
+                    return;
+                }
                 if(manualRecognizingFirstLanguage){
                     translate(text, firstLanguage, secondLanguage, TRANSLATOR_BEAM_SIZE, false, firstResultTranslateListener);
                 } else if (manualRecognizingSecondLanguage) {
@@ -327,8 +389,10 @@ public class WalkieTalkieService extends VoiceTranslationService {
 
             @Override
             public void onError(int[] reasons, long value) {
+                autoRecognition = false;
                 manualRecognizingFirstLanguage = false;
                 manualRecognizingSecondLanguage = false;
+                manualRecognizingAutoLanguage = false;
                 notifyMicActivated();
             }
         };
@@ -408,6 +472,8 @@ public class WalkieTalkieService extends VoiceTranslationService {
         firstLanguage = (CustomLocale) intent.getSerializableExtra("firstLanguage");
         secondLanguage = (CustomLocale) intent.getSerializableExtra("secondLanguage");
 
+        readAutoLanguages();
+
         if(finalFirstLanguage==null || finalSecondLanguage==null ) {  //se è il primo avvio
             //we attach the speech recognition callbacks
             speechRecognizer.addMultiCallback(speechRecognizerCallback);
@@ -426,6 +492,82 @@ public class WalkieTalkieService extends VoiceTranslationService {
         speechRecognizer.stop();
         isRunning = false;
         super.onDestroy();
+    }
+
+    private void readAutoLanguages() {
+        Global global = (Global) getApplication();
+        firstAuto = global.isLanguageAuto(Global.AUTO_FIRST_LANGUAGE);
+        secondAuto = !firstAuto && global.isLanguageAuto(Global.AUTO_SECOND_LANGUAGE);
+    }
+
+    private void recognizeAutoLanguage(float[] data) {
+        autoRecognition = true;
+        speechRecognizer.recognize(data, SPEECH_BEAM_SIZE, AsrLanguages.AUTO);
+    }
+
+    /**
+     * Speech in the fixed language goes to the language the detected side spoke last.
+     * Any other supported language becomes the detected side and is translated into the fixed one.
+     */
+    private void translateDetected(String text, String languageCode) {
+        if (text == null || text.isEmpty() || isMetaText(text)) {
+            startVoiceRecorder();
+            notifyMicActivated();
+            return;
+        }
+        final Global global = (Global) getApplication();
+        final boolean detectFirst = firstAuto;
+        final CustomLocale fixed = detectFirst ? secondLanguage : firstLanguage;
+        final CustomLocale detected = global.findDetectedLanguage(languageCode, Global.RTranslatorMode.WALKIE_TALKIE_MODE);
+        if (detected == null) {
+            Log.i("walkieTalkie", "skipped utterance in unsupported language " + languageCode);
+            startVoiceRecorder();
+            notifyMicActivated();
+            return;
+        }
+        final Translator.TranslateListener fixedListener = detectFirst ? secondResultTranslateListener : firstResultTranslateListener;
+        final Translator.TranslateListener detectedListener = detectFirst ? firstResultTranslateListener : secondResultTranslateListener;
+        if (detected.equalsLanguage(fixed)) {
+            CustomLocale other = detectFirst ? firstLanguage : secondLanguage;
+            if (other.equalsLanguage(fixed)) {
+                // The other person has not spoken yet, so there is no language to translate into.
+                Log.i("walkieTalkie", "skipped utterance: no detected language yet");
+                startVoiceRecorder();
+                notifyMicActivated();
+                return;
+            }
+            translate(text, fixed, other, TRANSLATOR_BEAM_SIZE, false, fixedListener);
+            return;
+        }
+        CustomLocale current = detectFirst ? firstLanguage : secondLanguage;
+        if (detected.equals(current)) {
+            translate(text, detected, fixed, TRANSLATOR_BEAM_SIZE, false, detectedListener);
+            return;
+        }
+        if (detectFirst) {
+            firstLanguage = detected;
+        } else {
+            secondLanguage = detected;
+        }
+        // Saving it also loads its translation resources, which must be ready before translating.
+        Translator.GeneralListener loaded = new Translator.GeneralListener() {
+            @Override
+            public void onSuccess() {
+                translate(text, detected, fixed, TRANSLATOR_BEAM_SIZE, false, detectedListener);
+            }
+
+            @Override
+            public void onFailure(int[] reasons, long value) {
+                WalkieTalkieService.super.notifyError(reasons, value);
+                startVoiceRecorder();
+                notifyMicActivated();
+            }
+        };
+        if (detectFirst) {
+            global.setFirstLanguage(detected, loaded);
+        } else {
+            global.setSecondLanguage(detected, loaded);
+        }
     }
 
     private void compareResults(NeuralNetworkApiResult firstResult, NeuralNetworkApiResult secondResult) {

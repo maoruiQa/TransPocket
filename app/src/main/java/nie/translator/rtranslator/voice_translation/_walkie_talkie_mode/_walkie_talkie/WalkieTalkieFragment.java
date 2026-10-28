@@ -577,12 +577,12 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
             }
         }
 
-        final ArrayList<CustomLocale> languages = global.getLanguages(Global.RTranslatorMode.WALKIE_TALKIE_MODE, true);
+        final ArrayList<CustomLocale> languages = GuiTools.withAutoLanguage(global.getLanguages(Global.RTranslatorMode.WALKIE_TALKIE_MODE, true));
         CustomLocale selectedLanguage;
         if (languageNumber == Global.LanguageNumber.FIRST) {
-            selectedLanguage = global.getFirstLanguage(false);
+            selectedLanguage = global.isLanguageAuto(Global.AUTO_FIRST_LANGUAGE) ? CustomLocale.getAuto() : global.getFirstLanguage(false);
         } else {  //languageNumber == 2
-            selectedLanguage = global.getSecondLanguage(false);
+            selectedLanguage = global.isLanguageAuto(Global.AUTO_SECOND_LANGUAGE) ? CustomLocale.getAuto() : global.getSecondLanguage(false);
         }
 
         GuiTools.showLanguageListDialog(activity, title, languages, selectedLanguage, true, new GuiTools.OnLanguageClickListener() {
@@ -591,10 +591,12 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
                 if (item != null && languages.contains(item)) {
                     switch (languageNumber) {
                         case FIRST: {
+                            global.setLanguageAuto(Global.AUTO_FIRST_LANGUAGE, item.isAuto());
                             setFirstLanguage(item);
                             break;
                         }
                         case SECOND: {
+                            global.setLanguageAuto(Global.AUTO_SECOND_LANGUAGE, item.isAuto());
                             setSecondLanguage(item);
                             break;
                         }
@@ -613,24 +615,39 @@ public class WalkieTalkieFragment extends VoiceTranslationFragment {
         activity.disconnectFromWalkieTalkieService(walkieTalkieServiceCommunicator);
     }
 
+    /** The auto entry only changes the flag; the saved language stays as the fallback target. */
     private void setFirstLanguage(CustomLocale language) {
         // new language setting in the WalkieTalkieService
         walkieTalkieServiceCommunicator.changeFirstLanguage(language);
-        // save firstLanguage selected
-        global.setFirstLanguage(language, null);
-        // change language displayed
-        firstLanguageSelector.setText(language.getDisplayNameWithoutTTS());
-        leftMicLanguage.setText(language.getDisplayNameWithoutTTS());
+        if (!language.isAuto()) {
+            // save firstLanguage selected
+            global.setFirstLanguage(language, null);
+        }
+        showSelectedLanguages();
     }
 
     private void setSecondLanguage(CustomLocale language) {
         // new language setting in the WalkieTalkieService
         walkieTalkieServiceCommunicator.changeSecondLanguage(language);
-        // save secondLanguage selected
-        global.setSecondLanguage(language, null);
-        // change language displayed
-        secondLanguageSelector.setText(language.getDisplayNameWithoutTTS());
-        rightMicLanguage.setText(language.getDisplayNameWithoutTTS());
+        if (!language.isAuto()) {
+            // save secondLanguage selected
+            global.setSecondLanguage(language, null);
+        }
+        showSelectedLanguages();
+    }
+
+    /** Both sides, because choosing auto on one side turns it off on the other. */
+    private void showSelectedLanguages() {
+        String first = global.isLanguageAuto(Global.AUTO_FIRST_LANGUAGE)
+                ? CustomLocale.getAuto().getDisplayNameWithoutTTS()
+                : global.getFirstLanguage(true).getDisplayNameWithoutTTS();
+        String second = global.isLanguageAuto(Global.AUTO_SECOND_LANGUAGE)
+                ? CustomLocale.getAuto().getDisplayNameWithoutTTS()
+                : global.getSecondLanguage(true).getDisplayNameWithoutTTS();
+        firstLanguageSelector.setText(first);
+        leftMicLanguage.setText(first);
+        secondLanguageSelector.setText(second);
+        rightMicLanguage.setText(second);
     }
 
     private void setManualMicClickListenerForAccessibility(ButtonMic buttonMic, Global.LanguageNumber languageNumber){

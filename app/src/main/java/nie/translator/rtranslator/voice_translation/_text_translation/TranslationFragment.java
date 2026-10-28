@@ -61,6 +61,7 @@ import nie.translator.rtranslator.tools.gui.animations.CustomAnimator;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.voice_translation.FullScreenTextActivity;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationActivity;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.LanguageDetector;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 
 public class TranslationFragment extends Fragment {
@@ -206,7 +207,7 @@ public class TranslationFragment extends Fragment {
         //inputText.setRawInputType(InputType.TYPE_CLASS_TEXT);
 
         // setting of the selected languages
-        setDisplayedFirstLanguage(global.getFirstTextLanguage(true));
+        setDisplayedFirstLanguage(global.isLanguageAuto(Global.AUTO_FIRST_TEXT_LANGUAGE) ? CustomLocale.getAuto() : global.getFirstTextLanguage(true));
         setDisplayedSecondLanguage(global.getSecondTextLanguage(true));
 
         View.OnClickListener walkieTalkieButtonListener = new View.OnClickListener() {
@@ -300,6 +301,10 @@ public class TranslationFragment extends Fragment {
                     CustomLocale secondLanguage = global.getSecondTextLanguage(true);
                     //we deactivate translate button
                     deactivateTranslationButton();  //todo: implement stop button instead of deactivation
+                    if (global.isLanguageAuto(Global.AUTO_FIRST_TEXT_LANGUAGE)) {
+                        translateDetected(text);
+                        return;
+                    }
                     //we start the translation
                     global.getTranslator().translate(text, firstLanguage, secondLanguage, global.getBeamSize(), true, Global.RTranslatorMode.TEXT_TRANSLATION_MODE);
                 }
@@ -939,10 +944,14 @@ public class TranslationFragment extends Fragment {
             }
         }
 
-        final ArrayList<CustomLocale> languages = global.getTranslatorLanguages(Global.RTranslatorMode.TEXT_TRANSLATION_MODE, true);
+        ArrayList<CustomLocale> translatorLanguages = global.getTranslatorLanguages(Global.RTranslatorMode.TEXT_TRANSLATION_MODE, true);
+        // Only the input can be detected; the output needs a fixed language.
+        final ArrayList<CustomLocale> languages = languageNumber == Global.LanguageNumber.FIRST
+                ? GuiTools.withAutoLanguage(translatorLanguages)
+                : translatorLanguages;
         CustomLocale selectedLanguage;
         if (languageNumber == Global.LanguageNumber.FIRST) {
-            selectedLanguage = global.getFirstTextLanguage(false);
+            selectedLanguage = global.isLanguageAuto(Global.AUTO_FIRST_TEXT_LANGUAGE) ? CustomLocale.getAuto() : global.getFirstTextLanguage(false);
         } else {
             selectedLanguage = global.getSecondTextLanguage(false);
         }
@@ -953,7 +962,12 @@ public class TranslationFragment extends Fragment {
                 if (item != null && languages.contains(item)) {
                     switch (languageNumber) {
                         case FIRST: {
-                            setFirstLanguage(item);
+                            global.setLanguageAuto(Global.AUTO_FIRST_TEXT_LANGUAGE, item.isAuto());
+                            if (item.isAuto()) {
+                                setDisplayedFirstLanguage(item);
+                            } else {
+                                setFirstLanguage(item);
+                            }
                             break;
                         }
                         case SECOND: {
@@ -1024,7 +1038,50 @@ public class TranslationFragment extends Fragment {
         secondLanguageSelector.setText(language.getDisplayNameWithoutTTS());
     }
 
+    /**
+     * Translates from the language FastText finds in the text. The saved input language is
+     * updated to it, so TTS and the next undetectable text use the last detected language.
+     */
+    private void translateDetected(final String text) {
+        global.getTranslator().detectTextLanguage(text, new LanguageDetector.DetectLanguageListener() {
+            @Override
+            public void onSuccess(String languageCode) {
+                if (!isAdded()) {
+                    return;
+                }
+                CustomLocale detected = global.findDetectedLanguage(languageCode, Global.RTranslatorMode.TEXT_TRANSLATION_MODE);
+                final CustomLocale firstLanguage = detected != null ? detected : global.getFirstTextLanguage(true);
+                final CustomLocale secondLanguage = global.getSecondTextLanguage(true);
+                if (firstLanguage.equalsLanguage(secondLanguage)) {
+                    // Already in the output language.
+                    outputText.setText(text);
+                    activateTranslationButton();
+                    return;
+                }
+                if (firstLanguage.equals(global.getFirstTextLanguage(true))) {
+                    global.getTranslator().translate(text, firstLanguage, secondLanguage, global.getBeamSize(), true, Global.RTranslatorMode.TEXT_TRANSLATION_MODE);
+                    return;
+                }
+                global.setFirstTextLanguage(firstLanguage, new Translator.GeneralListener() {
+                    @Override
+                    public void onSuccess() {
+                        global.getTranslator().translate(text, firstLanguage, secondLanguage, global.getBeamSize(), true, Global.RTranslatorMode.TEXT_TRANSLATION_MODE);
+                    }
+
+                    @Override
+                    public void onFailure(int[] reasons, long value) {
+                        if (isAdded()) {
+                            activateTranslationButton();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     private void switchLanguages() {
+        // The output cannot be detected, so swapping ends auto-detection of the input.
+        global.setLanguageAuto(Global.AUTO_FIRST_TEXT_LANGUAGE, false);
         deactivateTranslationButton();
         global.switchTextLanguages(new Translator.GeneralListener() {
             @Override

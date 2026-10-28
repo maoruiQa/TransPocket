@@ -116,6 +116,28 @@ public class LanguageDetector {
     }
 
     /**
+     * FastText over the whole text with no candidate list, for an input set to auto-detect.
+     * Reports "und" below the confidence threshold.
+     */
+    public void detectAnyLanguage(String text, double confidenceThreshold, @NonNull DetectLanguageListener listener) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (nativePtr == 0 || text == null || text.trim().isEmpty()) {
+                        listener.onSuccess("und");
+                        return;
+                    }
+                    listener.onSuccess(predictLanguage(nativePtr, text, confidenceThreshold));
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to predict language", e);
+                    listener.onSuccess("und");
+                }
+            }
+        }).start();
+    }
+
+    /**
      * This method is used to overwrite the dictionaries result for very common words (that may be present in other languages dicts)
      * @return The language of the word
      */

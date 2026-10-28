@@ -50,6 +50,7 @@ import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.downloader.DownloadGroupInfo;
 import nie.translator.rtranslator.downloader.DownloadInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
+import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.ModelStartupGate;
@@ -131,6 +132,17 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private boolean useMozillaForVoiceTranslation;
     private boolean whisperReducedRam;
     private boolean asrLanguageLock;
+    private boolean asrIgnoreOtherLanguages;
+    /**
+     * Keys of the "detect the spoken language" flags. The language preference next to each
+     * flag keeps a real language: it is the fallback before the first detection, and every
+     * existing reader of it still gets a language a model can load.
+     */
+    public static final String AUTO_FIRST_LANGUAGE = "firstLanguageAuto";
+    public static final String AUTO_SECOND_LANGUAGE = "secondLanguageAuto";
+    public static final String AUTO_LANGUAGE = "languageAuto";
+    public static final String AUTO_FIRST_TEXT_LANGUAGE = "firstTextLanguageAuto";
+    public static final String AUTO_SIMULTANEOUS_SOURCE = "simultaneousSourceAuto";
     private int translationMode;
     public static final int ASR_WHISPER = 0;
     public static final int ASR_QWEN3_06 = 1;
@@ -178,6 +190,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
         // The configured source language is the decoder condition by default; simultaneous
         // interpretation can opt back into clause-by-clause switching.
         asrLanguageLock = sharedPreferences.getBoolean("asrLanguageLock", true);
+        asrIgnoreOtherLanguages = sharedPreferences.getBoolean("asrIgnoreOtherLanguages", true);
+        CustomLocale.setAutoDisplayName(getString(R.string.auto_detect_language));
         translationMode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
         asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_QWEN3_06);
         vadModel = sharedPreferences.getInt("selectedVadModel", DEFAULT_VAD_MODEL) == VAD_SILERO ? VAD_SILERO : VAD_FIRERED;
@@ -1613,6 +1627,33 @@ public class Global extends Application implements DefaultLifecycleObserver {
         editor.apply();
     }
 
+    /** Drop a clause whose spoken language is clearly none of the session languages. */
+    public boolean isAsrIgnoreOtherLanguages() {
+        return asrIgnoreOtherLanguages;
+    }
+
+    public void setAsrIgnoreOtherLanguages(boolean ignore) {
+        asrIgnoreOtherLanguages = ignore;
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("asrIgnoreOtherLanguages", ignore).apply();
+    }
+
+    /** @param key one of the {@code AUTO_*} keys */
+    public boolean isLanguageAuto(String key) {
+        return getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean(key, false);
+    }
+
+    public void setLanguageAuto(String key, boolean auto) {
+        SharedPreferences.Editor editor = getSharedPreferences("default", Context.MODE_PRIVATE).edit();
+        editor.putBoolean(key, auto);
+        // WalkieTalkie translates into the side that is not detected, so one side stays fixed.
+        if (auto && AUTO_FIRST_LANGUAGE.equals(key)) {
+            editor.putBoolean(AUTO_SECOND_LANGUAGE, false);
+        } else if (auto && AUTO_SECOND_LANGUAGE.equals(key)) {
+            editor.putBoolean(AUTO_FIRST_LANGUAGE, false);
+        }
+        editor.apply();
+    }
+
     public boolean isSimultaneousVadSegmentation() {
         return simultaneousVadSegmentation;
     }
@@ -1932,6 +1973,29 @@ public class Global extends Application implements DefaultLifecycleObserver {
             translator.loadLanguageResources(firstLanguage, secondLanguage, mode, listener);
         }else if(listener != null){
             listener.onSuccess();  //if the translator is not initialized yet we do not load the language resources
+        }
+    }
+
+    /**
+     * The entry of this mode's language list for a code reported by language detection,
+     * or null when the mode cannot use that language. Translation compares list entries
+     * with {@code equals}, so a bare detected locale must not be passed on.
+     */
+    @Nullable
+    public CustomLocale findDetectedLanguage(@Nullable String code, RTranslatorMode rtranslatorMode) {
+        if (code == null || code.isEmpty() || AsrLanguages.isAuto(code)) {
+            return null;
+        }
+        ArrayList<CustomLocale> languages = rtranslatorMode == RTranslatorMode.TEXT_TRANSLATION_MODE
+                ? getTranslatorLanguages(rtranslatorMode, true)
+                : getLanguages(rtranslatorMode, true);
+        CustomLocale detected;
+        try {
+            detected = CustomLocale.getInstance(AsrLanguages.canonicalCode(code));
+            int index = CustomLocale.search(languages, detected);
+            return index == -1 ? null : languages.get(index);
+        } catch (java.util.MissingResourceException e) {
+            return null;
         }
     }
 

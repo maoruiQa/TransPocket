@@ -16,6 +16,7 @@
 
 package nie.translator.rtranslator.settings;
 
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
@@ -39,11 +40,13 @@ import androidx.preference.PreferenceGroupAdapter;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import nie.translator.rtranslator.BuildConfig;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.GalleryImageSelector;
 import nie.translator.rtranslator.tools.ThemeManager;
+import nie.translator.rtranslator.tools.UpdateChecker;
 
 
 public class SettingsFragment extends PreferenceFragmentCompat {
@@ -167,6 +170,34 @@ public class SettingsFragment extends PreferenceFragmentCompat {
             @Override
             public boolean onPreferenceChange(Preference preference, Object newValue) {
                 global.setAsrLanguageLock((Boolean) newValue);
+                return true;
+            }
+        });
+        SwitchPreference asrIgnoreOtherLanguagesPreference = (SwitchPreference) findPreference("asrIgnoreOtherLanguages");
+        asrIgnoreOtherLanguagesPreference.setChecked(global.isAsrIgnoreOtherLanguages());
+        asrIgnoreOtherLanguagesPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setAsrIgnoreOtherLanguages((Boolean) newValue);
+                return true;
+            }
+        });
+
+        SwitchPreference autoCheckUpdatesPreference = (SwitchPreference) findPreference(UpdateChecker.KEY_AUTO_CHECK);
+        autoCheckUpdatesPreference.setChecked(global.getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean(UpdateChecker.KEY_AUTO_CHECK, true));
+        autoCheckUpdatesPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean(UpdateChecker.KEY_AUTO_CHECK, (Boolean) newValue).apply();
+                return true;
+            }
+        });
+        Preference checkUpdatesPreference = findPreference("checkUpdates");
+        checkUpdatesPreference.setSummary(getString(R.string.preference_description_check_updates, BuildConfig.VERSION_NAME));
+        checkUpdatesPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+            @Override
+            public boolean onPreferenceClick(Preference preference) {
+                UpdateChecker.checkNow(requireActivity());
                 return true;
             }
         });

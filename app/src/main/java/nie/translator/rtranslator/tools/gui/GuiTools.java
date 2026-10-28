@@ -105,6 +105,14 @@ public class GuiTools {
     }
 
 
+    /** A copy of a language list with the auto-detect entry. The cached lists themselves stay languages only. */
+    public static ArrayList<CustomLocale> withAutoLanguage(ArrayList<CustomLocale> languages) {
+        ArrayList<CustomLocale> result = new ArrayList<>(languages.size() + 1);
+        result.add(CustomLocale.getAuto());
+        result.addAll(languages);
+        return result;
+    }
+
     public static void showLanguageListDialog(Activity activity, String title, ArrayList<CustomLocale> languages, CustomLocale selectedLanguage, boolean showTTSInfo, OnLanguageClickListener clickListener) {
         LanguageListAdapter listViewAdapter;
         ListView listView;

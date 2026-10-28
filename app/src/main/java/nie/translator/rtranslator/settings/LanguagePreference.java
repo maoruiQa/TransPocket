@@ -58,7 +58,7 @@ public class LanguagePreference extends Preference {
     public void initializeLanguagesList() {
         Global global = (Global) fragment.requireActivity().getApplication();
         final String summary = (String) getSummary();
-        CustomLocale result = global.getLanguage(false);
+        CustomLocale result = global.isLanguageAuto(Global.AUTO_LANGUAGE) ? CustomLocale.getAuto() : global.getLanguage(false);
         global.getTTSLanguages(false, new Global.GetLocalesListListener() {
             @Override
             public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
@@ -90,8 +90,8 @@ public class LanguagePreference extends Preference {
         String title = global.getResources().getString(R.string.dialog_select_personal_language);
         //todo: evaluate if here we need recycleResult = false to update language in case of changes to the preferences outside of model management that change the languages list
         // (in model management we update the languages list when we exit, in the other options I need to verify it).
-        ArrayList<CustomLocale> languages = global.getLanguages(Global.RTranslatorMode.CONVERSATION_MODE, true);
-        CustomLocale selectedLanguage = global.getLanguage(false);
+        ArrayList<CustomLocale> languages = GuiTools.withAutoLanguage(global.getLanguages(Global.RTranslatorMode.CONVERSATION_MODE, true));
+        CustomLocale selectedLanguage = global.isLanguageAuto(Global.AUTO_LANGUAGE) ? CustomLocale.getAuto() : global.getLanguage(false);
 
         GuiTools.showLanguageListDialog(activity, title, languages, selectedLanguage, true, new GuiTools.OnLanguageClickListener() {
             @Override
@@ -100,7 +100,11 @@ public class LanguagePreference extends Preference {
                     @Override
                     public void onSuccess(ArrayList<CustomLocale> ttsLanguages) {
                         if (item != null && languages.contains(item)) {
-                            global.setLanguage(item);
+                            // Auto keeps the saved language: it is what peers and received messages use until speech is detected.
+                            global.setLanguageAuto(Global.AUTO_LANGUAGE, item.isAuto());
+                            if (!item.isAuto()) {
+                                global.setLanguage(item);
+                            }
                             setSummary(item.getDisplayName(ttsLanguages));
                         }
                     }

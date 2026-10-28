@@ -48,6 +48,10 @@ public class LanguageListAdapter extends BaseAdapter implements Filterable {
         languages.sort(new Comparator<CustomLocale>() {
             @Override
             public int compare(final CustomLocale locale1, CustomLocale locale2) {
+                // The auto-detect entry is not a language and stays on top.
+                if (locale1.isAuto() != locale2.isAuto()) {
+                    return locale1.isAuto() ? -1 : 1;
+                }
                 return locale1.getDisplayNameWithoutTTS().compareTo(locale2.getDisplayNameWithoutTTS());
             }
         });

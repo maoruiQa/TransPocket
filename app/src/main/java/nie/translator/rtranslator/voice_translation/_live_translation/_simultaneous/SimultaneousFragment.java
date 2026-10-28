@@ -119,7 +119,9 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
                     windowInsets.getSystemWindowInsetRight(),
                     0));
         }
-        sourceLanguageSelector.setText(global.getSimultaneousSourceLanguage(true).getDisplayNameWithoutTTS());
+        sourceLanguageSelector.setText(global.isLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE)
+                ? CustomLocale.getAuto().getDisplayNameWithoutTTS()
+                : global.getSimultaneousSourceLanguage(true).getDisplayNameWithoutTTS());
         targetLanguageSelector.setText(global.getSimultaneousTargetLanguage(true).getDisplayNameWithoutTTS());
 
         View.OnClickListener deactivatedClickListener = new View.OnClickListener() {
@@ -367,8 +369,15 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
     }
 
     private void showLanguageListDialog(final boolean source) {
-        final ArrayList<CustomLocale> languages = global.getLanguages(Global.RTranslatorMode.SIMULTANEOUS_MODE, true);
-        CustomLocale selected = source ? global.getSimultaneousSourceLanguage(false) : global.getSimultaneousTargetLanguage(false);
+        ArrayList<CustomLocale> modeLanguages = global.getLanguages(Global.RTranslatorMode.SIMULTANEOUS_MODE, true);
+        // Only the spoken side can be detected; the output needs a fixed language.
+        final ArrayList<CustomLocale> languages = source ? GuiTools.withAutoLanguage(modeLanguages) : modeLanguages;
+        CustomLocale selected;
+        if (source) {
+            selected = global.isLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE) ? CustomLocale.getAuto() : global.getSimultaneousSourceLanguage(false);
+        } else {
+            selected = global.getSimultaneousTargetLanguage(false);
+        }
         String title = getString(source ? R.string.dialog_select_source_language : R.string.dialog_select_target_language);
         GuiTools.showLanguageListDialog(activity, title, languages, selected, true, new GuiTools.OnLanguageClickListener() {
             @Override
@@ -376,7 +385,12 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
                 if (item == null || !languages.contains(item)) {
                     return;
                 }
-                if (source) {
+                if (source && item.isAuto()) {
+                    global.setLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE, true);
+                    serviceCommunicator.changeSourceLanguage(item);
+                    sourceLanguageSelector.setText(item.getDisplayNameWithoutTTS());
+                } else if (source) {
+                    global.setLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE, false);
                     global.setSimultaneousSourceLanguage(item);
                     serviceCommunicator.changeSourceLanguage(item);
                     sourceLanguageSelector.setText(item.getDisplayNameWithoutTTS());

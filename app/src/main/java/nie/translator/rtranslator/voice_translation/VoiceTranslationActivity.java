@@ -60,6 +60,7 @@ import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.CustomServiceConnection;
 import nie.translator.rtranslator.tools.Tools;
+import nie.translator.rtranslator.tools.UpdateChecker;
 import nie.translator.rtranslator.tools.gui.peers.GuiPeer;
 import nie.translator.rtranslator.tools.services_communication.ServiceCommunicatorListener;
 import nie.translator.rtranslator.voice_translation._live_translation.LiveTranslationFragment;
@@ -131,6 +132,10 @@ public class VoiceTranslationActivity extends GeneralActivity {
         decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
 
         fragmentContainer = findViewById(R.id.fragment_container);
+
+        if (savedInstanceState == null) {
+            UpdateChecker.checkIfDue(this);
+        }
 
         /*if (savedInstanceState != null) {
             //Restore the fragment's instance
