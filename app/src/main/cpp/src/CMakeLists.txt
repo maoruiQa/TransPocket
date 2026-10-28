@@ -64,6 +64,17 @@ target_link_libraries(cache_container_native
         log
 )
 
+# Marian compiles with -march=${BUILD_ARCH}: ruy on ARM, intgemm on x86.
+if(ANDROID_ABI STREQUAL "x86_64")
+    set(BUILD_ARCH "x86-64" CACHE STRING "" FORCE)
+else()
+    set(BUILD_ARCH "armv8-a" CACHE STRING "" FORCE)
+endif()
 add_subdirectory(bergamot_translator)
+# faiss uses __m128 under __SSE__ without including the header, which desktop builds get through
+# another include. Force it here so the vendored submodule stays unmodified.
+if(ANDROID_ABI STREQUAL "x86_64" AND TARGET faiss)
+    target_compile_options(faiss PRIVATE -include immintrin.h)
+endif()
 add_subdirectory(fasttext)
 add_subdirectory(gguf)

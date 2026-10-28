@@ -34,20 +34,13 @@ android {
         versionCode 32
         minSdkVersion 28
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        // The CMake filter below only covers our own libraries. Without this one the APK also
-        // packs the x86/armeabi-v7a copies from the AARs, and an x86_64 device then loads those
-        // and finds no GGUF or Bergamot library.
-        ndk {
-            abiFilters 'arm64-v8a'
-        }
         externalNativeBuild {
             cmake {
                 arguments '-DSPM_ENABLE_SHARED=OFF',  //sentencepiece flags
                         '-DSPM_BUILD_TEST=OFF',
                         '-DSPM_ENABLE_TCMALLOC=OFF',
-                        //bergamot flags
-                        '-DANDROID_ABI=arm64-v8a',
-                        '-DANDROID_PLATFORM=android-28',
+                        //bergamot flags. ANDROID_ABI and ANDROID_PLATFORM come from Gradle per ABI;
+                        //BUILD_ARCH is set per ABI in src/main/cpp/src/CMakeLists.txt.
                         '-DANDROID_STL=c++_shared',
                         "-DANDROID_PIE=ON",
                         "-DANDROID_CPP_FEATURES=exceptions",
@@ -63,13 +56,12 @@ android {
                         // The vendored Bergamot tree is complete. Its configure step runs
                         // `git submodule update`, which cannot work on a copied checkout.
                         '-DGIT_SUBMODULE=OFF',
-                        '-DBUILD_ARCH=armv8-a',
                         '-GNinja',
                         //'-DCMAKE_C_FLAGS="-O3 -fPIC -march=armv8-a -mtune=generic -ffast-math -funroll-loops -fdata-sections -ffunction-sections"',
                         //'-DCMAKE_CXX_FLAGS="-O3 -fPIC -march=armv8-a -mtune=generic -ffast-math -funroll-loops -fdata-sections -ffunction-sections"',
                         '-DCMAKE_CXX_FLAGS="-Wno-enum-constexpr-conversion"'
                 cppFlags '-std=c++17'
-                abiFilters 'arm64-v8a'
+                abiFilters 'arm64-v8a', 'x86_64'
             }
         }
     }
@@ -79,10 +71,24 @@ android {
         buildConfig true
     }
 
+    // One APK per ABI plus a universal one. 32-bit ABIs are left out: Marian's SIMD code needs
+    // AArch64 NEON, sqlite4java has no x86 build, and the models do not fit a 32-bit address space.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'x86_64'
+            universalApk true
+        }
+    }
+
     packaging {
         jniLibs {
             // Keep native libraries inside the APK. Android 17 rejects System.load() of a writable copy.
             useLegacyPackaging = false
+            // The AARs also carry 32-bit copies. Without our own 32-bit libraries they would only
+            // make such a device install an APK that cannot translate.
+            excludes += ['lib/x86/**', 'lib/armeabi-v7a/**']
         }
     }
 

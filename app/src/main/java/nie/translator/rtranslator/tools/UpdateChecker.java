@@ -150,6 +150,20 @@ public final class UpdateChecker {
         }
     }
 
+    private static int apkRank(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        String[] abis = android.os.Build.SUPPORTED_ABIS;
+        for (int i = 0; i < abis.length; i++) {
+            if (lower.contains(abis[i].toLowerCase(java.util.Locale.ROOT))) {
+                return i;
+            }
+        }
+        if (lower.contains("universal")) {
+            return abis.length;
+        }
+        return abis.length + 1;
+    }
+
     /** The tag of a release can be a placeholder, so the name and the APK name are tried too. */
     @Nullable
     private static Release parse(String json) throws Exception {
@@ -158,13 +172,20 @@ public final class UpdateChecker {
         String apkName = "";
         JSONArray assets = root.optJSONArray("assets");
         if (assets != null) {
+            // Releases carry one APK per ABI plus a universal one. The phone's preferred ABI wins,
+            // then the universal APK, then whatever APK comes first.
+            int bestRank = Integer.MAX_VALUE;
             for (int i = 0; i < assets.length(); i++) {
                 JSONObject asset = assets.getJSONObject(i);
                 String name = asset.optString("name", "");
-                if (name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk")) {
+                if (!name.toLowerCase(java.util.Locale.ROOT).endsWith(".apk")) {
+                    continue;
+                }
+                int rank = apkRank(name);
+                if (rank < bestRank) {
+                    bestRank = rank;
                     apkName = name;
                     apkUrl = asset.optString("browser_download_url", null);
-                    break;
                 }
             }
         }
