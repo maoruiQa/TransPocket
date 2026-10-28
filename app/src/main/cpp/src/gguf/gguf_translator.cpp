@@ -8,10 +8,12 @@
 #include <unistd.h>
 #include <vector>
 
+#include "ggml-backend.h"
 #include "llama.h"
 
 #define LOG_TAG "gguf"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 namespace {
 
@@ -36,6 +38,31 @@ void release_locked() {
         llama_model_free(g_model);
         g_model = nullptr;
     }
+}
+
+// Best first. The libraries are loaded by name because the APK keeps them unextracted, so ggml's
+// own directory scan finds nothing. Each library reports a zero score on a CPU without its features.
+const char * const CPU_VARIANTS[] = {
+        "libggml-cpu-android_armv9.2_2.so",
+        "libggml-cpu-android_armv9.2_1.so",
+        "libggml-cpu-android_armv9.0_1.so",
+        "libggml-cpu-android_armv8.6_1.so",
+        "libggml-cpu-android_armv8.2_2.so",
+        "libggml-cpu-android_armv8.2_1.so",
+        "libggml-cpu-android_armv8.0_1.so",
+};
+
+bool load_cpu_backend() {
+    if (ggml_backend_reg_by_name("CPU") != nullptr) {
+        return true;
+    }
+    for (const char * name : CPU_VARIANTS) {
+        if (ggml_backend_load(name) != nullptr) {
+            LOGI("CPU backend %s", name);
+            return true;
+        }
+    }
+    return false;
 }
 
 int thread_count() {
@@ -157,6 +184,10 @@ Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_
     std::lock_guard<std::mutex> guard(g_lock);
     try {
         if (!g_backend) {
+            if (!load_cpu_backend()) {
+                throw_state(env, "GGUF CPU backend failed to load");
+                return;
+            }
             llama_backend_init();
             g_backend = true;
         }
@@ -190,7 +221,8 @@ Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_
     }
 }
 
-extern "C" JNIEXPORT jstring JNICALL
+// Raw UTF-8 bytes. NewStringUTF expects modified UTF-8 and aborts on emoji or on a sequence cut by the token limit.
+extern "C" JNIEXPORT jbyteArray JNICALL
 Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_GgufTranslator_nativeGenerate(
         JNIEnv * env, jclass, jstring prompt, jint max_tokens) {
     const char * utf = env->GetStringUTFChars(prompt, nullptr);
@@ -207,7 +239,12 @@ Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_
     }
     try {
         std::string generated = generate_locked(text, max_tokens);
-        return env->NewStringUTF(generated.c_str());
+        jbyteArray bytes = env->NewByteArray(static_cast<jsize>(generated.size()));
+        if (bytes != nullptr && !generated.empty()) {
+            env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(generated.size()),
+                    reinterpret_cast<const jbyte *>(generated.data()));
+        }
+        return bytes;
     } catch (const std::exception & error) {
         LOGE("generate failed: %s", error.what());
         throw_state(env, "GGUF generation failed");

@@ -47,6 +47,7 @@ import nie.translator.rtranslator.downloader.DownloadGroupInfo;
 import nie.translator.rtranslator.downloader.DownloadManager;
 import nie.translator.rtranslator.settings.ModelManagerFragment;
 import nie.translator.rtranslator.settings.MozillaManagerFragment;
+import nie.translator.rtranslator.settings.OtherModelsFragment;
 import nie.translator.rtranslator.tools.Tools;
 
 
@@ -56,6 +57,7 @@ public class AccessActivity extends GeneralActivity {
     public static final int DOWNLOAD_FRAGMENT = 2;
     public static final int MODEL_MANAGER = 3;
     public static final int MOZILLA_MANAGER = 4;
+    public static final int OTHER_MODELS = 5;
     private Fragment fragment;
 
     @Override
@@ -177,6 +179,18 @@ public class AccessActivity extends GeneralActivity {
                 fragment = mozillaManagerFragment;
                 break;
             }
+            case OTHER_MODELS: {
+                OtherModelsFragment otherModelsFragment = new OtherModelsFragment();
+                if (bundle != null) {
+                    otherModelsFragment.setArguments(bundle);
+                }
+                FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+                transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_FADE);
+                transaction.replace(R.id.fragment_initialization_container, otherModelsFragment);
+                transaction.commit();
+                fragment = otherModelsFragment;
+                break;
+            }
         }
     }
 
@@ -203,6 +217,11 @@ public class AccessActivity extends GeneralActivity {
             return;
         }
         if(fragment instanceof MozillaManagerFragment){
+            // Mozilla is reached from the "Other" page.
+            startFragment(OTHER_MODELS, null);
+            return;
+        }
+        if(fragment instanceof OtherModelsFragment){
             startFragment(MODEL_MANAGER, null);
             return;
         }
@@ -218,6 +237,7 @@ public class AccessActivity extends GeneralActivity {
                 global.getMadladDownloadInfo(),
                 global.getTranslateGemmaDownloadInfo(),
                 global.getQwen35DownloadInfo(),
+                global.getIndexTranslateDownloadInfo(),
                 global.getQwen3Asr06DownloadInfo(),
                 global.getQwen3Asr17DownloadInfo(),
                 global.getWhisperTurboDownloadInfo(),

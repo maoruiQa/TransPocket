@@ -66,6 +66,7 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
             DownloadGroupInfo madladDownloadInfo = ((Global) activity.getApplication()).getMadladDownloadInfo();
             DownloadGroupInfo gemmaDownloadInfo = ((Global) activity.getApplication()).getTranslateGemmaDownloadInfo();
             DownloadGroupInfo qwen35DownloadInfo = ((Global) activity.getApplication()).getQwen35DownloadInfo();
+            DownloadGroupInfo indexDownloadInfo = ((Global) activity.getApplication()).getIndexTranslateDownloadInfo();
             Global app = (Global) activity.getApplication();
             DownloadGroupInfo whisperDownloadInfo = app.getWhisperDownloadInfo();
             DownloadGroupInfo whisperTurboDownloadInfo = app.getWhisperTurboDownloadInfo();
@@ -90,7 +91,7 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
                     return;
                 }
             }
-            if(isMozillaDownload(downloadInfo) || downloadInfo.equals(hyMtDownloadInfo) || downloadInfo.equals(madladDownloadInfo) || downloadInfo.equals(gemmaDownloadInfo) || downloadInfo.equals(qwen35DownloadInfo)) {
+            if(isMozillaDownload(downloadInfo) || downloadInfo.equals(hyMtDownloadInfo) || downloadInfo.equals(madladDownloadInfo) || downloadInfo.equals(gemmaDownloadInfo) || downloadInfo.equals(qwen35DownloadInfo) || downloadInfo.equals(indexDownloadInfo)) {
                 //this is to prevent the user from deleting all the translation models
                 int numberOfModelsAvailable = 0;
                 for (DownloadGroupInfo downloadGroupInfo : downloadManager.getSavedDownloadStatus()) {
@@ -111,6 +112,9 @@ public class ResourceManager implements MozillaLanguagesAdapter.ResourceManagerI
                     numberOfModelsAvailable++;
                 }
                 if (downloadManager.checkDownloadCompleted(qwen35DownloadInfo)) {
+                    numberOfModelsAvailable++;
+                }
+                if (downloadManager.checkDownloadCompleted(indexDownloadInfo)) {
                     numberOfModelsAvailable++;
                 }
                 if (numberOfModelsAvailable <= 1) {

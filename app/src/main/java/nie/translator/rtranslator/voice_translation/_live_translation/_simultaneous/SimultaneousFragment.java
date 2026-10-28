@@ -492,6 +492,13 @@ public class SimultaneousFragment extends VoiceTranslationFragment {
                 return;
             }
             int messageIndex = mAdapter.getMessageIndex(message.getMessageID());
+            if (SimultaneousService.isRemoval(message)) {
+                // A streaming draft whose words all went into earlier clauses.
+                if (messageIndex != -1) {
+                    mAdapter.removeMessage(messageIndex);
+                }
+                return;
+            }
             if (messageIndex != -1) {
                 if ((!mRecyclerView.isAnimating() && !mRecyclerView.getLayoutManager().isSmoothScrolling()) || message.isFinal()) {
                     if (message.isFinal() && mRecyclerView.getItemAnimator() != null) {

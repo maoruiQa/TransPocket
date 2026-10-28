@@ -194,6 +194,27 @@ public class SettingsFragment extends PreferenceFragmentCompat {
             }
         });
         updateTranslationAssessmentSummary();
+        SwitchPreference streamingRecognitionPreference = (SwitchPreference) findPreference("streamingRecognition");
+        SwitchPreference streamingTranslationPreference = (SwitchPreference) findPreference("streamingTranslation");
+        streamingRecognitionPreference.setChecked(global.isStreamingRecognition());
+        streamingTranslationPreference.setChecked(global.isStreamingTranslation());
+        // Early translation reads the live transcript, so it needs streaming recognition.
+        streamingTranslationPreference.setEnabled(global.isStreamingRecognition());
+        streamingRecognitionPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setStreamingRecognition((Boolean) newValue);
+                streamingTranslationPreference.setEnabled((Boolean) newValue);
+                return true;
+            }
+        });
+        streamingTranslationPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setStreamingTranslation((Boolean) newValue);
+                return true;
+            }
+        });
         SwitchPreference simultaneousIgnoreContextPreference = (SwitchPreference) findPreference("simultaneousIgnoreContext");
         simultaneousIgnoreContextPreference.setChecked(global.isSimultaneousIgnoreContext());
         simultaneousIgnoreContextPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {

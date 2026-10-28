@@ -23,7 +23,8 @@ TransPocket 是离线的 Android 实时翻译应用，当前版本 **0.1.0**。�
 这些是相对上游 RTranslator 3.0.0-beta2 已经在本仓库里的改动：
 
 - 同声传译，默认下载并启用 Silero VAD（约 2 MB）按语音停顿断句。
-- 翻译模型除 Mozilla Bergamot、Madlad 400 3B（int4）、HY-MT 1.5 1.8B（int8）之外，可以选用 Google TranslateGemma 4B 和 Qwen3.5 0.8B。后两者是 GGUF Q4_K_M，在手机上用 llama.cpp 运行。TranslateGemma 大约需要 4 GB 内存，并适用 Gemma 条款。Qwen3.5 0.8B 大约需要 1.4 GB 内存。
+- 翻译模型在手机上用 llama.cpp 运行：Qwen3.5 0.8B（性能档，约 1.4 GB 内存）、Index-Translate 2B（质量档，默认，约 1.9 GB）、Google TranslateGemma 4B（约 4 GB，适用 Gemma 条款）。每个模型都可以选量化档位（视文件提供 Q4_0、IQ4_NL、IQ4_XS、Q4_K、Q8_0），按手机 CPU 上的速度从快到慢排列。Mozilla Bergamot、Madlad 400 3B（int4）和 HY-MT 1.5 1.8B（int8）放在“其他模型”里。
+- 同声传译支持流式：说话时实时显示识别文字，并在停顿前就翻译已经稳定的句首（设置中两项默认开启）。
 - 语音识别可以在 Whisper Small、Whisper Large V3 Turbo、Qwen3-ASR 0.6B、Qwen3-ASR 1.7B 之间选择。1.7B 需要大约 8 GB 内存的手机。
 - 朗读使用手机上的系统文字转语音。一句结束就开始读这一句，下一句排队，不把整段合成一次提交。连着蓝牙耳机时，会先保持媒体通路，避免句首被耳机休眠吃掉。
 - 模型下载在应用离开前台后继续。加载和切换模型时显示阶段进度。

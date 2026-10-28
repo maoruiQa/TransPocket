@@ -23,7 +23,8 @@ TransPocket is an offline Android app for real-time translation. The current ver
 These are the changes in this repository relative to upstream RTranslator 3.0.0-beta2:
 
 - Simultaneous interpretation. Silero VAD (about 2 MB) is downloaded and enabled by default and splits speech on pauses.
-- Translation models, in addition to Mozilla Bergamot, Madlad 400 3B (int4), and HY-MT 1.5 1.8B (int8): Google TranslateGemma 4B and Qwen3.5 0.8B. The last two are GGUF Q4_K_M and run on the phone with llama.cpp. TranslateGemma needs about 4 GB of memory and is covered by the Gemma terms. Qwen3.5 0.8B needs about 1.4 GB of memory.
+- Translation models run on the phone with llama.cpp: Qwen3.5 0.8B (performance, about 1.4 GB of memory), Index-Translate 2B (quality, the default, about 1.9 GB), and Google TranslateGemma 4B (about 4 GB, Gemma terms). Each has a quantization menu (Q4_0, IQ4_NL, IQ4_XS, Q4_K, Q8_0 where available), fastest on phone CPUs first. Mozilla Bergamot, Madlad 400 3B (int4) and HY-MT 1.5 1.8B (int8) are under "Other models".
+- Simultaneous interpretation can stream: the live transcript is shown while you speak, and its stable start is translated before you pause (both on by default in Settings).
 - Speech recognition can be Whisper Small, Whisper Large V3 Turbo, Qwen3-ASR 0.6B, or Qwen3-ASR 1.7B. The 1.7B model needs a phone with about 8 GB of memory.
 - Speech uses the phone's system text-to-speech engine. A sentence is spoken as soon as it is finished, and the next sentence waits in a queue. The whole passage is not synthesized in one request. With Bluetooth headphones, the media route is kept awake so the start of a sentence is not eaten by headphone sleep.
 - Model downloads continue after the app leaves the foreground. Loading and switching models show stage progress.

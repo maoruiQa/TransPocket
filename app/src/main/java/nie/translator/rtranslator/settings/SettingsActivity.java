@@ -39,6 +39,7 @@ public class SettingsActivity extends GeneralActivity {
     public static final String SETTINGS_FRAGMENT = "startSettings";
     public static final String MODEL_MANAGER = "startModelManager";
     public static final String MOZILLA_MANAGER = "startMozillaManager";
+    public static final String OTHER_MODELS = "startOtherModels";
     private Fragment fragment;
 
     @Override
@@ -150,6 +151,19 @@ public class SettingsActivity extends GeneralActivity {
                 transaction.addToBackStack(MOZILLA_MANAGER);
                 transaction.commit();
                 fragment = mozillaManagerFragment;
+                break;
+            }
+            case OTHER_MODELS: {
+                OtherModelsFragment otherModelsFragment = new OtherModelsFragment();
+                if (bundle != null) {
+                    otherModelsFragment.setArguments(bundle);
+                }
+                FragmentTransaction transaction = getSupportFragmentManager().beginTransaction();
+                transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_CLOSE);
+                transaction.replace(R.id.fragment_settings_container, otherModelsFragment);
+                transaction.addToBackStack(OTHER_MODELS);
+                transaction.commit();
+                fragment = otherModelsFragment;
                 break;
             }
         }

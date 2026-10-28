@@ -2,6 +2,7 @@ package nie.translator.rtranslator.voice_translation.neural_networks.translation
 
 import androidx.annotation.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 import nie.translator.rtranslator.tools.ClauseConfidence;
@@ -32,11 +33,11 @@ public final class GgufTranslator {
                     throw error;
                 }
             }
-            String generated = nativeGenerate(prompt, maxTokens);
+            byte[] generated = nativeGenerate(prompt, maxTokens);
             if (generated == null) {
                 throw new IllegalStateException("GGUF model returned no text");
             }
-            String cleaned = clean(generated);
+            String cleaned = clean(new String(generated, StandardCharsets.UTF_8));
             if (cleaned.isEmpty()) {
                 throw new IllegalStateException("GGUF model returned no text");
             }
@@ -61,6 +62,9 @@ public final class GgufTranslator {
         if (code == null) {
             code = "";
         }
+        if (isTraditionalChinese(locale)) {
+            return "Traditional Chinese (zh-Hant)";
+        }
         int dash = code.indexOf('-');
         if (dash > 0) {
             code = code.substring(0, dash);
@@ -70,6 +74,13 @@ public final class GgufTranslator {
             name = code;
         }
         return name + " (" + code + ")";
+    }
+
+    /** zh-HANT in the language lists becomes language zh with country HANT. */
+    static boolean isTraditionalChinese(CustomLocale locale) {
+        String country = locale.getCountry();
+        return "zh".equalsIgnoreCase(locale.getLanguage())
+                && ("HANT".equalsIgnoreCase(country) || "TW".equalsIgnoreCase(country) || "HK".equalsIgnoreCase(country) || "MO".equalsIgnoreCase(country));
     }
 
     /**
@@ -142,7 +153,7 @@ public final class GgufTranslator {
 
     private static native void nativeLoad(String modelPath);
 
-    private static native String nativeGenerate(String prompt, int maxTokens);
+    private static native byte[] nativeGenerate(String prompt, int maxTokens);
 
     private static native void nativeRelease();
 }

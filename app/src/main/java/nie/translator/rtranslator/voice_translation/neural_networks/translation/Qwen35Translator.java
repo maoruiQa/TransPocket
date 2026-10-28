@@ -8,7 +8,7 @@ import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.tools.CustomLocale;
 
 /**
- * Prompt for Qwen3.5-0.8B. The weights are the Unsloth Q4_K_M GGUF.
+ * Prompt for Qwen3.5-0.8B. The weights are an Unsloth GGUF.
  * An empty think block asks the model to skip its reasoning trace.
  */
 public final class Qwen35Translator {
@@ -16,7 +16,7 @@ public final class Qwen35Translator {
     }
 
     public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
-        File model = new File(global.getFilesDir(), "Translation/Qwen35/Qwen3.5-0.8B-Q4_K_M.gguf");
+        File model = global.getGgufModelFile(Translator.QWEN35);
         if (!model.isFile()) {
             throw new IllegalStateException("Qwen3.5 file is missing");
         }

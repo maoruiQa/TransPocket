@@ -532,6 +532,11 @@ public class LoadingActivity extends GeneralActivity {
                     return false;
                 }
                 break;
+            case Translator.INDEX_TRANSLATE:
+                if(!DownloadManager.isDownloadCompleted(saved, global.getIndexTranslateDownloadInfo())){
+                    return false;
+                }
+                break;
         }
         // check of Mozilla for voice translation modes preference
         if(translationMode != Translator.MOZILLA && global.isUseMozillaForVoiceTranslation() && !checkMozillaModelsPresence(saved)){
@@ -580,10 +585,15 @@ public class LoadingActivity extends GeneralActivity {
         if(DownloadManager.isDownloadCompleted(saved, global.getQwen35DownloadInfo())){
             availableModels.add(Translator.QWEN35);
         }
+        if(DownloadManager.isDownloadCompleted(saved, global.getIndexTranslateDownloadInfo())){
+            availableModels.add(Translator.INDEX_TRANSLATE);
+        }
         if(!availableModels.contains(translationMode)){
             int newTranslationMode = -1;
             if(availableModels.contains(Translator.MOZILLA)){
                 newTranslationMode = Translator.MOZILLA;
+            }else if(availableModels.contains(Translator.INDEX_TRANSLATE)){
+                newTranslationMode = Translator.INDEX_TRANSLATE;
             }else if(availableModels.contains(Translator.HY_MT)){
                 newTranslationMode = Translator.HY_MT;
             }else if(availableModels.contains(Translator.TRANSLATEGEMMA)){

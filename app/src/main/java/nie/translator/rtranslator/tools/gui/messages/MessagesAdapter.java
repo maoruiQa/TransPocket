@@ -154,6 +154,11 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         notifyItemChanged(index);
     }
 
+    public void removeMessage(int index) {
+        messages.remove(index);
+        notifyItemRemoved(index);
+    }
+
     public int getMessageIndex(long messageID){
         for(int i = 0; i < messages.size(); i++){
             if(messages.get(i).getMessageID() == messageID){

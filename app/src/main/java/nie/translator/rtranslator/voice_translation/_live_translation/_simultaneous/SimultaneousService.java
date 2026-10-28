@@ -27,6 +27,7 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.tools.AsrLanguages;
@@ -77,6 +78,12 @@ public class SimultaneousService extends VoiceTranslationService {
     private final Object timingLock = new Object();
     private boolean translatingClause = false;
     private final ClauseContextWindow contextWindow = new ClauseContextWindow();
+    /** Main thread only. The clause that is still being spoken, when streaming recognition is on. */
+    private final StreamingClause streaming = new StreamingClause();
+    /** Increments whenever a clause closes, so a late partial of that clause is ignored. */
+    private final AtomicLong streamTag = new AtomicLong();
+    private boolean streamingRecognition;
+    private boolean streamingTranslation;
     private long nextMessageId = System.currentTimeMillis();
     private boolean ttsForTarget;
     /**
@@ -114,6 +121,8 @@ public class SimultaneousService extends VoiceTranslationService {
         sourceLanguage = global.getSimultaneousSourceLanguage(true);
         targetLanguage = global.getSimultaneousTargetLanguage(true);
         sourceAuto = global.isLanguageAuto(Global.AUTO_SIMULTANEOUS_SOURCE);
+        streamingRecognition = global.isStreamingRecognition();
+        streamingTranslation = streamingRecognition && global.isStreamingTranslation();
         translator = global.getTranslator();
         speechRecognizer = global.getSpeechRecognizer();
         mVoiceCallback = new Recorder.Callback() {
@@ -142,9 +151,19 @@ public class SimultaneousService extends VoiceTranslationService {
                         }
                         String targetCode = targetLanguage != null ? targetLanguage.getCode() : null;
                         String sourceCode = sourceAuto ? AsrLanguages.AUTO : sourceLanguage.getCode();
+                        streamTag.incrementAndGet();
                         speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceCode, targetCode);
                     }
                 }
+            }
+
+            @Override
+            public void onVoicePartial(@NonNull float[] data, int size) {
+                if (!capturingSettled || speechRecognizer == null || !streamingRecognition || sourceLanguage == null) {
+                    return;
+                }
+                String sourceCode = sourceAuto ? AsrLanguages.AUTO : sourceLanguage.getCode();
+                speechRecognizer.recognizePartial(data, sourceCode, streamTag.get());
             }
 
             @Override
@@ -180,6 +199,9 @@ public class SimultaneousService extends VoiceTranslationService {
                         }
                         case CHANGE_SOURCE_LANGUAGE: {
                             CustomLocale language = (CustomLocale) message.getData().getSerializable("language");
+                            if (language != null) {
+                                endStreamingClause();
+                            }
                             if (language != null && language.isAuto()) {
                                 sourceAuto = true;
                                 clearClauseContext();
@@ -194,6 +216,7 @@ public class SimultaneousService extends VoiceTranslationService {
                         case CHANGE_TARGET_LANGUAGE: {
                             CustomLocale language = (CustomLocale) message.getData().getSerializable("language");
                             if (language != null) {
+                                endStreamingClause();
                                 targetLanguage = language;
                                 clearClauseContext();
                                 reloadLanguages();
@@ -219,6 +242,11 @@ public class SimultaneousService extends VoiceTranslationService {
                     usedVad = clauseUsedVad.pollFirst();
                 }
                 mainHandler.post(() -> handleRecognition(text, languageCode, confidenceScore, isFinal, submitted == null ? asrDone : submitted, asrDone, audioMs == null ? 0 : audioMs, Boolean.TRUE.equals(usedVad)));
+            }
+
+            @Override
+            public void onSpeechPartialResult(String text, String languageCode, long tag) {
+                mainHandler.post(() -> handlePartial(text, languageCode, tag));
             }
 
             @Override
@@ -354,6 +382,7 @@ public class SimultaneousService extends VoiceTranslationService {
         isMicActivated = false;
         ensureRecording();
         mVoiceRecorder.discardPendingSpeech();
+        endStreamingClause();
         publishSettle(generation, SystemClock.elapsedRealtime());
     }
 
@@ -446,7 +475,16 @@ public class SimultaneousService extends VoiceTranslationService {
         if (text != null && !text.isEmpty() && isFinal) {
             android.util.Log.i("simultaneous", "recognized vad=" + vadClause + " audioMs=" + audioMs + " text=" + text);
         }
-        if (text == null || text.isEmpty() || isMetaText(text) || !isFinal || sourceLanguage == null || targetLanguage == null) {
+        if (!isFinal) {
+            return;
+        }
+        // The clause is closed: whatever was translated early is cut off the final text here.
+        final long draftId = streaming.draftId;
+        streaming.draftId = -1;
+        final boolean committedEarly = streaming.hasCommitted();
+        final String tail = streaming.finish(text);
+        if (text == null || text.isEmpty() || isMetaText(text) || sourceLanguage == null || targetLanguage == null) {
+            dropDraft(draftId);
             return;
         }
         CustomLocale clauseLanguage = sourceLanguage;
@@ -455,6 +493,7 @@ public class SimultaneousService extends VoiceTranslationService {
             // Speech already in the target language has nothing to translate and would only pollute the context.
             if (clauseLanguage == null || clauseLanguage.equalsLanguage(targetLanguage)) {
                 android.util.Log.i("simultaneous", "skipped clause detected=" + languageCode);
+                dropDraft(draftId);
                 return;
             }
         }
@@ -462,13 +501,21 @@ public class SimultaneousService extends VoiceTranslationService {
         // Graded on the whole result: the speaking rate needs the text that matches the audio length.
         int asrLevel = ClauseConfidence.asrLevel(text, asrScore, audioMs);
         android.util.Log.i("simultaneous", "asr score=" + asrScore + " audioMs=" + audioMs + " level=" + ClauseConfidence.name(asrLevel));
-        ArrayList<String> clauses = vadClause ? vadClauses(text) : ClauseSplitter.split(text);
+        String remaining = committedEarly ? tail : text;
+        if (committedEarly) {
+            android.util.Log.i("simultaneous", "streaming tail=" + remaining);
+        }
+        ArrayList<String> clauses = vadClause ? vadClauses(remaining) : ClauseSplitter.split(remaining);
         if (clauses.isEmpty()) {
+            dropDraft(draftId);
             return;
         }
+        boolean first = true;
         for (String clause : clauses) {
             PendingClause pending = new PendingClause();
-            pending.id = nextMessageId++;
+            // The first piece takes over the bubble that showed the live transcript.
+            pending.id = first && draftId != -1 ? draftId : nextMessageId++;
+            first = false;
             pending.text = clause;
             pending.language = clauseLanguage;
             pending.audioMs = audioMs;
@@ -479,6 +526,75 @@ public class SimultaneousService extends VoiceTranslationService {
             pendingClauses.add(pending);
         }
         drainClauses();
+    }
+
+    /**
+     * A transcript of the clause that is still being spoken. It is shown as it grows, and with
+     * streaming translation its stable start is translated before the speaker pauses.
+     */
+    private void handlePartial(String text, String languageCode, long tag) {
+        if (tag != streamTag.get() || !capturingSettled || text == null || text.isEmpty() || isMetaText(text)
+                || sourceLanguage == null || targetLanguage == null) {
+            return;
+        }
+        CustomLocale language = sourceLanguage;
+        if (sourceAuto) {
+            language = global.findDetectedLanguage(languageCode, Global.RTranslatorMode.SIMULTANEOUS_MODE);
+            if (language == null || language.equalsLanguage(targetLanguage)) {
+                return;
+            }
+        }
+        String piece = streaming.offer(text, streamingTranslation);
+        if (piece != null) {
+            android.util.Log.i("simultaneous", "streaming commit=" + piece);
+            PendingClause pending = new PendingClause();
+            pending.id = streaming.draftId != -1 ? streaming.draftId : nextMessageId++;
+            streaming.draftId = -1;
+            pending.text = piece;
+            pending.language = language;
+            pending.submittedAt = SystemClock.elapsedRealtime();
+            publishClause(pending, "", false);
+            pendingClauses.add(pending);
+            drainClauses();
+        }
+        String draft = streaming.uncommitted(text);
+        if (draft.isEmpty()) {
+            return;
+        }
+        if (streaming.draftId == -1) {
+            streaming.draftId = nextMessageId++;
+        }
+        GuiMessage message = new GuiMessage(new Message(draft, SimultaneousService.this, ""), language, targetLanguage, streaming.draftId, false, false);
+        notifyMessage(message);
+        addOrUpdateMessage(message);
+    }
+
+    /** Ends the open clause without a final transcript, for example when its audio is discarded. */
+    private void endStreamingClause() {
+        streamTag.incrementAndGet();
+        dropDraft(streaming.draftId);
+        streaming.reset();
+    }
+
+    private void dropDraft(long draftId) {
+        if (draftId == -1) {
+            return;
+        }
+        removeMessage(draftId);
+        CustomLocale language = targetLanguage != null ? targetLanguage : sourceLanguage;
+        if (language != null) {
+            notifyMessage(new GuiMessage(new Message("", SimultaneousService.this, ""), language, language, draftId, false, true));
+        }
+    }
+
+    /** What {@link #dropDraft} sends: a final message with no text at all. Real clauses always have source text. */
+    public static boolean isRemoval(GuiMessage message) {
+        if (!message.isFinal() || message.getMessage() == null) {
+            return false;
+        }
+        String source = message.getMessage().getTextToTranslate();
+        String text = message.getMessage().getText();
+        return (source == null || source.isEmpty()) && (text == null || text.isEmpty());
     }
 
     private void drainClauses() {
@@ -668,6 +784,7 @@ public class SimultaneousService extends VoiceTranslationService {
         if (Tools.hasPermissions(this, Global.REQUIRED_PERMISSIONS_VOICE)) {
             mVoiceRecorder = new Recorder(global, true, mVoiceCallback, null, global.getVad(), CAPTURE_BUFFER_MILLIS);
             mVoiceRecorder.setClauseSegmentation(true);
+            mVoiceRecorder.setStreamingPartials(streamingRecognition);
             if (global.isSimultaneousVadSegmentation()) {
                 ClauseVad clauseVad = global.getVadModel() == Global.VAD_FIRERED
                         ? FireRedClauseVad.open(global.getFireRedVadFile(), global.getFireRedVadCmvnFile())

@@ -34,29 +34,21 @@ public class ModelRecommendation {
         int usedBase = systemMb + whisperMb;
         float redLine = 100f - (global.getRamThreshold() * 100f) / totalMb;
 
-        boolean gemmaFits = fits(usedBase + 3600, totalMb, redLine) && freeMb > 4200;
+        // Index-Translate 2B is the quality default. TranslateGemma 4B is never picked for the user:
+        // it needs about twice the memory and is slower per token.
+        boolean indexFits = fits(usedBase + 1900, totalMb, redLine) && freeMb > 1600;
         boolean qwenFits = fits(usedBase + 1400, totalMb, redLine) && freeMb > 1200;
-        boolean hyFits = fits(usedBase + 1900, totalMb, redLine) && freeMb > 2600;
-        boolean madladFits = fits(usedBase + 1800, totalMb, redLine) && freeMb > 2200;
         int model;
         int message;
         int modelMb;
-        if (gemmaFits) {
-            model = Translator.TRANSLATEGEMMA;
-            modelMb = 3600;
-            message = R.string.model_recommendation_gemma;
+        if (indexFits) {
+            model = Translator.INDEX_TRANSLATE;
+            modelMb = 1900;
+            message = R.string.model_recommendation_index;
         } else if (qwenFits) {
             model = Translator.QWEN35;
             modelMb = 1400;
             message = R.string.model_recommendation_qwen35;
-        } else if (hyFits) {
-            model = Translator.HY_MT;
-            modelMb = 1900;
-            message = R.string.model_recommendation_hy;
-        } else if (madladFits) {
-            model = Translator.MADLAD_CACHE;
-            modelMb = 1800;
-            message = R.string.model_recommendation_madlad;
         } else {
             model = Translator.MOZILLA;
             modelMb = 100;

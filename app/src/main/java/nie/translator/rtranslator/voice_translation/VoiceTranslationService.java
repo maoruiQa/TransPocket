@@ -328,6 +328,15 @@ public abstract class VoiceTranslationService extends GeneralService {
 
     // messages
 
+    protected void removeMessage(long messageID) {
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).getMessageID() == messageID) {
+                messages.remove(i);
+                return;
+            }
+        }
+    }
+
     protected void addOrUpdateMessage(GuiMessage message) {
         if(message.getMessageID() != -1) {
             for (int i = 0; i < messages.size(); i++) {

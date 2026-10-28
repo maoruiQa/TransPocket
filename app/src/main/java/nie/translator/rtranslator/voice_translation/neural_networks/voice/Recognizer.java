@@ -65,6 +65,8 @@ public class Recognizer extends NeuralNetworkApi {
     private boolean recognizing = false;
     private boolean speechWarmed = false;
     private ArrayDeque<DataContainer> dataToRecognize = new ArrayDeque<>();
+    /** Streaming recognition keeps only the newest partial. Guarded by {@link #lock}. */
+    private DataContainer pendingPartial;
     private final Object lock = new Object();
     private final Object warmupLock = new Object();
 
@@ -351,6 +353,31 @@ public class Recognizer extends NeuralNetworkApi {
     }
 
     /**
+     * Reads a clause that is still being spoken. Only the newest partial is kept, and it runs
+     * only when no finished clause is waiting, so partials never delay a final result.
+     * The result goes to {@link RecognizerListener#onSpeechPartialResult} with {@code tag}.
+     */
+    public void recognizePartial(final float[] data, final String languageCode, final long tag) {
+        if (data == null) {
+            return;
+        }
+        DataContainer container = new DataContainer(data, 1, languageCode, AsrLanguages.isAuto(languageCode));
+        container.partialTag = tag;
+        container.partial = true;
+        boolean start = false;
+        synchronized (lock) {
+            pendingPartial = container;
+            if (!recognizing) {
+                recognizing = true;
+                start = true;
+            }
+        }
+        if (start) {
+            new Thread(this::drainQueue, "recognizer").start();
+        }
+    }
+
+    /**
      * Runs one short silent pass before capture starts. The first ONNX execution
      * is slow enough to stall the audio thread and drop the opening speech.
      */
@@ -436,6 +463,8 @@ public class Recognizer extends NeuralNetworkApi {
                 boolean start = false;
                 synchronized (lock) {
                     dataToRecognize.addLast(container);
+                    // A partial of this clause is stale once the clause itself is queued.
+                    pendingPartial = null;
                     if (!recognizing) {
                         recognizing = true;
                         start = true;
@@ -455,16 +484,62 @@ public class Recognizer extends NeuralNetworkApi {
             synchronized (lock) {
                 data = dataToRecognize.pollFirst();
                 if (data == null) {
+                    data = pendingPartial;
+                    pendingPartial = null;
+                }
+                if (data == null) {
                     recognizing = false;
                     lock.notifyAll();
                     return;
                 }
             }
             try {
-                transcribe(data);
+                if (data.partial) {
+                    transcribePartial(data);
+                } else {
+                    transcribe(data);
+                }
             } catch (Throwable t) {
                 Log.e("recognizer", "recognition failed", t);
             }
+        }
+    }
+
+    /** One plain decode of the open clause. No retries and no language filtering: the final pass does those. */
+    private void transcribePartial(DataContainer data) throws Exception {
+        boolean auto = AsrLanguages.isAuto(data.languageCode);
+        String text;
+        String language = data.languageCode;
+        if (qwenEngine != null) {
+            Qwen3AsrEngine.Transcript transcript = auto ? qwenEngine.transcribe(data.data) : qwenEngine.transcribe(data.data, data.languageCode);
+            text = transcript.text;
+            if (auto) {
+                language = transcript.languageCode;
+            }
+        } else if (turboEngine != null) {
+            boolean largeV3 = global.getAsrModel() == Global.ASR_WHISPER_TURBO;
+            boolean soft = auto || !AsrLanguages.isWhisperLanguage(data.languageCode, largeV3);
+            WhisperTurboEngine.Transcripts transcripts = turboEngine.transcribe(data.data, data.languageCode, null, soft, -1, null);
+            if (transcripts.rejected) {
+                return;
+            }
+            text = transcripts.firstText;
+            if (auto) {
+                language = transcripts.firstLanguage;
+            }
+        } else {
+            // The split legacy Whisper graph is too slow to run twice per clause.
+            return;
+        }
+        if (text == null) {
+            return;
+        }
+        text = correctText(text);
+        if (text.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < callbacks.size(); i++) {
+            callbacks.get(i).onSpeechPartialResult(text, language, data.partialTag);
         }
     }
 
@@ -1208,6 +1283,8 @@ public class Recognizer extends NeuralNetworkApi {
         private String languageCodeSwitch;
         private int beamSize;
         private boolean softLanguage;
+        private boolean partial;
+        private long partialTag;
 
         private DataContainer(float[] data, int beamSize, String languageCode, boolean softLanguage){
             this.data = data;

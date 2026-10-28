@@ -83,6 +83,7 @@ public class Translator extends NeuralNetworkApi {
     public static final int HY_MT = 8;
     public static final int TRANSLATEGEMMA = 11;
     public static final int QWEN35 = 12;
+    public static final int INDEX_TRANSLATE = 13;
     private int mode = -1;
     private Tokenizer tokenizer;
     private OrtEnvironment onnxEnv;
@@ -151,16 +152,10 @@ public class Translator extends NeuralNetworkApi {
                         if (mode != MOZILLA && !isGgufMode(mode)) {
                             onnxTranslationModelInitialization();
                         }
-                        if (mode == TRANSLATEGEMMA) {
-                            File gemmaFile = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
-                            if (!gemmaFile.isFile()) {
-                                throw new IOException("TranslateGemma file is missing");
-                            }
-                        }
-                        if (mode == QWEN35) {
-                            File qwenFile = new File(global.getFilesDir(), "Translation/Qwen35/Qwen3.5-0.8B-Q4_K_M.gguf");
-                            if (!qwenFile.isFile()) {
-                                throw new IOException("Qwen3.5 file is missing");
+                        if (isGgufMode(mode)) {
+                            File ggufFile = global.getGgufModelFile(mode);
+                            if (!ggufFile.isFile()) {
+                                throw new IOException("GGUF file is missing: " + ggufFile.getName());
                             }
                         }
                     }
@@ -215,7 +210,7 @@ public class Translator extends NeuralNetworkApi {
     }
 
     private static boolean isGgufMode(int mode) {
-        return mode == TRANSLATEGEMMA || mode == QWEN35;
+        return mode == TRANSLATEGEMMA || mode == QWEN35 || mode == INDEX_TRANSLATE;
     }
 
     /** Only the instruction-following GGUF models can append a {@code [Q=n]} rating; the others are translation-only. */
@@ -226,6 +221,9 @@ public class Translator extends NeuralNetworkApi {
     private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode, @Nullable TranslationContext context) {
         if (performMode == QWEN35) {
             return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage, context);
+        }
+        if (performMode == INDEX_TRANSLATE) {
+            return IndexTranslateTranslator.translate(global, text, inputLanguage, outputLanguage, context);
         }
         return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage, context);
     }
@@ -783,14 +781,20 @@ public class Translator extends NeuralNetworkApi {
                     String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context);
                     final int rating = context != null && context.selfRating ? ClauseConfidence.modelRating(translated) : ClauseConfidence.UNKNOWN;
                     final String resultText = context != null && context.selfRating ? ClauseConfidence.withoutModelRating(translated) : translated;
+                    final long resultID = incrementCurrentResultID();
+                    if (saveResults) {
+                        lastOutputText = new GuiMessage(new Message(global, resultText), inputLanguage, outputLanguage, resultID, false, true);
+                    }
                     if (responseListener != null) {
-                        final long resultID = incrementCurrentResultID();
                         mainHandler.post(() -> {
                             if (rating != ClauseConfidence.UNKNOWN) {
                                 responseListener.onTranslationRating(resultID, rating);
                             }
                             responseListener.onTranslatedText(textToTranslate, resultText, null, resultID, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage);
                         });
+                    } else {
+                        // Text mode passes no listener and reads the registered callbacks, as the other engines do.
+                        mainHandler.post(() -> notifyResult(textToTranslate, resultText, null, resultID, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
                     }
                 } catch (Exception gemmaError) {
                     android.util.Log.e("translation_error", "GGUF translation failed", gemmaError);
@@ -1988,7 +1992,7 @@ public class Translator extends NeuralNetworkApi {
                 } else {
                     document = documentBuilder.parse(context.getResources().openRawResource(R.raw.nllb_supported_languages_all));
                 }
-            }else if (mode == HY_MT || mode == TRANSLATEGEMMA || mode == QWEN35) {
+            }else if (mode == HY_MT || mode == TRANSLATEGEMMA || mode == QWEN35 || mode == INDEX_TRANSLATE) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.hy_mt_supported_languages));
             }else if (mode == MOZILLA) {
                 document = documentBuilder.parse(context.getResources().openRawResource(R.raw.mozilla_supported_languages));

@@ -201,11 +201,11 @@
     <string name="description_permission_conversation">Щоб перекладати ваш голос у режимі Розмова, надайте TransPocket доступ до мікрофона. Якщо ви не надасте цей дозвіл, режим усе одно працюватиме, але ви зможете лише надсилати текстові повідомлення або отримувати та відтворювати переклади.</string>
     <string name="model_recommendation_gemma">Рекомендовано: TranslateGemma 4B. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож вміщується Google TranslateGemma 4B. Діють умови Gemma.</string>
     <string name="model_recommendation_hy">Рекомендовано: якість. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож HY-MT вміщується разом із розпізнаванням мовлення.</string>
-    <string name="description_model_gemma">Інструкційна модель Google TranslateGemma 4B, GGUF Q4_K_M з google/translategemma-4b-it. Найвища якість серед варіантів на пристрої, потрібно близько 4 ГБ пам\'яті. Діють умови Gemma.</string>
+    <string name="description_model_gemma">Велика. Інструкційна модель Google TranslateGemma 4B, GGUF з google/translategemma-4b-it. Найбільший варіант на пристрої, потрібно близько 4 ГБ пам\'яті, повільніша за Index-Translate. Діють умови Gemma.</string>
     <string name="error_missing_gemma">Спершу завантажте TranslateGemma, потім виберіть її.</string>
     <string name="model_recommendation_qwen35">Рекомендовано: Qwen3.5 0.8B. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож вміщується менша Qwen3.5 0.8B.</string>
     <string name="title_model_qwen35">Qwen3.5 0.8B</string>
-    <string name="description_model_qwen35">Інструкційна модель Qwen3.5 0.8B, GGUF Q4_K_M. Менша за TranslateGemma, потрібно близько 1,4 ГБ пам\'яті.</string>
+    <string name="description_model_qwen35">Швидкість. Інструкційна модель Qwen3.5 0.8B, GGUF. Найшвидша і найменша з трьох, потрібно близько 1,4 ГБ пам\'яті.</string>
     <string name="error_missing_qwen35">Спершу завантажте Qwen3.5 0.8B, потім виберіть її.</string>
     <string name="model_recommendation_madlad">Рекомендовано: Madlad. HY-MT затісно для цього телефона. Madlad вміщується і охоплює більше мов. Близько %1$s ГБ пам\'яті, %2$s ГБ вільно.</string>
     <string name="model_recommendation_mozilla">Рекомендовано: швидкодія. Пам\'яті або вільного місця мало (близько %1$s ГБ пам\'яті, %2$s ГБ вільно), тож легкі моделі Mozilla безпечніші. Перед продовженням завантажте принаймні одну мову.</string>
@@ -262,4 +262,24 @@
     <string name="walkietalkie_mode" >WalkieTalkie</string>
     <string name="walkietalkie_mode_running" >Режим WalkieTalkie працює...</string>
 
+    <string name="title_model_qwen35_tier">Qwen3.5</string>
+    <string name="title_model_index">Index 2B</string>
+    <string name="title_model_gemma_tier">Gemma 4B</string>
+    <string name="description_model_index">Якість, рекомендовано. Index-Translate 2B від Bilibili на основі Qwen3.5, навчена перекладати між 150 мовами. Потрібно близько 1,9 ГБ пам\'яті. Apache 2.0.</string>
+    <string name="error_missing_index">Спершу завантажте Index-Translate 2B, потім виберіть її.</string>
+    <string name="model_recommendation_index">Рекомендовано: Index-Translate 2B. У цього телефона близько %1$s ГБ пам\'яті і %2$s ГБ вільно, тож модель якості вміщується разом із розпізнаванням мовлення.</string>
+    <string name="title_other_models">Інші моделі</string>
+    <string name="description_other_models">Mozilla, HY-MT і Madlad. Торкніться, щоб вибрати й завантажити.</string>
+    <string name="other_model_selected">%1$s. Торкніться, щоб змінити або завантажити.</string>
+    <string name="description_open_other_models">Відкрити інші моделі</string>
+    <string name="description_other_models_page">Старіші та легкі моделі. За потреби завантажте, виберіть і торкніться «Використати цю модель». Зміна діє після «Застосувати» на сторінці моделей.</string>
+    <string name="use_other_model">Використати цю модель</string>
+    <string name="title_model_mozilla">Mozilla Bergamot</string>
+    <string name="title_model_hy">HY-MT 1.5</string>
+    <string name="title_model_madlad">Madlad 400</string>
+    <string name="description_translation_quantization_advice">Кожна модель вище має меню квантування, від найшвидшого на процесорах телефонів. Q4_0, IQ4_NL і Q4_K перепаковуються під int8-інструкції телефона. IQ4_XS — найменший 4-бітний файл, але повільніше читає текст. Q8_0, якщо є, найточніший.</string>
+    <string name="preference_title_streaming_recognition">Потокове розпізнавання</string>
+    <string name="preference_description_streaming_recognition">Синхронний переклад: мовна модель приблизно щосекунди перечитує речення, яке ви ще говорите, і показує текст у міру появи.</string>
+    <string name="preference_title_streaming_translation">Перекладати під час мовлення</string>
+    <string name="preference_description_streaming_translation">Синхронний переклад: коли дві живі розшифровки збігаються на початку речення, ця частина перекладається біля наступної коми або через кілька слів, не чекаючи паузи. Потрібне потокове розпізнавання.</string>
 </resources>

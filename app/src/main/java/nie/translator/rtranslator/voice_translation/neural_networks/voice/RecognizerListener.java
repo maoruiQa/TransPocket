@@ -21,4 +21,8 @@ import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetwor
 
 public interface RecognizerListener extends NeuralNetworkApiListener {
     void onSpeechRecognizedResult(String text, String languageCode, double confidenceScore, boolean isFinal);
+
+    /** Transcript of a clause that is still being spoken. {@code tag} is the one passed to the request. */
+    default void onSpeechPartialResult(String text, String languageCode, long tag) {
+    }
 }

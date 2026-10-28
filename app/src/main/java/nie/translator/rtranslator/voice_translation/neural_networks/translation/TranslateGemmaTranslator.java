@@ -8,7 +8,7 @@ import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.tools.CustomLocale;
 
 /**
- * Prompt for google/translategemma-4b-it. The weights are the community Q4_K_M GGUF.
+ * Prompt for google/translategemma-4b-it. The weights are a mradermacher GGUF.
  * The raw prompt is sent to the shared GGUF runtime. The file's chat template is not applied.
  */
 public final class TranslateGemmaTranslator {
@@ -16,12 +16,31 @@ public final class TranslateGemmaTranslator {
     }
 
     public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
-        File model = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
+        File model = global.getGgufModelFile(Translator.TRANSLATEGEMMA);
         if (!model.isFile()) {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
         String level = global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
-        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(level));
+        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(level));
+        if (Global.GEMMA_THINKING_OFF.equals(level)) {
+            return output;
+        }
+        return withoutNote(output);
+    }
+
+    /**
+     * Gemma has no think tokens. It often wraps the note as {@code <note>} instead of
+     * {@code <think>note</think>}, and GgufTranslator only strips the second form.
+     */
+    static String withoutNote(String output) {
+        String out = output.trim();
+        if (out.startsWith("<")) {
+            int close = out.indexOf('>');
+            if (close > 0 && close + 1 < out.length()) {
+                out = out.substring(close + 1).trim();
+            }
+        }
+        return out;
     }
 
     /** Answer room plus a short note. Off uses the answer room only. */

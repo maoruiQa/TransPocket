@@ -84,7 +84,14 @@ public class Recorder {
     private static final int CLAUSE_GAP_MILLIS = 420;
     private static final int MIN_CLAUSE_MILLIS = 700;
     private static final int MAX_CLAUSE_MILLIS = 7000;
+    /** Streaming recognition: how often the open clause is handed over again, and its shortest length. */
+    private static final int PARTIAL_INTERVAL_MILLIS = 1000;
+    private static final int MIN_PARTIAL_MILLIS = 1200;
     private final Callback mCallback;
+    private volatile boolean streamingPartials = false;
+    // Audio thread only. The clause a partial was last taken from; a new start index restarts the interval.
+    private int partialClauseStart = -1;
+    private long lastPartialMillis;
     private int sampleRate;
     @Nullable
     private final AudioRecord mAudioRecord;
@@ -376,6 +383,11 @@ public class Recorder {
      * Simultaneous interpretation cuts speech into clauses and keeps the capture
      * session open, so a finished clause can be translated while the next one is recorded.
      */
+    /** Hands the open clause to {@link Callback#onVoicePartial} about once a second. */
+    public void setStreamingPartials(boolean enabled) {
+        streamingPartials = enabled;
+    }
+
     public void setClauseSegmentation(boolean enabled) {
         clauseSegmentation = enabled;
         if (enabled) {
@@ -752,6 +764,7 @@ public class Recorder {
                         final long now = System.currentTimeMillis();
                         if (clauseSegmentation && clauseVad != null) {
                             processClauseVad(oldTailIndex, tailIndex);
+                            emitPartialIfDue(now);
                         } else if (isHearingVoice(mBufferShort, oldTailIndex, tailIndex)) {
                             if (mLastVoiceHeardMillis == Long.MAX_VALUE) {    // use Long's maximum limit to indicate that we have no voice (the mic is not listening)
                                 mVoiceStartedMillis = now;
@@ -772,6 +785,8 @@ public class Recorder {
                                 emitClauseAndContinue(true);
                             } else if (now - (mVoiceStartedMillis - global.getPrevVoiceDuration()) > MAX_SPEECH_LENGTH_MILLIS) {  //if we are listening voice for more than MAX_SPEECH_LENGTH_MILLIS
                                 executeEnd();
+                            } else {
+                                emitPartialIfDue(now);
                             }
                         } else if (mLastVoiceHeardMillis != Long.MAX_VALUE) {   // use Long's maximum limit to indicate that we have no voice (the mic is not listening)
                             long silence = now - mLastVoiceHeardMillis;
@@ -872,6 +887,33 @@ public class Recorder {
             isRecording = false;
             mCallback.onVoiceEnd();
         }
+    }
+
+    /**
+     * Audio thread only. Copies the clause that is still open so the recognizer can read it
+     * early. The clause itself is still emitted whole when it closes.
+     */
+    private void emitPartialIfDue(long now) {
+        if (!streamingPartials || mLastVoiceHeardMillis == Long.MAX_VALUE) {
+            return;
+        }
+        if (startVoiceIndex != partialClauseStart) {
+            partialClauseStart = startVoiceIndex;
+            lastPartialMillis = now;
+            return;
+        }
+        if (now - lastPartialMillis < PARTIAL_INTERVAL_MILLIS) {
+            return;
+        }
+        if (getMBufferRangeSize(startVoiceIndex, tailIndex) < (sampleRate / 1000) * MIN_PARTIAL_MILLIS) {
+            return;
+        }
+        float[] data = copyRange(startVoiceIndex, tailIndex);
+        if (data == null) {
+            return;
+        }
+        lastPartialMillis = now;
+        mCallback.onVoicePartial(data, data.length);
     }
 
     /** Audio thread only. Hands the current clause to recognition and keeps listening. */
@@ -1281,6 +1323,13 @@ public class Recorder {
          */
         public void onVoice(@NonNull float[] data, int size) {
             Log.e("recorder","onVoice");
+        }
+
+        /**
+         * Called about once a second while a clause is still being spoken, with the audio of
+         * that clause so far. Only when {@link #setStreamingPartials} is on.
+         */
+        public void onVoicePartial(@NonNull float[] data, int size) {
         }
 
         /**

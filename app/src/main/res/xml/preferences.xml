@@ -122,6 +122,20 @@
             android:summary="@string/preference_description_translation_assessment_signals"
             app:iconSpaceReserved="false" />
         <androidx.preference.SwitchPreference
+            android:defaultValue="true"
+            android:key="streamingRecognition"
+            android:persistent="false"
+            android:title="@string/preference_title_streaming_recognition"
+            android:summary="@string/preference_description_streaming_recognition"
+            app:iconSpaceReserved="false" />
+        <androidx.preference.SwitchPreference
+            android:defaultValue="true"
+            android:key="streamingTranslation"
+            android:persistent="false"
+            android:title="@string/preference_title_streaming_translation"
+            android:summary="@string/preference_description_streaming_translation"
+            app:iconSpaceReserved="false" />
+        <androidx.preference.SwitchPreference
             android:defaultValue="false"
             android:key="simultaneousIgnoreContext"
             android:persistent="false"

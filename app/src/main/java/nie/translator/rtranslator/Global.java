@@ -62,6 +62,7 @@ import nie.translator.rtranslator.voice_translation._conversation_mode.communica
 import nie.translator.rtranslator.voice_translation._conversation_mode.communication.recent_peer.RecentPeersDataManager;
 import nie.translator.rtranslator.voice_translation._text_translation.TranslationFragment;
 import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetworkApi;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.GgufModelFiles;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.MicSensitivity;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
@@ -146,6 +147,7 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public static final String AUTO_FIRST_TEXT_LANGUAGE = "firstTextLanguageAuto";
     public static final String AUTO_SIMULTANEOUS_SOURCE = "simultaneousSourceAuto";
     private int translationMode;
+    private int pendingOtherTranslationModel = -1;
     public static final int ASR_WHISPER = 0;
     public static final int ASR_QWEN3_06 = 1;
     public static final int ASR_QWEN3_17 = 2;
@@ -558,29 +560,104 @@ public class Global extends Application implements DefaultLifecycleObserver {
     }
 
     public DownloadGroupInfo getTranslateGemmaDownloadInfo() {
-        String downloadFolder = getFilesDir().getAbsolutePath() + "/Translation/TranslateGemma";
+        return getGgufDownloadInfo(Translator.TRANSLATEGEMMA);
+    }
+
+    public DownloadGroupInfo getQwen35DownloadInfo() {
+        return getGgufDownloadInfo(Translator.QWEN35);
+    }
+
+    public DownloadGroupInfo getIndexTranslateDownloadInfo() {
+        return getGgufDownloadInfo(Translator.INDEX_TRANSLATE);
+    }
+
+    /** The selected quantization of a GGUF translation model. Each level is one file. */
+    public DownloadGroupInfo getGgufDownloadInfo(int mode) {
+        String quant = getTranslationQuant(mode);
+        String fileName = GgufModelFiles.fileName(mode, quant);
         return new DownloadGroupInfo(new DownloadInfo[]{
                 new DownloadInfo(
-                        "translategemma-4b-it.Q4_K_M.gguf",
-                        "https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q4_K_M.gguf",
-                        downloadFolder,
-                        2431600,
+                        fileName,
+                        GgufModelFiles.url(mode, quant),
+                        getFilesDir().getAbsolutePath() + "/" + GgufModelFiles.folder(mode),
+                        kb(GgufModelFiles.bytes(mode, quant)),
                         false,
                         false)
         });
     }
 
-    public DownloadGroupInfo getQwen35DownloadInfo() {
-        String downloadFolder = getFilesDir().getAbsolutePath() + "/Translation/Qwen35";
-        return new DownloadGroupInfo(new DownloadInfo[]{
-                new DownloadInfo(
-                        "Qwen3.5-0.8B-Q4_K_M.gguf",
-                        "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
-                        downloadFolder,
-                        545792,
-                        false,
-                        false)
-        });
+    public File getGgufModelFile(int mode) {
+        return new File(getFilesDir(), GgufModelFiles.folder(mode) + "/" + GgufModelFiles.fileName(mode, getTranslationQuant(mode)));
+    }
+
+    public int ggufDownloadSizeMb(int mode) {
+        return (int) Math.max(1L, (GgufModelFiles.bytes(mode, getTranslationQuant(mode)) + 500000L) / 1000000L);
+    }
+
+    public String getTranslationQuant(int mode) {
+        String quant = getSharedPreferences("default", Context.MODE_PRIVATE).getString(translationQuantKey(mode), null);
+        if (quant != null && GgufModelFiles.isQuant(mode, quant)) {
+            return quant;
+        }
+        return defaultTranslationQuant(mode);
+    }
+
+    public void setTranslationQuant(int mode, String quant) {
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putString(translationQuantKey(mode), quant).apply();
+    }
+
+    /**
+     * The fastest level, unless a level is already on disk. Older versions downloaded Q4_K_M
+     * only, so an update keeps using that file until the user picks another level.
+     */
+    private String defaultTranslationQuant(int mode) {
+        String[] quants = GgufModelFiles.quants(mode);
+        for (String quant : quants) {
+            File file = new File(getFilesDir(), GgufModelFiles.folder(mode) + "/" + GgufModelFiles.fileName(mode, quant));
+            if (file.isFile() && file.length() > 0) {
+                return quant;
+            }
+        }
+        return quants[0];
+    }
+
+    private static String translationQuantKey(int mode) {
+        switch (mode) {
+            case Translator.QWEN35:
+                return "translationQuantQwen35";
+            case Translator.INDEX_TRANSLATE:
+                return "translationQuantIndex";
+            default:
+                return "translationQuantGemma";
+        }
+    }
+
+    public static boolean isOtherTranslationModel(int mode) {
+        return mode == Translator.MOZILLA || mode == Translator.HY_MT || mode == Translator.MADLAD || mode == Translator.MADLAD_CACHE;
+    }
+
+    /** The model behind the "Other" choice of the model manager. Saved only when settings are applied. */
+    public int getOtherTranslationModel() {
+        if (pendingOtherTranslationModel != -1) {
+            return pendingOtherTranslationModel;
+        }
+        if (isOtherTranslationModel(translationMode)) {
+            return translationMode == Translator.MADLAD ? Translator.MADLAD_CACHE : translationMode;
+        }
+        return Translator.MOZILLA;
+    }
+
+    /** Set by the "Other" page; the model manager picks it up when it is shown again. */
+    public void setPendingOtherTranslationModel(int mode) {
+        pendingOtherTranslationModel = mode;
+    }
+
+    public boolean hasPendingOtherTranslationModel() {
+        return pendingOtherTranslationModel != -1;
+    }
+
+    public void clearPendingOtherTranslationModel() {
+        pendingOtherTranslationModel = -1;
     }
 
     public DownloadGroupInfo getMadladDownloadInfo(){
@@ -1649,6 +1726,24 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public void setTranslationAssessment(boolean enabled) {
         translationAssessment = enabled;
         getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("translationAssessment", enabled).apply();
+    }
+
+    /** Simultaneous interpretation shows the transcript while a clause is still being spoken. */
+    public boolean isStreamingRecognition() {
+        return getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("streamingRecognition", true);
+    }
+
+    public void setStreamingRecognition(boolean enabled) {
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("streamingRecognition", enabled).apply();
+    }
+
+    /** Simultaneous interpretation translates the stable start of a clause before the speaker pauses. */
+    public boolean isStreamingTranslation() {
+        return getSharedPreferences("default", Context.MODE_PRIVATE).getBoolean("streamingTranslation", true);
+    }
+
+    public void setStreamingTranslation(boolean enabled) {
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("streamingTranslation", enabled).apply();
     }
 
     public boolean isSimultaneousIgnoreContext() {

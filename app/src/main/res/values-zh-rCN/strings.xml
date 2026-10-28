@@ -222,11 +222,11 @@
     <string name="description_permission_conversation">要在对话模式中翻译您的语音，请允许 TransPocket 访问您的麦克风。若不授予此权限，该模式仍可使用，但您只能发送文字消息或接收并播放翻译。</string>
     <string name="model_recommendation_gemma">推荐：TranslateGemma 4B。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，可以跑 Google 的 TranslateGemma 4B。使用须遵守 Gemma 条款。</string>
     <string name="model_recommendation_hy">推荐：质量优先。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，可以同时跑 HY-MT 和语音识别。</string>
-    <string name="description_model_gemma">Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 Q4_K_M GGUF。设备上质量最高的选项，大约需要 4 GB 内存。须遵守 Gemma 条款。</string>
+    <string name="description_model_gemma">大模型档。Google TranslateGemma 4B 指令模型，即 google/translategemma-4b-it 的 GGUF。设备上最大的选项，大约需要 4 GB 内存，比 Index-Translate 慢。须遵守 Gemma 条款。</string>
     <string name="error_missing_gemma">请先下载 TranslateGemma，再选择它。</string>
     <string name="model_recommendation_qwen35">推荐：Qwen3.5 0.8B。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，放得下较小的 Qwen3.5 0.8B。</string>
     <string name="title_model_qwen35">Qwen3.5 0.8B</string>
-    <string name="description_model_qwen35">Qwen3.5 0.8B 指令模型，Q4_K_M GGUF。比 TranslateGemma 小，大约需要 1.4 GB 内存。</string>
+    <string name="description_model_qwen35">性能档。Qwen3.5 0.8B 指令模型，GGUF。三个里最快、最小，大约需要 1.4 GB 内存。</string>
     <string name="error_missing_qwen35">请先下载 Qwen3.5 0.8B，再选择它。</string>
     <string name="asr_model">语音识别</string>
     <string name="title_live_draft">Live Draft</string>
@@ -321,5 +321,25 @@
     <string name="walkietalkie_mode" >对讲机模式</string>
     <string name="walkietalkie_mode_running" >对讲机模式正在运行...</string>
 
+    <string name="title_model_qwen35_tier">Qwen3.5</string>
+    <string name="title_model_index">Index 2B</string>
+    <string name="title_model_gemma_tier">Gemma 4B</string>
+    <string name="description_model_index">质量档，推荐。哔哩哔哩 Index-Translate 2B，基于 Qwen3.5，专为 150 种语言互译训练。大约需要 1.9 GB 内存。Apache 2.0 许可。</string>
+    <string name="error_missing_index">请先下载 Index-Translate 2B，再选择它。</string>
+    <string name="model_recommendation_index">推荐：Index-Translate 2B。这部手机大约有 %1$s GB 内存、%2$s GB 可用空间，质量档模型可以和语音识别同时运行。</string>
+    <string name="title_other_models">其他模型</string>
+    <string name="description_other_models">Mozilla、HY-MT 和 Madlad。点按以选择和下载。</string>
+    <string name="other_model_selected">%1$s。点按以更换或下载。</string>
+    <string name="description_open_other_models">打开其他模型</string>
+    <string name="description_other_models_page">较早的模型和轻量模型。需要时先下载，选中后点按“使用此模型”。回到模型页点按“应用”后生效。</string>
+    <string name="use_other_model">使用此模型</string>
+    <string name="title_model_mozilla">Mozilla Bergamot</string>
+    <string name="title_model_hy">HY-MT 1.5</string>
+    <string name="title_model_madlad">Madlad 400</string>
+    <string name="description_translation_quantization_advice">上面每个模型都可以选量化档位，按手机 CPU 上的速度从快到慢排列。Q4_0、IQ4_NL 和 Q4_K 会针对手机的 int8 指令重排权重；IQ4_XS 是最小的 4 bit 文件，但读入原文更慢；有 Q8_0 时它最准确。</string>
+    <string name="preference_title_streaming_recognition">流式语音识别</string>
+    <string name="preference_description_streaming_recognition">同声传译：说话过程中，语音模型大约每秒重新识别一次正在说的这句话，边说边显示文字。</string>
+    <string name="preference_title_streaming_translation">边说边译</string>
+    <string name="preference_description_streaming_translation">同声传译：两次实时识别结果对句子开头一致后，就在下一个逗号处或几个词之后先翻译这部分，不等说话停顿。需要开启流式语音识别。</string>
 </resources>
 

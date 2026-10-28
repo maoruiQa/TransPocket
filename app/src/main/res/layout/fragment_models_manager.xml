@@ -49,147 +49,6 @@
 
                     <androidx.constraintlayout.widget.ConstraintLayout
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:screenReaderFocusable="true"
-                        android:focusable="false">
-
-                        <RadioButton
-                            android:id="@+id/radioMozilla"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="16dp"
-                            android:layout_marginTop="16dp"
-                            android:layout_marginEnd="16dp"
-                            android:layout_marginBottom="16dp"
-                            android:contentDescription="@string/performance"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="0.0"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:layout_constraintVertical_bias="0.0" />
-
-                        <TextView
-                            android:id="@+id/titleMozilla"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginBottom="2dp"
-                            android:text="@string/performance"
-                            android:textColor="@color/very_very_dark_gray"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:focusable="false"
-                            app:layout_constraintBottom_toBottomOf="@+id/radioMozilla"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="0.0"
-                            app:layout_constraintStart_toEndOf="@+id/radioMozilla"
-                            app:layout_constraintTop_toTopOf="@+id/radioMozilla" />
-
-                        <TextView
-                            android:id="@+id/descriptionMozilla"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginTop="16dp"
-                            android:layout_marginEnd="16dp"
-                            android:layout_marginBottom="8dp"
-                            android:text="@string/description_model_mozilla"
-                            android:focusable="false"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="0.0"
-                            app:layout_constraintStart_toEndOf="@+id/radioMozilla"
-                            app:layout_constraintTop_toBottomOf="@+id/titleMozilla"
-                            app:layout_constraintVertical_bias="0.0" />
-
-                        <ImageView
-                            android:id="@+id/arrowMozilla"
-                            android:layout_width="42dp"
-                            android:layout_height="42dp"
-                            android:layout_marginEnd="24dp"
-                            android:layout_marginBottom="2dp"
-                            android:contentDescription="@string/description_manage_mozilla_button"
-                            app:layout_constraintBottom_toBottomOf="@+id/titleMozilla"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="1.0"
-                            app:layout_constraintStart_toEndOf="@+id/titleMozilla"
-                            app:layout_constraintTop_toTopOf="@+id/titleMozilla"
-                            android:src="@drawable/right_arrow_icon"
-                            android:tint="@color/very_dark_gray" />
-
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-
-                        <RadioButton
-                            android:id="@+id/radioHY"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="16dp"
-                            android:layout_marginTop="16dp"
-                            android:layout_marginEnd="16dp"
-                            android:layout_marginBottom="16dp"
-                            android:contentDescription="@string/quality"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="0.0"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:layout_constraintVertical_bias="0.0" />
-
-                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
-                            android:id="@+id/modelHy"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginEnd="16dp"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toEndOf="@+id/radioHY"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:modelDescription="@string/description_model_hy"
-                            app:modelSize="1790"
-                            app:modelTitle="@string/quality" />
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-                        <RadioButton
-                            android:id="@+id/radioMadlad"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="16dp"
-                            android:layout_marginTop="16dp"
-                            android:layout_marginEnd="16dp"
-                            android:layout_marginBottom="16dp"
-                            android:contentDescription="@string/versatility"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintHorizontal_bias="0.0"
-                            app:layout_constraintStart_toStartOf="parent"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:layout_constraintVertical_bias="0.0" />
-
-                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
-                            android:id="@+id/modelMadlad"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:layout_marginEnd="16dp"
-                            app:layout_constraintBottom_toBottomOf="parent"
-                            app:layout_constraintEnd_toEndOf="parent"
-                            app:layout_constraintStart_toEndOf="@+id/radioMadlad"
-                            app:layout_constraintTop_toTopOf="parent"
-                            app:modelDescription="@string/description_model_madlad"
-                            app:modelSize="1380"
-                            app:modelTitle="@string/versatility" />
-                    </androidx.constraintlayout.widget.ConstraintLayout>
-                    <androidx.constraintlayout.widget.ConstraintLayout
-                        android:layout_width="match_parent"
                         android:layout_height="wrap_content">
                         <RadioButton
                             android:id="@+id/radioQwen35"
@@ -199,7 +58,7 @@
                             android:layout_marginTop="16dp"
                             android:layout_marginEnd="16dp"
                             android:layout_marginBottom="16dp"
-                            android:contentDescription="@string/description_model_qwen35"
+                            android:contentDescription="@string/title_model_qwen35_tier"
                             app:layout_constraintBottom_toBottomOf="parent"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintHorizontal_bias="0.0"
@@ -218,9 +77,44 @@
                             app:layout_constraintStart_toEndOf="@+id/radioQwen35"
                             app:layout_constraintTop_toTopOf="parent"
                             app:modelDescription="@string/description_model_qwen35"
-                            app:modelSize="533"
-                            app:modelTitle="@string/title_model_qwen35" />
+                            app:modelSize="507"
+                            app:modelTitle="@string/title_model_qwen35_tier" />
                     </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+                        <RadioButton
+                            android:id="@+id/radioIndex"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:layout_marginBottom="16dp"
+                            android:contentDescription="@string/title_model_index"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="0.0"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintVertical_bias="0.0" />
+
+                        <nie.translator.rtranslator.tools.gui.ResourceManagerView
+                            android:id="@+id/modelIndex"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginEnd="16dp"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintStart_toEndOf="@+id/radioIndex"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:modelDescription="@string/description_model_index"
+                            app:modelSize="1246"
+                            app:modelTitle="@string/title_model_index" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
                     <androidx.constraintlayout.widget.ConstraintLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content">
@@ -232,7 +126,7 @@
                             android:layout_marginTop="16dp"
                             android:layout_marginEnd="16dp"
                             android:layout_marginBottom="16dp"
-                            android:contentDescription="@string/description_model_gemma"
+                            android:contentDescription="@string/title_model_gemma_tier"
                             app:layout_constraintBottom_toBottomOf="parent"
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintHorizontal_bias="0.0"
@@ -251,11 +145,94 @@
                             app:layout_constraintStart_toEndOf="@+id/radioGemma"
                             app:layout_constraintTop_toTopOf="parent"
                             app:modelDescription="@string/description_model_gemma"
-                            app:modelSize="2490"
-                            app:modelTitle="@string/title_model_gemma" />
+                            app:modelSize="2370"
+                            app:modelTitle="@string/title_model_gemma_tier" />
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:id="@+id/rowOther"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:screenReaderFocusable="true"
+                        android:focusable="false">
+
+                        <RadioButton
+                            android:id="@+id/radioOther"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:layout_marginBottom="16dp"
+                            android:contentDescription="@string/title_other_models"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="0.0"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintVertical_bias="0.0" />
+
+                        <TextView
+                            android:id="@+id/titleOther"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginBottom="2dp"
+                            android:text="@string/title_other_models"
+                            android:textColor="@color/very_very_dark_gray"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
+                            android:focusable="false"
+                            app:layout_constraintBottom_toBottomOf="@+id/radioOther"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="0.0"
+                            app:layout_constraintStart_toEndOf="@+id/radioOther"
+                            app:layout_constraintTop_toTopOf="@+id/radioOther" />
+
+                        <TextView
+                            android:id="@+id/descriptionOther"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_marginTop="16dp"
+                            android:layout_marginEnd="16dp"
+                            android:layout_marginBottom="8dp"
+                            android:text="@string/description_other_models"
+                            android:focusable="false"
+                            app:layout_constraintBottom_toBottomOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="0.0"
+                            app:layout_constraintStart_toEndOf="@+id/radioOther"
+                            app:layout_constraintTop_toBottomOf="@+id/titleOther"
+                            app:layout_constraintVertical_bias="0.0" />
+
+                        <ImageView
+                            android:id="@+id/arrowOther"
+                            android:layout_width="42dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="24dp"
+                            android:layout_marginBottom="2dp"
+                            android:contentDescription="@string/description_open_other_models"
+                            app:layout_constraintBottom_toBottomOf="@+id/titleOther"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintHorizontal_bias="1.0"
+                            app:layout_constraintStart_toEndOf="@+id/titleOther"
+                            app:layout_constraintTop_toTopOf="@+id/titleOther"
+                            android:src="@drawable/right_arrow_icon"
+                            android:tint="@color/very_dark_gray" />
+
                     </androidx.constraintlayout.widget.ConstraintLayout>
                 </LinearLayout>
             </worker8.com.github.radiogroupplus.RadioGroupPlus>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:textColor="@color/very_dark_gray"
+                android:textSize="13sp"
+                android:text="@string/description_translation_quantization_advice"/>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
