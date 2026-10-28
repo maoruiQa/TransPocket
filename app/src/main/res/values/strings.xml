@@ -360,6 +360,13 @@
     <string name="auto_detect_language">Auto-detect</string>
     <string name="preference_title_asr_ignore_other_languages">Ignore speech in other languages</string>
     <string name="preference_description_asr_ignore_other_languages">Drop speech that is clearly in a language this mode does not use, instead of forcing it into the selected language. Dropped speech is not translated, spoken or kept as context.</string>
+    <string name="preference_title_translation_assessment">Mark doubtful sentences</string>
+    <string name="preference_description_translation_assessment_signals">In simultaneous interpretation and WalkieTalkie, rate each sentence from recognition and translation signals and mark the doubtful ones. Doubtful sentences are kept out of the context of the next sentences. The selected translation model cannot rate itself, so only signals are used.</string>
+    <string name="preference_description_translation_assessment_model">In simultaneous interpretation and WalkieTalkie, rate each sentence from recognition and translation signals plus the translation model\'s own rating, and mark the doubtful ones. Doubtful sentences are kept out of the context of the next sentences.</string>
+    <string name="preference_title_simultaneous_ignore_context">Ignore context in simultaneous interpretation</string>
+    <string name="preference_description_simultaneous_ignore_context">Translate every sentence on its own. Previous sentences are not passed to the translation model. WalkieTalkie never uses context.</string>
+    <string name="confidence_medium">Recognition uncertain</string>
+    <string name="confidence_low">Possibly wrong</string>
     <string name="preference_title_auto_check_updates">Check for updates automatically</string>
     <string name="preference_description_auto_check_updates">At most once a day, ask GitHub whether a newer TransPocket release exists. Only the app version is sent.</string>
     <string name="preference_title_check_updates">Check for updates</string>

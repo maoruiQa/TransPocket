@@ -961,7 +961,7 @@ public class Recognizer extends NeuralNetworkApi {
                     if (autoLanguage) {
                         Log.i("asrLanguage", "model=" + model + " auto detected=" + detected
                                 + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
-                        notifyResult(correctText(free.text), detected, 1, true);
+                        notifyResult(correctText(free.text), detected, free.avgLogProb, true);
                         return;
                     }
                     if (AsrLanguageFilter.isForeign(detected, requested)) {
@@ -971,7 +971,7 @@ public class Recognizer extends NeuralNetworkApi {
                     if (sameLanguage(requested, detected)) {
                         Log.i("asrLanguage", "model=" + model + " soft=false requested=" + requested
                                 + " detected=" + detected + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
-                        notifyResult(guardSingle(correctText(free.text), requested), requested, 1, true);
+                        notifyResult(guardSingle(correctText(free.text), requested), requested, free.avgLogProb, true);
                         return;
                     }
                     // Unknown or a related language: the forced decode below keeps the configured one.
@@ -981,7 +981,7 @@ public class Recognizer extends NeuralNetworkApi {
                 String language = requested;
                 Log.i("asrLanguage", "model=" + model + " soft=false requested=" + language
                         + " forced=" + transcript.forced + " latencyMs=" + (SystemClock.elapsedRealtime() - started));
-                notifyResult(guardSingle(text, language), language, 1, true);
+                notifyResult(guardSingle(text, language), language, transcript.avgLogProb, true);
                 return;
             }
             Qwen3AsrEngine.Transcript transcript = qwenEngine.transcribe(data.data);
@@ -990,6 +990,8 @@ public class Recognizer extends NeuralNetworkApi {
                 return;
             }
             String text = correctText(transcript.text);
+            // 0 means "no score" downstream, and it still beats the undecoded side.
+            double score = Double.isNaN(transcript.avgLogProb) ? 0 : transcript.avgLogProb;
             boolean second = sameLanguage(data.languageCode2, transcript.languageCode)
                     && !sameLanguage(data.languageCode, transcript.languageCode);
             String language = second ? data.languageCode2 : data.languageCode;
@@ -1002,6 +1004,7 @@ public class Recognizer extends NeuralNetworkApi {
                 if (forced.forced && AsrLanguageGuard.analyze(forcedText, other).verdict == AsrLanguageGuard.Verdict.MATCH) {
                     Log.i("asrLanguage", "model=qwen retry=" + AsrLanguages.displayName(other));
                     text = forcedText;
+                    score = Double.isNaN(forced.avgLogProb) ? 0 : forced.avgLogProb;
                     second = !second;
                 }
             }
@@ -1012,10 +1015,11 @@ public class Recognizer extends NeuralNetworkApi {
             String[] guarded = second
                     ? guardPair(UNDEFINED_TEXT, data.languageCode, text, data.languageCode2)
                     : guardPair(text, data.languageCode, UNDEFINED_TEXT, data.languageCode2);
+            // Only one side was decoded; the other must lose any confidence comparison.
             if (second) {
-                notifyMultiResult(guarded[0], data.languageCode, 0, guarded[1], data.languageCode2, 1);
+                notifyMultiResult(guarded[0], data.languageCode, Double.NEGATIVE_INFINITY, guarded[1], data.languageCode2, score);
             } else {
-                notifyMultiResult(guarded[0], data.languageCode, 1, guarded[1], data.languageCode2, 0);
+                notifyMultiResult(guarded[0], data.languageCode, score, guarded[1], data.languageCode2, Double.NEGATIVE_INFINITY);
             }
         } catch (Exception e) {
             e.printStackTrace();

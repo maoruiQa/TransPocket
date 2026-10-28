@@ -214,6 +214,8 @@ public class Qwen3AsrEngine {
         int last = (int) logits.shape[1] - 1;
         long token = argmax(logits.data, last * vocab, vocab);
         ArrayList<Long> generated = new ArrayList<>();
+        ArrayList<Double> logProbs = new ArrayList<>();
+        double stopLogProb = logProb(logits.data, last * vocab, vocab, token);
         int cap = tokenCap(samples.length);
         long position = promptLen;
         boolean eos = isEos(token);
@@ -222,6 +224,10 @@ public class Qwen3AsrEngine {
         // token is <|asr_text|>; it separates the prefix from the transcript.
         if (!eos && !(forcedLanguage != null && token == ASR_TEXT)) {
             generated.add(token);
+            logProbs.add(stopLogProb);
+        }
+        if (!eos) {
+            stopLogProb = Double.NaN;
         }
         for (int step = 1; step < stepLimit && !eos; step++) {
             float[] embed = lookupEmbed(token);
@@ -245,17 +251,44 @@ public class Qwen3AsrEngine {
             stepOut.close();
             int stepVocab = (int) stepLogits.shape[stepLogits.shape.length - 1];
             token = argmax(stepLogits.data, 0, stepVocab);
+            double tokenLogProb = logProb(stepLogits.data, 0, stepVocab, token);
             position++;
             if (isEos(token)) {
                 eos = true;
+                stopLogProb = tokenLogProb;
                 break;
             }
             generated.add(token);
+            logProbs.add(tokenLogProb);
         }
-        if (forcedLanguage != null) {
-            return decodeForced(generated, forcedLanguage);
+        Transcript transcript = forcedLanguage != null ? decodeForced(generated, forcedLanguage) : decode(generated);
+        transcript.avgLogProb = textLogProb(generated, logProbs, stopLogProb);
+        return transcript;
+    }
+
+    /**
+     * Mean log-prob of the transcript tokens and the stop step, like Whisper's avg_logprob.
+     * The language prefix is left out: it is almost always certain and would hide a bad transcript.
+     */
+    private static double textLogProb(ArrayList<Long> generated, ArrayList<Double> logProbs, double stopLogProb) {
+        int from = 0;
+        for (int i = 0; i < generated.size(); i++) {
+            if (generated.get(i) == ASR_TEXT) {
+                from = i + 1;
+                break;
+            }
         }
-        return decode(generated);
+        double sum = 0;
+        int count = 0;
+        for (int i = from; i < logProbs.size(); i++) {
+            sum += logProbs.get(i);
+            count++;
+        }
+        if (!Double.isNaN(stopLogProb)) {
+            sum += stopLogProb;
+            count++;
+        }
+        return count == 0 ? Double.NaN : sum / count;
     }
 
     private Transcript decode(ArrayList<Long> generated) {
@@ -677,6 +710,23 @@ public class Qwen3AsrEngine {
         return Math.min(192, Math.max(48, seconds * 12 + 16));
     }
 
+    private static double logProb(float[] logits, int offset, int vocab, long token) {
+        if (token < 0 || token >= vocab) {
+            return -20;
+        }
+        float max = -Float.MAX_VALUE;
+        for (int i = 0; i < vocab; i++) {
+            if (logits[offset + i] > max) {
+                max = logits[offset + i];
+            }
+        }
+        double sum = 0;
+        for (int i = 0; i < vocab; i++) {
+            sum += Math.exp(logits[offset + i] - max);
+        }
+        return (logits[offset + (int) token] - max) - Math.log(sum);
+    }
+
     private static long argmax(float[] logits, int offset, int vocab) {
         int best = 0;
         float bestValue = -Float.MAX_VALUE;
@@ -754,6 +804,8 @@ public class Qwen3AsrEngine {
         public final String languageCode;
         /** True when the language was forced into the prompt instead of detected. */
         public final boolean forced;
+        /** Mean token log-prob of the text, NaN when nothing was decoded. */
+        public double avgLogProb = Double.NaN;
 
         Transcript(String text, String languageCode) {
             this(text, languageCode, false);

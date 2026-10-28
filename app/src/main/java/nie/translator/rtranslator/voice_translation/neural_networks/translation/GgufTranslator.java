@@ -1,7 +1,10 @@
 package nie.translator.rtranslator.voice_translation.neural_networks.translation;
 
+import androidx.annotation.Nullable;
+
 import java.util.Locale;
 
+import nie.translator.rtranslator.tools.ClauseConfidence;
 import nie.translator.rtranslator.tools.CustomLocale;
 
 /**
@@ -67,6 +70,38 @@ public final class GgufTranslator {
             name = code;
         }
         return name + " (" + code + ")";
+    }
+
+    /**
+     * Prompt lines for a voice clause: the earlier clauses, and with self-rating the
+     * transcript warning and the {@code [Q=n]} request. Empty when there is nothing to add,
+     * so the text-mode prompts stay unchanged.
+     */
+    static String voiceNotes(@Nullable TranslationContext context) {
+        if (context == null) {
+            return "";
+        }
+        StringBuilder notes = new StringBuilder();
+        if (!context.lines.isEmpty()) {
+            notes.append("Earlier sentences of the same speech, for reference only. Do not translate them:\n");
+            for (TranslationContext.Line line : context.lines) {
+                notes.append("- ").append(line.text);
+                if (line.doubtful) {
+                    notes.append(" (may contain speech recognition errors)");
+                }
+                notes.append('\n');
+            }
+        }
+        if (context.selfRating) {
+            notes.append("The text is an automatic speech transcript and may contain recognition errors. ")
+                    .append("If a word is clearly misheard, translate the most likely intended word, but do not add content.\n");
+            if (context.asrLevel != ClauseConfidence.UNKNOWN) {
+                notes.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
+            }
+            notes.append("After the translation, write one last line with only [Q=3] if the transcript reads naturally and the translation is reliable, ")
+                    .append("[Q=2] if some words may be misheard, or [Q=1] if the transcript looks garbled.\n");
+        }
+        return notes.toString();
     }
 
     private static String clean(String text) {

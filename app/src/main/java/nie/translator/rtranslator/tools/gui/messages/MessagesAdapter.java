@@ -35,6 +35,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.cardview.widget.CardView;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.AccessibilityDelegateCompat;
 import androidx.core.view.GestureDetectorCompat;
 import androidx.core.view.ViewCompat;
@@ -47,6 +48,7 @@ import java.util.Locale;
 
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.R;
+import nie.translator.rtranslator.tools.ClauseConfidence;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.gui.GuiTools;
 import nie.translator.rtranslator.voice_translation.FullScreenTextActivity;
@@ -236,6 +238,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         protected GuiMessage message;
         protected TextView originalTextToBeTranslated;
         protected TextView text;
+        protected TextView confidenceLabel;
         protected ImageView ttsButton;
         protected CardView container;
         private final boolean showOriginal;
@@ -250,6 +253,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 originalTextToBeTranslated.setVisibility(View.GONE);
             }
             text = itemView.findViewById(R.id.text);
+            confidenceLabel = itemView.findViewById(R.id.confidence_label);
             ttsButton = itemView.findViewById(R.id.tts_button);
 
             // Gesture Detector for sighted users
@@ -305,6 +309,7 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             this.message = message;
             // Bind message text
             setText(message.getMessage().getTextToTranslate(), message.getMessage().getText());
+            setConfidence(message.getConfidence());
             // Bind tts button status and listener
             setIsPlayingTTS(message.getMessageID() == playingMessageID);
             ttsButton.setOnClickListener(playListener);
@@ -321,6 +326,21 @@ public class MessagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 this.originalTextToBeTranslated.setVisibility(View.GONE);
             }
             this.text.setText(text == null ? "" : text);
+        }
+
+        /** Only doubtful grades are marked; HIGH and ungraded messages look as before. */
+        private void setConfidence(int confidence) {
+            if (confidence == ClauseConfidence.MEDIUM) {
+                confidenceLabel.setText(R.string.confidence_medium);
+                confidenceLabel.setTextColor(ContextCompat.getColor(confidenceLabel.getContext(), R.color.orange));
+                confidenceLabel.setVisibility(View.VISIBLE);
+            } else if (confidence == ClauseConfidence.LOW) {
+                confidenceLabel.setText(R.string.confidence_low);
+                confidenceLabel.setTextColor(ContextCompat.getColor(confidenceLabel.getContext(), R.color.red));
+                confidenceLabel.setVisibility(View.VISIBLE);
+            } else {
+                confidenceLabel.setVisibility(View.GONE);
+            }
         }
 
         public boolean isPlayingTTS() {

@@ -31,12 +31,15 @@ import java.util.ArrayList;
 import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.tools.AsrLanguages;
 import nie.translator.rtranslator.tools.BluetoothRouteWake;
+import nie.translator.rtranslator.tools.ClauseConfidence;
+import nie.translator.rtranslator.tools.ClauseContextWindow;
 import nie.translator.rtranslator.tools.SimultaneousText;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.Tools;
 import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.TranslationContext;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.RecognizerListener;
@@ -73,8 +76,7 @@ public class SimultaneousService extends VoiceTranslationService {
     private final ArrayDeque<Boolean> clauseUsedVad = new ArrayDeque<>();
     private final Object timingLock = new Object();
     private boolean translatingClause = false;
-    private String previousSource;
-    private String previousTranslation;
+    private final ClauseContextWindow contextWindow = new ClauseContextWindow();
     private long nextMessageId = System.currentTimeMillis();
     private boolean ttsForTarget;
     /**
@@ -216,7 +218,7 @@ public class SimultaneousService extends VoiceTranslationService {
                     audioMs = clauseAudioMs.pollFirst();
                     usedVad = clauseUsedVad.pollFirst();
                 }
-                mainHandler.post(() -> handleRecognition(text, languageCode, isFinal, submitted == null ? asrDone : submitted, asrDone, audioMs == null ? 0 : audioMs, Boolean.TRUE.equals(usedVad)));
+                mainHandler.post(() -> handleRecognition(text, languageCode, confidenceScore, isFinal, submitted == null ? asrDone : submitted, asrDone, audioMs == null ? 0 : audioMs, Boolean.TRUE.equals(usedVad)));
             }
 
             @Override
@@ -419,8 +421,7 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     private void clearClauseContext() {
-        previousSource = null;
-        previousTranslation = null;
+        contextWindow.clear();
     }
 
     private void refreshTtsLanguage() {
@@ -441,7 +442,7 @@ public class SimultaneousService extends VoiceTranslationService {
         });
     }
 
-    private void handleRecognition(String text, String languageCode, boolean isFinal, long submittedAt, long asrDone, int audioMs, boolean vadClause) {
+    private void handleRecognition(String text, String languageCode, double asrScore, boolean isFinal, long submittedAt, long asrDone, int audioMs, boolean vadClause) {
         if (text != null && !text.isEmpty() && isFinal) {
             android.util.Log.i("simultaneous", "recognized vad=" + vadClause + " audioMs=" + audioMs + " text=" + text);
         }
@@ -458,6 +459,9 @@ public class SimultaneousService extends VoiceTranslationService {
             }
         }
         long asrMs = Math.max(0, asrDone - submittedAt);
+        // Graded on the whole result: the speaking rate needs the text that matches the audio length.
+        int asrLevel = ClauseConfidence.asrLevel(text, asrScore, audioMs);
+        android.util.Log.i("simultaneous", "asr score=" + asrScore + " audioMs=" + audioMs + " level=" + ClauseConfidence.name(asrLevel));
         ArrayList<String> clauses = vadClause ? vadClauses(text) : ClauseSplitter.split(text);
         if (clauses.isEmpty()) {
             return;
@@ -470,6 +474,7 @@ public class SimultaneousService extends VoiceTranslationService {
             pending.audioMs = audioMs;
             pending.asrMs = asrMs;
             pending.submittedAt = submittedAt;
+            pending.asrLevel = asrLevel;
             publishClause(pending, "", false);
             pendingClauses.add(pending);
         }
@@ -521,10 +526,15 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     private void performTranslation(PendingClause clause) {
-        final String contextSource = previousSource;
-        final String contextTranslation = previousTranslation;
+        final boolean assess = global.isTranslationAssessment();
+        final TranslationContext context = clauseContext(clause, assess);
         final long translateStarted = SystemClock.elapsedRealtime();
-        translator.translate(clause.text, contextSource, contextTranslation, clause.language, targetLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.TranslateListener() {
+        translator.translate(clause.text, context, clause.language, targetLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.TranslateListener() {
+            @Override
+            public void onTranslationRating(long resultID, int rating) {
+                clause.modelRating = rating;
+            }
+
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, @Nullable String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
                 String shown = translatedText == null ? "" : translatedText;
@@ -532,13 +542,16 @@ public class SimultaneousService extends VoiceTranslationService {
                     clause.sawTranslation = true;
                     clause.subtitleMs = SystemClock.elapsedRealtime() - clause.submittedAt;
                 }
+                if (isFinal && assess) {
+                    int signals = ClauseConfidence.lowest(clause.asrLevel, ClauseConfidence.translationLevel(clause.text, shown, context.lastTranslation, clause.language.equalsLanguage(targetLanguage)));
+                    clause.confidence = ClauseConfidence.withModelRating(signals, clause.modelRating);
+                }
                 publishClause(clause, shown, isFinal);
                 feedTts(clause, shown, isFinal);
                 if (!isFinal) {
                     return;
                 }
-                previousSource = clause.text;
-                previousTranslation = shown;
+                rememberClause(clause, shown, assess);
                 android.util.Log.i("performance", "simultaneous audioMs=" + clause.audioMs + " asrMs=" + clause.asrMs + " translateMs=" + (SystemClock.elapsedRealtime() - translateStarted) + " subtitleMs=" + clause.subtitleMs);
                 clauseFinished();
             }
@@ -551,8 +564,49 @@ public class SimultaneousService extends VoiceTranslationService {
         });
     }
 
+    /** The earlier clauses as each engine takes them; none when context is switched off. */
+    private TranslationContext clauseContext(PendingClause clause, boolean assess) {
+        if (global.isSimultaneousIgnoreContext()) {
+            return TranslationContext.withoutHistory(clause.asrLevel, assess);
+        }
+        long now = SystemClock.elapsedRealtime();
+        StringBuilder joined = new StringBuilder();
+        for (ClauseContextWindow.Entry entry : contextWindow.trusted(now)) {
+            if (joined.length() > 0) {
+                joined.append('\n');
+            }
+            joined.append(entry.source);
+        }
+        ArrayList<TranslationContext.Line> lines = new ArrayList<>();
+        for (ClauseContextWindow.Entry entry : contextWindow.lines(now)) {
+            lines.add(new TranslationContext.Line(entry.source, entry.isDoubtful()));
+        }
+        ClauseContextWindow.Entry last = contextWindow.lastTrusted(now);
+        android.util.Log.i("simultaneous", "context trusted=" + (joined.length() == 0 ? "-" : joined.toString().replace('\n', '|')) + " lines=" + lines.size());
+        return new TranslationContext(last == null ? null : last.source, last == null ? null : last.translation, joined.length() == 0 ? null : joined.toString(), lines, clause.asrLevel, assess);
+    }
+
+    /**
+     * A misheard clause stays out of the context of the next ones. A short fragment can be
+     * shown without a mark yet still be too thin to trust as context.
+     */
+    private void rememberClause(PendingClause clause, String translation, boolean assess) {
+        long now = SystemClock.elapsedRealtime();
+        if (!assess) {
+            // Without grading only the previous clause is context, as before.
+            contextWindow.clear();
+            contextWindow.add(clause.text, translation, ClauseConfidence.UNKNOWN, now);
+            return;
+        }
+        int contextLevel = ClauseConfidence.lowest(clause.confidence, ClauseConfidence.fragmentLevel(clause.text));
+        contextWindow.add(clause.text, translation, contextLevel, now);
+        android.util.Log.i("simultaneous", "graded asr=" + ClauseConfidence.name(clause.asrLevel) + " model=" + ClauseConfidence.name(clause.modelRating)
+                + " shown=" + ClauseConfidence.name(clause.confidence) + " context=" + ClauseConfidence.name(contextLevel) + " text=" + clause.text);
+    }
+
     private void publishClause(PendingClause clause, String translation, boolean isFinal) {
         GuiMessage message = new GuiMessage(new Message(clause.text, SimultaneousService.this, translation), clause.language, targetLanguage, clause.id, false, isFinal);
+        message.setConfidence(isFinal ? clause.confidence : ClauseConfidence.UNKNOWN);
         notifyMessage(message);
         addOrUpdateMessage(message);
     }
@@ -600,6 +654,10 @@ public class SimultaneousService extends VoiceTranslationService {
         private long submittedAt;
         private long subtitleMs;
         private boolean sawTranslation;
+        private int asrLevel = ClauseConfidence.UNKNOWN;
+        private int modelRating = ClauseConfidence.UNKNOWN;
+        /** Final grade shown on the message. */
+        private int confidence = ClauseConfidence.UNKNOWN;
     }
 
     @Override

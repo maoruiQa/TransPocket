@@ -24,6 +24,7 @@ import android.os.Handler;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 
@@ -31,6 +32,7 @@ import nie.translator.rtranslator.Global;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.tools.AsrLanguages;
+import nie.translator.rtranslator.tools.ClauseConfidence;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.SimultaneousText;
@@ -39,6 +41,7 @@ import nie.translator.rtranslator.tools.gui.messages.GuiMessage;
 import nie.translator.rtranslator.voice_translation.VoiceTranslationService;
 import nie.translator.rtranslator.voice_translation.neural_networks.NeuralNetworkApiResult;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.LanguageDetector;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.TranslationContext;
 import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.Recognizer;
 import nie.translator.rtranslator.voice_translation.neural_networks.voice.RecognizerListener;
@@ -86,6 +89,14 @@ public class WalkieTalkieService extends VoiceTranslationService {
     /** The pending single-language request asked the recognizer to detect the language. */
     private boolean autoRecognition;
     private Translator.TranslateListener firstResultTranslateListener;
+    /** Recognition score of the utterance waiting for translation, per side. Null for typed text. */
+    private Double firstAsrScore;
+    private Double secondAsrScore;
+    /**
+     * Grade of the final result being delivered. The first and second listeners cannot take
+     * it as an argument, so it is set around their synchronous call on the main thread.
+     */
+    private int deliveredConfidence = ClauseConfidence.UNKNOWN;
     private Translator.TranslateListener secondResultTranslateListener;
     // Holds the microphone until the final TTS chunk of the current translation is queued.
     // An earlier chunk can finish while the decoder is still generating.
@@ -164,6 +175,8 @@ public class WalkieTalkieService extends VoiceTranslationService {
                             case RECEIVE_TEXT:
                                 String text = message.getData().getString("text", null);
                                 if (text != null) {
+                                    firstAsrScore = null;
+                                    secondAsrScore = null;
                                     //we stop speech recognition
                                     stopVoiceRecorder();
                                     notifyMicDeactivated();   // we notify the client
@@ -348,6 +361,8 @@ public class WalkieTalkieService extends VoiceTranslationService {
             public void onSpeechRecognizedResult(String text1, String languageCode1, double confidenceScore1, String text2, String languageCode2, double confidenceScore2) {
                 NeuralNetworkApiResult firstResult = new NeuralNetworkApiResult(text1, confidenceScore1, true);
                 NeuralNetworkApiResult secondResult = new NeuralNetworkApiResult(text2, confidenceScore2, true);
+                firstAsrScore = confidenceScore1;
+                secondAsrScore = confidenceScore2;
                 manualRecognizingAutoLanguage = false;
                 if (isMetaText(text1) && isMetaText(text2)) {
                     // Neither side heard its language, e.g. a clause in a third language that was dropped.
@@ -370,6 +385,9 @@ public class WalkieTalkieService extends VoiceTranslationService {
         speechRecognizerSingleCallback = new RecognizerListener() {
             @Override
             public void onSpeechRecognizedResult(String text, String languageCode, double confidenceScore, boolean isFinal) {
+                // Either side may end up translating this utterance.
+                firstAsrScore = confidenceScore;
+                secondAsrScore = confidenceScore;
                 if (autoRecognition) {
                     autoRecognition = false;
                     manualRecognizingFirstLanguage = false;
@@ -613,9 +631,17 @@ public class WalkieTalkieService extends VoiceTranslationService {
     }
 
     private void translate(final String textToTranslate, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, final Translator.TranslateListener responseListener){
+        Double asrScore = responseListener == firstResultTranslateListener ? firstAsrScore : secondAsrScore;
+        firstAsrScore = null;
+        secondAsrScore = null;
         if(!isMetaText(textToTranslate)) {
             beginSpeech();
-            translator.translate(textToTranslate, languageInput, languageOutput, beamSize, saveResults, Global.RTranslatorMode.WALKIE_TALKIE_MODE, speechListener(responseListener));
+            // WalkieTalkie has no context; the grade only marks the message and feeds the model's self-rating.
+            TranslationContext context = null;
+            if (asrScore != null && ((Global) getApplication()).isTranslationAssessment()) {
+                context = TranslationContext.withoutHistory(ClauseConfidence.asrLevel(textToTranslate, asrScore, 0), true);
+            }
+            translator.translate(textToTranslate, context, languageInput, languageOutput, beamSize, saveResults, Global.RTranslatorMode.WALKIE_TALKIE_MODE, speechListener(responseListener, context));
         }else{
             Log.i("walkieTalkie", "skipped translation of: "+textToTranslate+" because it is meta text");
             //we restart the mic here
@@ -648,18 +674,36 @@ public class WalkieTalkieService extends VoiceTranslationService {
         }
     }
 
-    private Translator.TranslateListener speechListener(final Translator.TranslateListener delegate) {
+    private Translator.TranslateListener speechListener(final Translator.TranslateListener delegate, @Nullable final TranslationContext context) {
         final int generation;
         synchronized (speechLock) {
             generation = speechGeneration;
         }
         return new Translator.TranslateListener() {
+            private int modelRating = ClauseConfidence.UNKNOWN;
+
+            @Override
+            public void onTranslationRating(long resultID, int rating) {
+                modelRating = rating;
+            }
+
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
                 if (!isCurrentSpeech(generation)) {
                     return;
                 }
-                delegate.onTranslatedText(textToTranslate, translatedText, synonyms, resultID, isFinal, resultType, inputLanguage, outputLanguage);
+                int confidence = ClauseConfidence.UNKNOWN;
+                if (context != null && isFinal) {
+                    int signals = ClauseConfidence.lowest(context.asrLevel, ClauseConfidence.translationLevel(textToTranslate, translatedText, null, inputLanguage.equalsLanguage(outputLanguage)));
+                    confidence = ClauseConfidence.withModelRating(signals, modelRating);
+                    Log.i("walkieTalkie", "graded asr=" + ClauseConfidence.name(context.asrLevel) + " model=" + ClauseConfidence.name(modelRating) + " shown=" + ClauseConfidence.name(confidence));
+                }
+                deliveredConfidence = confidence;
+                try {
+                    delegate.onTranslatedText(textToTranslate, translatedText, synonyms, resultID, isFinal, resultType, inputLanguage, outputLanguage);
+                } finally {
+                    deliveredConfidence = ClauseConfidence.UNKNOWN;
+                }
             }
 
             @Override
@@ -691,6 +735,7 @@ public class WalkieTalkieService extends VoiceTranslationService {
             generation = speechGeneration;
         }
         GuiMessage message = new GuiMessage(new Message(textToTranslate, WalkieTalkieService.this, translatedText), inputLanguage, outputLanguage, resultID, isMine, isFinal);
+        message.setConfidence(deliveredConfidence);
         notifyMessage(message);
         addOrUpdateMessage(message);
         if (isAudioMute) {

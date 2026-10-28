@@ -47,6 +47,7 @@ import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.GalleryImageSelector;
 import nie.translator.rtranslator.tools.ThemeManager;
 import nie.translator.rtranslator.tools.UpdateChecker;
+import nie.translator.rtranslator.voice_translation.neural_networks.translation.Translator;
 
 
 public class SettingsFragment extends PreferenceFragmentCompat {
@@ -70,6 +71,7 @@ public class SettingsFragment extends PreferenceFragmentCompat {
     private ShowOriginalTranscriptionMsgPreference showOriginalTranscriptionMsgPreference;
     private SupportTtsQualityPreference supportTtsQualityPreference;
     private LanguagePreference languagePreference;
+    private SwitchPreference translationAssessmentPreference;
 
     private Handler selfHandler = new Handler(new Handler.Callback() {
         @Override
@@ -179,6 +181,25 @@ public class SettingsFragment extends PreferenceFragmentCompat {
             @Override
             public boolean onPreferenceChange(Preference preference, Object newValue) {
                 global.setAsrIgnoreOtherLanguages((Boolean) newValue);
+                return true;
+            }
+        });
+        translationAssessmentPreference = (SwitchPreference) findPreference("translationAssessment");
+        translationAssessmentPreference.setChecked(global.isTranslationAssessment());
+        translationAssessmentPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setTranslationAssessment((Boolean) newValue);
+                return true;
+            }
+        });
+        updateTranslationAssessmentSummary();
+        SwitchPreference simultaneousIgnoreContextPreference = (SwitchPreference) findPreference("simultaneousIgnoreContext");
+        simultaneousIgnoreContextPreference.setChecked(global.isSimultaneousIgnoreContext());
+        simultaneousIgnoreContextPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                global.setSimultaneousIgnoreContext((Boolean) newValue);
                 return true;
             }
         });
@@ -298,6 +319,16 @@ public class SettingsFragment extends PreferenceFragmentCompat {
     @Override
     public void onResume() {
         super.onResume();
+        // The translation model is picked on another screen, so the summary can be stale here.
+        updateTranslationAssessmentSummary();
+    }
+
+    private void updateTranslationAssessmentSummary() {
+        if (translationAssessmentPreference == null || global == null) {
+            return;
+        }
+        int voiceMode = global.isUseMozillaForVoiceTranslation() ? Translator.MOZILLA : global.getTranslationMode();
+        translationAssessmentPreference.setSummary(Translator.supportsSelfRating(voiceMode) ? R.string.preference_description_translation_assessment_model : R.string.preference_description_translation_assessment_signals);
     }
 
     @Override

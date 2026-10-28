@@ -1,5 +1,7 @@
 package nie.translator.rtranslator.voice_translation.neural_networks.translation;
 
+import androidx.annotation.Nullable;
+
 import java.io.File;
 
 import nie.translator.rtranslator.Global;
@@ -13,13 +15,13 @@ public final class TranslateGemmaTranslator {
     private TranslateGemmaTranslator() {
     }
 
-    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage) {
+    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
         File model = new File(global.getFilesDir(), "Translation/TranslateGemma/translategemma-4b-it.Q4_K_M.gguf");
         if (!model.isFile()) {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
         String level = global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
-        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level), maxTokens(level));
+        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(level));
     }
 
     /** Answer room plus a short note. Off uses the answer room only. */
@@ -40,7 +42,7 @@ public final class TranslateGemmaTranslator {
         return 0;
     }
 
-    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, String level) {
+    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, String level, @Nullable TranslationContext context) {
         String source = GgufTranslator.languageLabel(inputLanguage);
         String target = GgufTranslator.languageLabel(outputLanguage);
         String sourceName = languageName(source);
@@ -53,11 +55,15 @@ public final class TranslateGemmaTranslator {
                     + thinkWords(level) + " words. Then output only the " + targetName
                     + " translation, with no extra commentary. ";
         }
+        if (context != null && context.selfRating) {
+            instruction += "Then add the rating line described below. ";
+        }
         return "<bos><start_of_turn>user\n"
                 + "You are a professional " + source + " to " + target + " translator. "
                 + "Your goal is to accurately convey the meaning and nuances of the original " + sourceName + " text "
                 + "while adhering to " + targetName + " grammar, vocabulary, and cultural sensitivities.\n"
                 + instruction
+                + GgufTranslator.voiceNotes(context)
                 + "Please translate the following " + sourceName + " text into " + targetName + ":\n\n"
                 + text
                 + "<end_of_turn>\n<start_of_turn>model\n";

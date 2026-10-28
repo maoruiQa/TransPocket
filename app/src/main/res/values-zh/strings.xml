@@ -318,6 +318,13 @@
     <string name="auto_detect_language">自动检测</string>
     <string name="preference_title_asr_ignore_other_languages">忽略其他语言的语音</string>
     <string name="preference_description_asr_ignore_other_languages">明显不是当前模式所用语言的语音会被丢弃，而不是强行按所选语言识别。被丢弃的语音不会被翻译、朗读，也不会进入上下文。</string>
+    <string name="preference_title_translation_assessment">标记可能有误的句子</string>
+    <string name="preference_description_translation_assessment_signals">在同声传译和对讲机模式中，根据识别和翻译信号给每句评级，并标出可能有误的句子。存疑的句子不会进入后续句子的上下文。当前翻译模型不支持自评，只使用信号打分。</string>
+    <string name="preference_description_translation_assessment_model">在同声传译和对讲机模式中，根据识别和翻译信号以及翻译模型的自评给每句评级，并标出可能有误的句子。存疑的句子不会进入后续句子的上下文。</string>
+    <string name="preference_title_simultaneous_ignore_context">同声传译忽略上下文</string>
+    <string name="preference_description_simultaneous_ignore_context">每句单独翻译，不把前面的句子传给翻译模型。对讲机模式本来就不使用上下文。</string>
+    <string name="confidence_medium">识别存疑</string>
+    <string name="confidence_low">可能有误</string>
     <string name="preference_title_auto_check_updates">自动检查更新</string>
     <string name="preference_description_auto_check_updates">每天最多一次向 GitHub 查询是否有新版本 TransPocket，只发送应用版本号。</string>
     <string name="preference_title_check_updates">检查更新</string>

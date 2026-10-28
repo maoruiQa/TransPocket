@@ -158,11 +158,8 @@ public class Tokenizer {
             }
             String prompt;
             if (contextSource != null && !contextSource.isEmpty()) {
-                if (srcLanguage.equals("zh")) {
-                    prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>前文：" + contextSource + "\n将下面这一句翻译为" + tgtLangZhName + "，只输出这一句的翻译，不要翻译前文，不要额外解释：\n\n" + text + "<｜hy_Assistant｜>";
-                } else {
-                    prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>Previous sentence: " + contextSource + "\nTranslate only the following sentence into " + tgtLangEnName + ". Do not translate the previous sentence and do not add an explanation.\n\n" + text + "<｜hy_Assistant｜>";
-                }
+                // The contextual translation template from the HY-MT 1.5 model card. It is Chinese for every language pair.
+                prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>" + contextSource + "\n参考上面的信息，把下面的文本翻译成" + tgtLangZhName + "，注意不需要翻译上文，也不要额外解释：\n" + text + "<｜hy_Assistant｜>";
             } else if(srcLanguage.equals("zh")) {
                 prompt = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>将以下文本翻译为"+tgtLangZhName+"，注意只需要输出翻译后的结果，不要额外解释：\n\n"+text+"<｜hy_Assistant｜>";
             } else {

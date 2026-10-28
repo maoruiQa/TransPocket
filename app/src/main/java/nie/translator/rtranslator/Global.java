@@ -133,6 +133,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
     private boolean whisperReducedRam;
     private boolean asrLanguageLock;
     private boolean asrIgnoreOtherLanguages;
+    private boolean translationAssessment;
+    private boolean simultaneousIgnoreContext;
     /**
      * Keys of the "detect the spoken language" flags. The language preference next to each
      * flag keeps a real language: it is the fallback before the first detection, and every
@@ -191,6 +193,8 @@ public class Global extends Application implements DefaultLifecycleObserver {
         // interpretation can opt back into clause-by-clause switching.
         asrLanguageLock = sharedPreferences.getBoolean("asrLanguageLock", true);
         asrIgnoreOtherLanguages = sharedPreferences.getBoolean("asrIgnoreOtherLanguages", true);
+        translationAssessment = sharedPreferences.getBoolean("translationAssessment", true);
+        simultaneousIgnoreContext = sharedPreferences.getBoolean("simultaneousIgnoreContext", false);
         CustomLocale.setAutoDisplayName(getString(R.string.auto_detect_language));
         translationMode = sharedPreferences.getInt("selectedTranslationModel", Translator.MOZILLA);
         asrModel = sharedPreferences.getInt("selectedAsrModel", ASR_QWEN3_06);
@@ -1635,6 +1639,25 @@ public class Global extends Application implements DefaultLifecycleObserver {
     public void setAsrIgnoreOtherLanguages(boolean ignore) {
         asrIgnoreOtherLanguages = ignore;
         getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("asrIgnoreOtherLanguages", ignore).apply();
+    }
+
+    /** Grade voice clauses, mark doubtful ones and keep them out of the simultaneous context. */
+    public boolean isTranslationAssessment() {
+        return translationAssessment;
+    }
+
+    public void setTranslationAssessment(boolean enabled) {
+        translationAssessment = enabled;
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("translationAssessment", enabled).apply();
+    }
+
+    public boolean isSimultaneousIgnoreContext() {
+        return simultaneousIgnoreContext;
+    }
+
+    public void setSimultaneousIgnoreContext(boolean ignore) {
+        simultaneousIgnoreContext = ignore;
+        getSharedPreferences("default", Context.MODE_PRIVATE).edit().putBoolean("simultaneousIgnoreContext", ignore).apply();
     }
 
     /** @param key one of the {@code AUTO_*} keys */

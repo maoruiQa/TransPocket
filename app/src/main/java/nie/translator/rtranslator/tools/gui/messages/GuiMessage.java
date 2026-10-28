@@ -20,6 +20,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 
 import nie.translator.rtranslator.bluetooth.Message;
+import nie.translator.rtranslator.tools.ClauseConfidence;
 import nie.translator.rtranslator.tools.CustomLocale;
 
 public class GuiMessage implements Parcelable {
@@ -29,6 +30,7 @@ public class GuiMessage implements Parcelable {
     private long messageID = -1;
     private CustomLocale sourceLanguage;    //the language of the original transcription (message -> textToTranslate)
     private CustomLocale contentLanguage;   //the language of the message translated (message -> data)
+    private int confidence = ClauseConfidence.UNKNOWN;   //grade of a voice clause, see ClauseConfidence
 
 
     public GuiMessage(Message message, CustomLocale sourceLanguage, CustomLocale contentLanguage, boolean isMine, boolean isFinal) {
@@ -100,6 +102,7 @@ public class GuiMessage implements Parcelable {
         isFinal = in.readByte() != 0;
         sourceLanguage = in.readSerializable(CustomLocale.class.getClassLoader(), CustomLocale.class);
         contentLanguage = in.readSerializable(CustomLocale.class.getClassLoader(), CustomLocale.class);
+        confidence = in.readInt();
     }
 
     @Override
@@ -115,6 +118,7 @@ public class GuiMessage implements Parcelable {
         parcel.writeByte((byte) (isFinal ? 1 : 0));
         parcel.writeSerializable(sourceLanguage);
         parcel.writeSerializable(contentLanguage);
+        parcel.writeInt(confidence);
     }
 
     public long getMessageID() {
@@ -131,5 +135,13 @@ public class GuiMessage implements Parcelable {
 
     public CustomLocale getContentLanguage() {
         return contentLanguage;
+    }
+
+    public int getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(int confidence) {
+        this.confidence = confidence;
     }
 }

@@ -57,6 +57,7 @@ import nie.translator.rtranslator.R;
 import nie.translator.rtranslator.bluetooth.Message;
 import nie.translator.rtranslator.bluetooth.Peer;
 import nie.translator.rtranslator.databases.tatoeba.LinksData;
+import nie.translator.rtranslator.tools.ClauseConfidence;
 import nie.translator.rtranslator.tools.CustomLocale;
 import nie.translator.rtranslator.tools.ErrorCodes;
 import nie.translator.rtranslator.tools.FileTools;
@@ -217,11 +218,16 @@ public class Translator extends NeuralNetworkApi {
         return mode == TRANSLATEGEMMA || mode == QWEN35;
     }
 
-    private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode) {
+    /** Only the instruction-following GGUF models can append a {@code [Q=n]} rating; the others are translation-only. */
+    public static boolean supportsSelfRating(int performMode) {
+        return isGgufMode(performMode);
+    }
+
+    private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode, @Nullable TranslationContext context) {
         if (performMode == QWEN35) {
-            return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage);
+            return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage, context);
         }
-        return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage);
+        return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage, context);
     }
 
     private void onnxTranslationModelInitialization() throws OrtException, IOException {
@@ -345,13 +351,13 @@ public class Translator extends NeuralNetworkApi {
     }
 
     public void translate(final String textToTranslate, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, final TranslateListener responseListener) {
-        translate(textToTranslate, null, null, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
+        translate(textToTranslate, (TranslationContext) null, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
     }
 
-    public void translate(final String textToTranslate, @Nullable final String contextSource, @Nullable final String contextTranslation, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, final TranslateListener responseListener) {
+    public void translate(final String textToTranslate, @Nullable final TranslationContext context, final CustomLocale languageInput, final CustomLocale languageOutput, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, final TranslateListener responseListener) {
         final Thread t = new Thread("textTranslation") {
             public void run() {
-                performTextTranslation(textToTranslate, contextSource, contextTranslation, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
+                performTextTranslation(textToTranslate, context, languageInput, languageOutput, beamSize, saveResults, rtranslatorMode, responseListener);
             }
         };
         t.start();
@@ -364,6 +370,10 @@ public class Translator extends NeuralNetworkApi {
             DICTIONARY
         }
         public abstract void onTranslatedText(String textToTranslate, String translatedText, @Nullable String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage);
+
+        /** The model's own {@link ClauseConfidence} grade, sent just before the final text when the model gave one. */
+        public void onTranslationRating(long resultID, int rating) {
+        }
     }
 
     public void translateMessage(final ConversationMessage conversationMessageToTranslate, final CustomLocale languageOutput, int beamSize, final TranslateListener responseListener) {  // what the thread does
@@ -717,10 +727,10 @@ public class Translator extends NeuralNetworkApi {
     }
 
     private void performTextTranslation(final String textToTranslate, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, @Nullable final TranslateListener responseListener) {
-        performTextTranslation(textToTranslate, null, null, inputLanguage, outputLanguage, beamSize, saveResults, rtranslatorMode, responseListener);
+        performTextTranslation(textToTranslate, (TranslationContext) null, inputLanguage, outputLanguage, beamSize, saveResults, rtranslatorMode, responseListener);
     }
 
-    private void performTextTranslation(final String textToTranslate, @Nullable final String contextSource, @Nullable final String contextTranslation, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, @Nullable final TranslateListener responseListener) {
+    private void performTextTranslation(final String textToTranslate, @Nullable final TranslationContext context, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, boolean saveResults, Global.RTranslatorMode rtranslatorMode, @Nullable final TranslateListener responseListener) {
         try {
             long initTime = System.currentTimeMillis();
             String finalResult = null;
@@ -764,16 +774,23 @@ public class Translator extends NeuralNetworkApi {
             }
 
             if (rtranslatorMode == Global.RTranslatorMode.SIMULTANEOUS_MODE) {
-                translateSimultaneousClause(textToTranslate, contextSource, contextTranslation, inputLanguage, outputLanguage, beamSize, performMode, initTime, responseListener);
+                translateSimultaneousClause(textToTranslate, context, inputLanguage, outputLanguage, beamSize, performMode, initTime, responseListener);
                 return;
             }
 
             if (isGgufMode(performMode)) {
                 try {
-                    String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode);
-                    final String resultText = translated;
+                    String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context);
+                    final int rating = context != null && context.selfRating ? ClauseConfidence.modelRating(translated) : ClauseConfidence.UNKNOWN;
+                    final String resultText = context != null && context.selfRating ? ClauseConfidence.withoutModelRating(translated) : translated;
                     if (responseListener != null) {
-                        mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, resultText, null, incrementCurrentResultID(), true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+                        final long resultID = incrementCurrentResultID();
+                        mainHandler.post(() -> {
+                            if (rating != ClauseConfidence.UNKNOWN) {
+                                responseListener.onTranslationRating(resultID, rating);
+                            }
+                            responseListener.onTranslatedText(textToTranslate, resultText, null, resultID, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage);
+                        });
                     }
                 } catch (Exception gemmaError) {
                     android.util.Log.e("translation_error", "GGUF translation failed", gemmaError);
@@ -926,16 +943,27 @@ public class Translator extends NeuralNetworkApi {
         }
     }
 
-    private void translateSimultaneousClause(String textToTranslate, @Nullable String contextSource, @Nullable String contextTranslation, CustomLocale inputLanguage, CustomLocale outputLanguage, int beamSize, int performMode, long initTime, @Nullable TranslateListener responseListener) throws Exception {
+    private void translateSimultaneousClause(String textToTranslate, @Nullable TranslationContext context, CustomLocale inputLanguage, CustomLocale outputLanguage, int beamSize, int performMode, long initTime, @Nullable TranslateListener responseListener) throws Exception {
         String modelText = textToTranslate;
-        boolean prependContext = contextSource != null && !contextSource.isEmpty() && performMode != HY_MT;
-        if (prependContext) {
-            modelText = contextSource.trim() + "\n" + textToTranslate;
+        String hyContext = null;
+        String contextTranslation = null;
+        if (context != null && performMode == HY_MT) {
+            hyContext = context.joinedSource;
+            contextTranslation = context.lastTranslation;
+        } else if (context != null && !isGgufMode(performMode) && context.lastSource != null && !context.lastSource.isEmpty()) {
+            // Sentence-level engines take no instruction, so the previous clause is translated along and cut off again.
+            modelText = context.lastSource.trim() + "\n" + textToTranslate;
+            contextTranslation = context.lastTranslation;
         }
-        String hyContext = performMode == HY_MT ? contextSource : null;
         String finalResult;
+        int rating = ClauseConfidence.UNKNOWN;
         if (isGgufMode(performMode)) {
-            finalResult = translateWithGguf(modelText, inputLanguage, outputLanguage, performMode);
+            // The GGUF prompts carry the earlier clauses themselves, so there is nothing to strip.
+            finalResult = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context);
+            if (context != null && context.selfRating) {
+                rating = ClauseConfidence.modelRating(finalResult);
+                finalResult = ClauseConfidence.withoutModelRating(finalResult);
+            }
         } else if (performMode == MOZILLA) {
             synchronized (langResourcesLock) {
                 finalResult = BergamotTranslator.translateMultiple(new String[]{modelText}, inputLanguage, outputLanguage)[0];
@@ -947,8 +975,14 @@ public class Translator extends NeuralNetworkApi {
         android.util.Log.i("performance", "TRANSLATION DONE IN: " + (System.currentTimeMillis() - initTime) + "ms");
         final long currentResultIDCopy = currentResultID;
         String resultText = finalResult == null ? "" : finalResult;
+        final int finalRating = rating;
         if (responseListener != null) {
-            mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, resultText, null, currentResultIDCopy, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+            mainHandler.post(() -> {
+                if (finalRating != ClauseConfidence.UNKNOWN) {
+                    responseListener.onTranslationRating(currentResultIDCopy, finalRating);
+                }
+                responseListener.onTranslatedText(textToTranslate, resultText, null, currentResultIDCopy, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage);
+            });
         } else {
             String published = resultText;
             mainHandler.post(() -> notifyResult(textToTranslate, published, null, currentResultIDCopy, true, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
@@ -1066,11 +1100,13 @@ public class Translator extends NeuralNetworkApi {
                 }
             }
         };
+        // The context lines are not text to translate, so the loop guard must not count them.
+        int contextTokens = hyContext == null ? 0 : Math.max(0, tokenizeWithContext(" ", inputLanguage, outputLanguage, hyContext).getInputIDs().length - tokenize(" ", inputLanguage, outputLanguage, false).getInputIDs().length);
         int[] completeOutputArray;
         if (beamSize > 1) {  //beam search
-            completeOutputArray = executeCacheDecoder(textToTranslate, input, encoderResult, inputLanguage, outputLanguage, beamSize, translateListener);
+            completeOutputArray = executeCacheDecoder(textToTranslate, input, encoderResult, inputLanguage, outputLanguage, beamSize, translateListener, contextTokens);
         } else {  //greedy search (with kv cache)
-            completeOutputArray = executeCacheDecoder(textToTranslate, input, encoderResult, inputLanguage, outputLanguage, 1, translateListener);
+            completeOutputArray = executeCacheDecoder(textToTranslate, input, encoderResult, inputLanguage, outputLanguage, 1, translateListener, contextTokens);
         }
         if(encoderResult != null) encoderResult.close();
         if(completeOutputArray != null) {
@@ -1139,6 +1175,11 @@ public class Translator extends NeuralNetworkApi {
 
     @Nullable
     public int[] executeCacheDecoder(String textToTranslate, TokenizerResult input, @Nullable OnnxTensor encoderResult, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, @Nullable final TranslateListener responseListener) {
+        return executeCacheDecoder(textToTranslate, input, encoderResult, inputLanguage, outputLanguage, beamSize, responseListener, 0);
+    }
+
+    /** @param contextTokens prompt tokens of the HY-MT context lines, left out of the loop guard */
+    public int[] executeCacheDecoder(String textToTranslate, TokenizerResult input, @Nullable OnnxTensor encoderResult, final CustomLocale inputLanguage, final CustomLocale outputLanguage, int beamSize, @Nullable final TranslateListener responseListener, int contextTokens) {
         int eos;
         if(mode == HY_MT){
             eos = tokenizer.PieceToID("<｜hy_place▁holder▁no▁2｜>");
@@ -1521,20 +1562,21 @@ public class Translator extends NeuralNetworkApi {
                 }
 
                 //early stop if the decoder is generating in loop
-                if(input.getInputIDs().length - initialPromptLength > 30){  //if the input is long
-                    if(j > 3*input.getInputIDs().length) {
+                int inputLength = input.getInputIDs().length - contextTokens;
+                if(inputLength - initialPromptLength > 30){  //if the input is long
+                    if(j > 3*inputLength) {
                         earlyStop = true;
                     }
-                }else if(input.getInputIDs().length - initialPromptLength > 20){  //if the input is medium length
-                    if(j > 4*input.getInputIDs().length){
+                }else if(inputLength - initialPromptLength > 20){  //if the input is medium length
+                    if(j > 4*inputLength){
                         earlyStop = true;
                     }
-                }else if(input.getInputIDs().length - initialPromptLength > 10){  //if the input is short
-                    if(j > 5*input.getInputIDs().length){
+                }else if(inputLength - initialPromptLength > 10){  //if the input is short
+                    if(j > 5*inputLength){
                         earlyStop = true;
                     }
                 }else {  //if the input is very short (<= 10 tokens)
-                    if(j > 8*input.getInputIDs().length){
+                    if(j > 8*inputLength){
                         earlyStop = true;
                     }
                 }
