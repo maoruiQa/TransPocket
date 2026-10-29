@@ -73,6 +73,19 @@ public class StreamingClauseTest {
     }
 
     @Test
+    public void rollbackTranslatesTheWholeClauseInThePieceMessage() {
+        StreamingClause clause = new StreamingClause();
+        clause.offer("We met in Paris, then we", true);
+        assertEquals("We met in Paris,", clause.offer("We met in Paris, then we went", true));
+        clause.rollback(42);
+        assertFalse(clause.hasCommitted());
+        assertEquals(42, clause.reuseId);
+        assertEquals("We met in Paris, then we went home.", clause.finish("We met in Paris, then we went home."));
+        clause.reset();
+        assertEquals(-1, clause.reuseId);
+    }
+
+    @Test
     public void unspacedScriptsAreDetected() {
         assertTrue(StreamingClause.hasUnspacedScript("今天 Apple 发布"));
         assertFalse(StreamingClause.hasUnspacedScript("Привет, как дела"));

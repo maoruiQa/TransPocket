@@ -14,6 +14,13 @@ import nie.translator.rtranslator.tools.CustomLocale;
  */
 public final class GgufTranslator {
     private static final Object LOCK = new Object();
+    /**
+     * Guards {@link #running} and the native cancel flag, which is true only while the running
+     * call is the cancelled one. Separate from LOCK, which a running call holds until it returns.
+     */
+    private static final Object CANCEL_LOCK = new Object();
+    @Nullable
+    private static TranslationContext running;
     private static boolean libraryLoaded;
     private static boolean libraryFailed;
     private static String loadedPath;
@@ -21,7 +28,21 @@ public final class GgufTranslator {
     private GgufTranslator() {
     }
 
+    /** The call was stopped by {@link #cancel}. It is not a model error. */
+    public static final class Cancelled extends IllegalStateException {
+        Cancelled() {
+            super("GGUF translation cancelled");
+        }
+    }
+
     public static String generate(String modelPath, String prompt, int maxTokens) {
+        return generate(modelPath, prompt, maxTokens, null);
+    }
+
+    /**
+     * @param context the clause this call translates; {@link #cancel} with the same object stops it
+     */
+    public static String generate(String modelPath, String prompt, int maxTokens, @Nullable TranslationContext context) {
         ensureLibrary();
         synchronized (LOCK) {
             if (!modelPath.equals(loadedPath)) {
@@ -33,7 +54,25 @@ public final class GgufTranslator {
                     throw error;
                 }
             }
-            byte[] generated = nativeGenerate(prompt, maxTokens);
+            synchronized (CANCEL_LOCK) {
+                if (context != null && context.cancelled) {
+                    throw new Cancelled();
+                }
+                running = context;
+                nativeSetCancel(false);
+            }
+            byte[] generated;
+            try {
+                generated = nativeGenerate(prompt, maxTokens);
+            } finally {
+                synchronized (CANCEL_LOCK) {
+                    running = null;
+                    nativeSetCancel(false);
+                }
+            }
+            if (context != null && context.cancelled) {
+                throw new Cancelled();
+            }
             if (generated == null) {
                 throw new IllegalStateException("GGUF model returned no text");
             }
@@ -42,6 +81,19 @@ public final class GgufTranslator {
                 throw new IllegalStateException("GGUF model returned no text");
             }
             return cleaned;
+        }
+    }
+
+    /**
+     * Stops the call that translates {@code context}, or the call before it starts. A call for
+     * any other context is left alone, so a late cancel cannot stop the next clause.
+     */
+    public static void cancel(TranslationContext context) {
+        synchronized (CANCEL_LOCK) {
+            context.cancelled = true;
+            if (running == context && libraryLoaded) {
+                nativeSetCancel(true);
+            }
         }
     }
 
@@ -173,6 +225,8 @@ public final class GgufTranslator {
     private static native void nativeLoad(String modelPath);
 
     private static native byte[] nativeGenerate(String prompt, int maxTokens);
+
+    private static native void nativeSetCancel(boolean cancel);
 
     private static native void nativeRelease();
 }

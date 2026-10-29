@@ -218,6 +218,16 @@ public class Translator extends NeuralNetworkApi {
         return isGgufMode(performMode);
     }
 
+    /** True when a voice clause runs on a GGUF model, whose call {@link #cancel} can stop. */
+    public boolean canCancelVoiceClause() {
+        return isGgufMode(mode) && !global.isUseMozillaForVoiceTranslation();
+    }
+
+    /** Stops the GGUF call for {@code context}; its listener then gets onFailure. */
+    public void cancel(TranslationContext context) {
+        GgufTranslator.cancel(context);
+    }
+
     private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode, @Nullable TranslationContext context) {
         if (performMode == QWEN35) {
             return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage, context);

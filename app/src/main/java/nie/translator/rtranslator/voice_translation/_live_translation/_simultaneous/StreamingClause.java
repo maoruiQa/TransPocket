@@ -19,6 +19,8 @@ public final class StreamingClause {
     private String committed = "";
     /** Message that shows the uncommitted text, or -1. */
     public long draftId = -1;
+    /** Message of an early piece whose translation was stopped, or -1. The whole clause takes it over. */
+    public long reuseId = -1;
 
     /**
      * Takes the next partial transcript.
@@ -56,6 +58,16 @@ public final class StreamingClause {
     }
 
     /**
+     * The early piece was not translated after all. {@link #finish} then returns the whole final
+     * text, and {@code pieceId} is kept as the message that text is shown in. Nothing more is
+     * committed for this clause.
+     */
+    public void rollback(long pieceId) {
+        committed = "";
+        reuseId = pieceId;
+    }
+
+    /**
      * The final transcript minus what was already translated. If recognition rewrote a
      * committed word, the tail starts where the texts first differ.
      * Clears the text state; {@link #draftId} is left to the caller.
@@ -72,6 +84,7 @@ public final class StreamingClause {
         previous = "";
         committed = "";
         draftId = -1;
+        reuseId = -1;
     }
 
     static int commonPrefix(String a, String b) {

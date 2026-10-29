@@ -38,6 +38,8 @@ public class TranslationContext {
     public final int asrLevel;
     /** Ask a model that can follow it to end its answer with a {@code [Q=n]} rating. */
     public final boolean selfRating;
+    /** Set by {@link GgufTranslator#cancel}; the call stops and its clause is translated again whole. */
+    public volatile boolean cancelled;
 
     public TranslationContext(@Nullable String lastSource, @Nullable String lastTranslation, @Nullable String joinedSource, @Nullable List<Line> lines, int asrLevel, boolean selfRating) {
         this.lastSource = lastSource;

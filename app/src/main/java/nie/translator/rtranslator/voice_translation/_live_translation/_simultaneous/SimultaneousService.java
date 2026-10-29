@@ -81,6 +81,8 @@ public class SimultaneousService extends VoiceTranslationService {
      * translation would compete with the LLM for the same cores (both spin-wait), so it is skipped.
      */
     private volatile boolean translatingClause = false;
+    /** Main thread only. The clause whose translation is running, or null. */
+    private PendingClause inFlight;
     private final ClauseContextWindow contextWindow = new ClauseContextWindow();
     /** Main thread only. The clause that is still being spoken, when streaming recognition is on. */
     private final StreamingClause streaming = new StreamingClause();
@@ -156,6 +158,7 @@ public class SimultaneousService extends VoiceTranslationService {
                         String targetCode = targetLanguage != null ? targetLanguage.getCode() : null;
                         String sourceCode = sourceAuto ? AsrLanguages.AUTO : sourceLanguage.getCode();
                         streamTag.incrementAndGet();
+                        mainHandler.post(SimultaneousService.this::abortEarlyPiece);
                         speechRecognizer.recognizeLatest(data, SPEECH_BEAM_SIZE, sourceCode, targetCode);
                     }
                 }
@@ -483,10 +486,17 @@ public class SimultaneousService extends VoiceTranslationService {
             return;
         }
         // The clause is closed: whatever was translated early is cut off the final text here.
-        final long draftId = streaming.draftId;
+        long draftId = streaming.draftId;
         streaming.draftId = -1;
+        final long reuseId = streaming.reuseId;
+        streaming.reuseId = -1;
         final boolean committedEarly = streaming.hasCommitted();
         final String tail = streaming.finish(text);
+        if (reuseId != -1) {
+            // The stopped piece's bubble shows the whole clause; the draft of the rest goes away.
+            dropDraft(draftId);
+            draftId = reuseId;
+        }
         if (text == null || text.isEmpty() || isMetaText(text) || sourceLanguage == null || targetLanguage == null) {
             dropDraft(draftId);
             return;
@@ -558,6 +568,7 @@ public class SimultaneousService extends VoiceTranslationService {
             streaming.draftId = -1;
             pending.text = piece;
             pending.language = language;
+            pending.early = true;
             pending.submittedAt = SystemClock.elapsedRealtime();
             publishClause(pending, "", false);
             pendingClauses.add(pending);
@@ -579,6 +590,7 @@ public class SimultaneousService extends VoiceTranslationService {
     private void endStreamingClause() {
         streamTag.incrementAndGet();
         dropDraft(streaming.draftId);
+        dropDraft(streaming.reuseId);
         streaming.reset();
     }
 
@@ -612,12 +624,32 @@ public class SimultaneousService extends VoiceTranslationService {
             return;
         }
         translatingClause = true;
+        inFlight = clause;
         translate(clause);
     }
 
     private void clauseFinished() {
         translatingClause = false;
+        inFlight = null;
         drainClauses();
+    }
+
+    /**
+     * Runs when a clause closes. An early piece of it that is still translating would hold the
+     * only LLM while the final recognition competes with it for the cores, and the rest of the
+     * clause would then wait for it. It is stopped and the whole clause is translated in one call.
+     */
+    private void abortEarlyPiece() {
+        PendingClause clause = inFlight;
+        if (clause == null || !clause.early || clause.cancelled || translator == null || !translator.canCancelVoiceClause()) {
+            return;
+        }
+        android.util.Log.i("simultaneous", "streaming abort=" + clause.text);
+        clause.cancelled = true;
+        if (clause.context != null) {
+            translator.cancel(clause.context);
+        }
+        streaming.rollback(clause.id);
     }
 
     private void translate(PendingClause clause) {
@@ -648,8 +680,13 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     private void performTranslation(PendingClause clause) {
+        if (clause.cancelled) {
+            clauseFinished();
+            return;
+        }
         final boolean assess = global.isTranslationAssessment();
         final TranslationContext context = clauseContext(clause, assess);
+        clause.context = context;
         final long translateStarted = SystemClock.elapsedRealtime();
         translator.translate(clause.text, context, clause.language, targetLanguage, TRANSLATOR_BEAM_SIZE, false, Global.RTranslatorMode.SIMULTANEOUS_MODE, new Translator.TranslateListener() {
             @Override
@@ -659,6 +696,14 @@ public class SimultaneousService extends VoiceTranslationService {
 
             @Override
             public void onTranslatedText(String textToTranslate, String translatedText, @Nullable String[] synonyms, long resultID, boolean isFinal, ResultType resultType, CustomLocale inputLanguage, CustomLocale outputLanguage) {
+                if (clause.cancelled) {
+                    // Finished just before the stop reached it. The whole clause is translated instead.
+                    if (isFinal) {
+                        logTiming(clause, translateStarted);
+                        clauseFinished();
+                    }
+                    return;
+                }
                 String shown = translatedText == null ? "" : translatedText;
                 if (!clause.sawTranslation && !shown.isEmpty()) {
                     clause.sawTranslation = true;
@@ -674,16 +719,32 @@ public class SimultaneousService extends VoiceTranslationService {
                     return;
                 }
                 rememberClause(clause, shown, assess);
-                android.util.Log.i("performance", "simultaneous audioMs=" + clause.audioMs + " asrMs=" + clause.asrMs + " translateMs=" + (SystemClock.elapsedRealtime() - translateStarted) + " subtitleMs=" + clause.subtitleMs);
+                logTiming(clause, translateStarted);
                 clauseFinished();
             }
 
             @Override
             public void onFailure(int[] reasons, long value) {
-                SimultaneousService.super.notifyError(reasons, value);
+                if (clause.cancelled) {
+                    logTiming(clause, translateStarted);
+                } else {
+                    SimultaneousService.super.notifyError(reasons, value);
+                }
                 clauseFinished();
             }
         });
+    }
+
+    /**
+     * endMs runs from the clause closing (for an early piece, from its commit) to its final
+     * translation, queue included. Compare it with streaming translation on and off.
+     */
+    private void logTiming(PendingClause clause, long translateStarted) {
+        long now = SystemClock.elapsedRealtime();
+        long waitMs = Math.max(0, translateStarted - clause.submittedAt - clause.asrMs);
+        android.util.Log.i("performance", "simultaneous audioMs=" + clause.audioMs + " asrMs=" + clause.asrMs + " waitMs=" + waitMs
+                + " translateMs=" + (now - translateStarted) + " subtitleMs=" + clause.subtitleMs + " endMs=" + (now - clause.submittedAt)
+                + " early=" + clause.early + " cancelled=" + clause.cancelled);
     }
 
     /** The earlier clauses as each engine takes them; none when context is switched off. */
@@ -776,6 +837,11 @@ public class SimultaneousService extends VoiceTranslationService {
         private long submittedAt;
         private long subtitleMs;
         private boolean sawTranslation;
+        /** Committed from a partial transcript before the clause closed. */
+        private boolean early;
+        /** Stopped because its clause closed first; the whole clause replaces it. */
+        private boolean cancelled;
+        private TranslationContext context;
         private int asrLevel = ClauseConfidence.UNKNOWN;
         private int modelRating = ClauseConfidence.UNKNOWN;
         /** Final grade shown on the message. */

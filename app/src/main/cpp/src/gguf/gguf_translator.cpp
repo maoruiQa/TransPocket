@@ -2,6 +2,7 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <dlfcn.h>
 #include <cstring>
@@ -33,6 +34,9 @@ std::vector<llama_token> g_last_prompt;
 // The tokens the checkpoint holds. It is restored only when they start the new prompt exactly.
 std::vector<llama_token> g_checkpoint_prompt;
 std::vector<uint8_t> g_checkpoint;
+// Set from another thread while a call runs: a voice clause closed and its early piece is no longer needed.
+// The Java side sets and clears it under its own lock, around each call, so it never needs g_lock.
+std::atomic<bool> g_cancel(false);
 
 void throw_state(JNIEnv * env, const char * message) {
     jclass clazz = env->FindClass("java/lang/IllegalStateException");
@@ -149,6 +153,9 @@ bool decode_tokens(llama_context * ctx, llama_token * tokens, int32_t count) {
         if (chunk > chunk_size) {
             chunk = chunk_size;
         }
+        if (g_cancel.load(std::memory_order_relaxed)) {
+            return false;
+        }
         llama_batch batch = llama_batch_get_one(tokens + offset, chunk);
         if (llama_decode(ctx, batch) != 0) {
             return false;
@@ -215,6 +222,10 @@ std::string generate_locked(const std::string & prompt, int max_tokens) {
     if (start == 0 && common >= MIN_CHECKPOINT_TOKENS) {
         // The old checkpoint does not fit this prompt. Save a new one where it parts from the last prompt.
         if (!decode_tokens(g_ctx, tokens.data(), common)) {
+            if (g_cancel.load(std::memory_order_relaxed)) {
+                LOGI("cancelled during prompt");
+                return std::string();
+            }
             LOGE("prompt decode failed");
             clear_checkpoint_locked();
             return std::string();
@@ -228,6 +239,10 @@ std::string generate_locked(const std::string & prompt, int max_tokens) {
         start = common;
     }
     if (!decode_tokens(g_ctx, tokens.data() + start, n_prompt - start)) {
+        if (g_cancel.load(std::memory_order_relaxed)) {
+            LOGI("cancelled during prompt");
+            return std::string();
+        }
         LOGE("prompt decode failed");
         clear_checkpoint_locked();
         return std::string();
@@ -239,6 +254,10 @@ std::string generate_locked(const std::string & prompt, int max_tokens) {
     output.reserve(static_cast<size_t>(limit) * 4);
     int32_t step = 0;
     for (; step < limit; step++) {
+        if (g_cancel.load(std::memory_order_relaxed)) {
+            LOGI("cancelled after %d output tokens", step);
+            return std::string();
+        }
         const float * logits = llama_get_logits_ith(g_ctx, -1);
         if (logits == nullptr) {
             LOGE("decoder returned no logits");
@@ -366,6 +385,13 @@ Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_
         throw_state(env, "GGUF generation failed");
         return nullptr;
     }
+}
+
+// Does not take g_lock: the running call holds it until it sees the flag.
+extern "C" JNIEXPORT void JNICALL
+Java_nie_translator_rtranslator_voice_1translation_neural_1networks_translation_GgufTranslator_nativeSetCancel(
+        JNIEnv *, jclass, jboolean cancel) {
+    g_cancel.store(cancel == JNI_TRUE, std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT void JNICALL

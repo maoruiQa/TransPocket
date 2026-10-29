@@ -22,7 +22,7 @@ public final class IndexTranslateTranslator {
         if (!model.isFile()) {
             throw new IllegalStateException("Index-Translate file is missing");
         }
-        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, context), GgufTranslator.voiceTokenLimit(text, context, 512));
+        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, context), GgufTranslator.voiceTokenLimit(text, context, 512), context);
     }
 
     private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {

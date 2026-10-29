@@ -21,7 +21,7 @@ public final class TranslateGemmaTranslator {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
         String level = global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
-        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(text, level, context));
+        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(text, level, context), context);
         if (Global.GEMMA_THINKING_OFF.equals(level)) {
             return output;
         }
