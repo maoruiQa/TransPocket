@@ -22,13 +22,13 @@ public final class IndexTranslateTranslator {
         if (!model.isFile()) {
             throw new IllegalStateException("Index-Translate file is missing");
         }
-        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, context), 512);
+        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, context), GgufTranslator.voiceTokenLimit(text, context, 512));
     }
 
     private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
         String source = chineseName(inputLanguage);
         String target = chineseName(outputLanguage);
-        String notes = GgufTranslator.voiceNotes(context);
+        String notes = GgufTranslator.voiceNotes(context, false);
         String body;
         if (notes.isEmpty()) {
             body = "请将以下" + source + "文本翻译为" + target + "，直接输出翻译结果，不要进行任何解释。\n\n" + text;

@@ -1,6 +1,7 @@
 #include <android/log.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <dlfcn.h>
 #include <cstring>
@@ -23,6 +24,16 @@ llama_model * g_model = nullptr;
 llama_context * g_ctx = nullptr;
 bool g_backend = false;
 
+// Every call shares a long instruction prefix with the one before (voice prompts carry ~150 tokens
+// of rules). The sequence state after that prefix is saved and restored instead of decoding it
+// again. Qwen3.5 is a hybrid recurrent model, so its memory cannot be cut back to a position with
+// seq_rm; a saved state works for both it and Gemma.
+const int32_t MIN_CHECKPOINT_TOKENS = 16;
+std::vector<llama_token> g_last_prompt;
+// The tokens the checkpoint holds. It is restored only when they start the new prompt exactly.
+std::vector<llama_token> g_checkpoint_prompt;
+std::vector<uint8_t> g_checkpoint;
+
 void throw_state(JNIEnv * env, const char * message) {
     jclass clazz = env->FindClass("java/lang/IllegalStateException");
     if (clazz != nullptr) {
@@ -30,7 +41,14 @@ void throw_state(JNIEnv * env, const char * message) {
     }
 }
 
+void clear_checkpoint_locked() {
+    g_last_prompt.clear();
+    g_checkpoint_prompt.clear();
+    std::vector<uint8_t>().swap(g_checkpoint);
+}
+
 void release_locked() {
+    clear_checkpoint_locked();
     if (g_ctx != nullptr) {
         llama_free(g_ctx);
         g_ctx = nullptr;
@@ -116,6 +134,13 @@ int thread_count() {
     return static_cast<int>(cores);
 }
 
+// True when the last "[Q=" in the text is a complete tag such as "[Q=2]".
+bool ends_with_rating(const std::string & text) {
+    size_t open = text.rfind("[Q=");
+    return open != std::string::npos && open + 4 < text.size()
+            && text[open + 3] >= '0' && text[open + 3] <= '9' && text[open + 4] == ']';
+}
+
 bool decode_tokens(llama_context * ctx, llama_token * tokens, int32_t count) {
     const int32_t chunk_size = 512;
     int32_t offset = 0;
@@ -167,15 +192,53 @@ std::string generate_locked(const std::string & prompt, int max_tokens) {
     if (limit > n_ctx - n_prompt - 1) {
         limit = n_ctx - n_prompt - 1;
     }
-    if (!decode_tokens(g_ctx, tokens.data(), n_prompt)) {
+    const int64_t start_us = ggml_time_us();
+    // At least the last prompt token is decoded, so there are logits to sample from.
+    int32_t common = 0;
+    const int32_t n_last = static_cast<int32_t>(g_last_prompt.size());
+    while (common < n_last && common < n_prompt - 1 && g_last_prompt[common] == tokens[common]) {
+        common++;
+    }
+    g_last_prompt.assign(tokens.begin(), tokens.begin() + n_prompt);
+    int32_t start = 0;
+    int32_t restored = 0;
+    const int32_t n_checkpoint = static_cast<int32_t>(g_checkpoint_prompt.size());
+    if (n_checkpoint > 0 && n_checkpoint < n_prompt
+            && std::equal(g_checkpoint_prompt.begin(), g_checkpoint_prompt.end(), tokens.begin())) {
+        if (llama_state_seq_set_data(g_ctx, g_checkpoint.data(), g_checkpoint.size(), 0) > 0) {
+            start = n_checkpoint;
+            restored = start;
+        } else if (memory != nullptr) {
+            llama_memory_clear(memory, true);
+        }
+    }
+    if (start == 0 && common >= MIN_CHECKPOINT_TOKENS) {
+        // The old checkpoint does not fit this prompt. Save a new one where it parts from the last prompt.
+        if (!decode_tokens(g_ctx, tokens.data(), common)) {
+            LOGE("prompt decode failed");
+            clear_checkpoint_locked();
+            return std::string();
+        }
+        g_checkpoint.resize(llama_state_seq_get_size(g_ctx, 0));
+        if (llama_state_seq_get_data(g_ctx, g_checkpoint.data(), g_checkpoint.size(), 0) > 0) {
+            g_checkpoint_prompt.assign(tokens.begin(), tokens.begin() + common);
+        } else {
+            g_checkpoint_prompt.clear();
+        }
+        start = common;
+    }
+    if (!decode_tokens(g_ctx, tokens.data() + start, n_prompt - start)) {
         LOGE("prompt decode failed");
+        clear_checkpoint_locked();
         return std::string();
     }
+    const int64_t prompt_us = ggml_time_us();
 
     const int32_t n_vocab = llama_vocab_n_tokens(vocab);
     std::string output;
     output.reserve(static_cast<size_t>(limit) * 4);
-    for (int32_t step = 0; step < limit; step++) {
+    int32_t step = 0;
+    for (; step < limit; step++) {
         const float * logits = llama_get_logits_ith(g_ctx, -1);
         if (logits == nullptr) {
             LOGE("decoder returned no logits");
@@ -200,12 +263,22 @@ std::string generate_locked(const std::string & prompt, int max_tokens) {
         }
         if (piece_len > 0) {
             output.append(piece, static_cast<size_t>(piece_len));
+            // Voice prompts ask for a closing [Q=n] line. Small models keep writing after it
+            // (notes, the prompt again) up to the token limit, so the answer ends at the tag.
+            if (std::memchr(piece, ']', static_cast<size_t>(piece_len)) != nullptr && ends_with_rating(output)) {
+                step++;
+                break;
+            }
         }
         if (llama_decode(g_ctx, llama_batch_get_one(&token, 1)) != 0) {
             LOGE("token decode failed");
             return std::string();
         }
     }
+    const int64_t end_us = ggml_time_us();
+    LOGI("prompt %d tokens (%d cached) %lld ms, output %d tokens %lld ms%s", n_prompt, restored,
+            static_cast<long long>((prompt_us - start_us) / 1000), step,
+            static_cast<long long>((end_us - prompt_us) / 1000), step >= limit ? " (token limit)" : "");
     return output;
 }
 

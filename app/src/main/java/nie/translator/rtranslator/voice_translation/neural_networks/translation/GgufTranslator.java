@@ -87,32 +87,51 @@ public final class GgufTranslator {
      * Prompt lines for a voice clause: the earlier clauses, and with self-rating the
      * transcript warning and the {@code [Q=n]} request. Empty when there is nothing to add,
      * so the text-mode prompts stay unchanged.
+     *
+     * With {@code rulesFirst} the fixed rules come before the earlier clauses, so consecutive
+     * clauses share a long prompt prefix that the native side keeps decoded. Only TranslateGemma
+     * gets that order: Qwen3.5 0.8B and Index-Translate then copy the earlier clauses into the answer.
      */
-    static String voiceNotes(@Nullable TranslationContext context) {
+    static String voiceNotes(@Nullable TranslationContext context, boolean rulesFirst) {
         if (context == null) {
             return "";
         }
-        StringBuilder notes = new StringBuilder();
-        if (!context.lines.isEmpty()) {
-            notes.append("Earlier sentences of the same speech, for reference only. Do not translate them:\n");
-            for (TranslationContext.Line line : context.lines) {
-                notes.append("- ").append(line.text);
-                if (line.doubtful) {
-                    notes.append(" (may contain speech recognition errors)");
-                }
-                notes.append('\n');
-            }
-        }
+        StringBuilder rules = new StringBuilder();
         if (context.selfRating) {
-            notes.append("The text is an automatic speech transcript and may contain recognition errors. ")
+            rules.append("The text is an automatic speech transcript and may contain recognition errors. ")
                     .append("If a word is clearly misheard, translate the most likely intended word, but do not add content.\n");
-            if (context.asrLevel != ClauseConfidence.UNKNOWN) {
-                notes.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
+            if (!rulesFirst && context.asrLevel != ClauseConfidence.UNKNOWN) {
+                rules.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
             }
-            notes.append("After the translation, write one last line with only [Q=3] if the transcript reads naturally and the translation is reliable, ")
+            rules.append("After the translation, write one last line with only [Q=3] if the transcript reads naturally and the translation is reliable, ")
                     .append("[Q=2] if some words may be misheard, or [Q=1] if the transcript looks garbled.\n");
+            if (rulesFirst && context.asrLevel != ClauseConfidence.UNKNOWN) {
+                rules.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
+            }
         }
-        return notes.toString();
+        StringBuilder lines = new StringBuilder();
+        if (!context.lines.isEmpty()) {
+            lines.append("Earlier sentences of the same speech, for reference only. Do not translate them:\n");
+            for (TranslationContext.Line line : context.lines) {
+                lines.append("- ").append(line.text);
+                if (line.doubtful) {
+                    lines.append(" (may contain speech recognition errors)");
+                }
+                lines.append('\n');
+            }
+        }
+        return rulesFirst ? rules.toString() + lines : lines.toString() + rules;
+    }
+
+    /**
+     * Output budget for a voice clause, which is one short sentence. A model that keeps writing
+     * after its answer stops here instead of at the text-mode limit.
+     */
+    static int voiceTokenLimit(String text, @Nullable TranslationContext context, int limit) {
+        if (context == null) {
+            return limit;
+        }
+        return Math.min(limit, 64 + 3 * text.codePointCount(0, text.length()));
     }
 
     private static String clean(String text) {

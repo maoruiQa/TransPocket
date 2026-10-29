@@ -21,7 +21,7 @@ public final class TranslateGemmaTranslator {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
         String level = global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
-        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(level));
+        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(text, level, context));
         if (Global.GEMMA_THINKING_OFF.equals(level)) {
             return output;
         }
@@ -44,8 +44,8 @@ public final class TranslateGemmaTranslator {
     }
 
     /** Answer room plus a short note. Off uses the answer room only. */
-    private static int maxTokens(String level) {
-        return 384 + thinkBudget(level);
+    private static int maxTokens(String text, String level, @Nullable TranslationContext context) {
+        return GgufTranslator.voiceTokenLimit(text, context, 384) + thinkBudget(level);
     }
 
     private static int thinkBudget(String level) {
@@ -82,7 +82,7 @@ public final class TranslateGemmaTranslator {
                 + "Your goal is to accurately convey the meaning and nuances of the original " + sourceName + " text "
                 + "while adhering to " + targetName + " grammar, vocabulary, and cultural sensitivities.\n"
                 + instruction
-                + GgufTranslator.voiceNotes(context)
+                + GgufTranslator.voiceNotes(context, true)
                 + "Please translate the following " + sourceName + " text into " + targetName + ":\n\n"
                 + text
                 + "<end_of_turn>\n<start_of_turn>model\n";

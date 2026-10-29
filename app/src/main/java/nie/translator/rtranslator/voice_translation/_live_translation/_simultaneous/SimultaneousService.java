@@ -76,7 +76,11 @@ public class SimultaneousService extends VoiceTranslationService {
     private final ArrayDeque<Integer> clauseAudioMs = new ArrayDeque<>();
     private final ArrayDeque<Boolean> clauseUsedVad = new ArrayDeque<>();
     private final Object timingLock = new Object();
-    private boolean translatingClause = false;
+    /**
+     * Written on the main thread, read on the audio thread: a partial recognition started during a
+     * translation would compete with the LLM for the same cores (both spin-wait), so it is skipped.
+     */
+    private volatile boolean translatingClause = false;
     private final ClauseContextWindow contextWindow = new ClauseContextWindow();
     /** Main thread only. The clause that is still being spoken, when streaming recognition is on. */
     private final StreamingClause streaming = new StreamingClause();
@@ -159,7 +163,7 @@ public class SimultaneousService extends VoiceTranslationService {
 
             @Override
             public void onVoicePartial(@NonNull float[] data, int size) {
-                if (!capturingSettled || speechRecognizer == null || !streamingRecognition || sourceLanguage == null) {
+                if (!capturingSettled || speechRecognizer == null || !streamingRecognition || sourceLanguage == null || translatingClause) {
                     return;
                 }
                 String sourceCode = sourceAuto ? AsrLanguages.AUTO : sourceLanguage.getCode();
@@ -544,7 +548,9 @@ public class SimultaneousService extends VoiceTranslationService {
                 return;
             }
         }
-        String piece = streaming.offer(text, streamingTranslation);
+        // Each early piece is a translation call that reads the whole prompt again. While one is
+        // running the stable text keeps growing and is committed as one piece once the translator is free.
+        String piece = streaming.offer(text, streamingTranslation && !translatingClause && pendingClauses.isEmpty());
         if (piece != null) {
             android.util.Log.i("simultaneous", "streaming commit=" + piece);
             PendingClause pending = new PendingClause();
