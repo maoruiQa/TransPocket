@@ -67,6 +67,8 @@ public class Recognizer extends NeuralNetworkApi {
     private ArrayDeque<DataContainer> dataToRecognize = new ArrayDeque<>();
     /** Streaming recognition keeps only the newest partial. Guarded by {@link #lock}. */
     private DataContainer pendingPartial;
+    /** The partial the worker is reading, or null. Guarded by {@link #lock}. */
+    private DataContainer runningPartial;
     private final Object lock = new Object();
     private final Object warmupLock = new Object();
 
@@ -463,8 +465,12 @@ public class Recognizer extends NeuralNetworkApi {
                 boolean start = false;
                 synchronized (lock) {
                     dataToRecognize.addLast(container);
-                    // A partial of this clause is stale once the clause itself is queued.
+                    // A partial of this clause is stale once the clause itself is queued. One that
+                    // is being read would hold up the final result, so it stops at its next step.
                     pendingPartial = null;
+                    if (runningPartial != null) {
+                        runningPartial.stopped = true;
+                    }
                     if (!recognizing) {
                         recognizing = true;
                         start = true;
@@ -487,6 +493,7 @@ public class Recognizer extends NeuralNetworkApi {
                     data = pendingPartial;
                     pendingPartial = null;
                 }
+                runningPartial = data != null && data.partial ? data : null;
                 if (data == null) {
                     recognizing = false;
                     lock.notifyAll();
@@ -511,7 +518,11 @@ public class Recognizer extends NeuralNetworkApi {
         String text;
         String language = data.languageCode;
         if (qwenEngine != null) {
-            Qwen3AsrEngine.Transcript transcript = auto ? qwenEngine.transcribe(data.data) : qwenEngine.transcribe(data.data, data.languageCode);
+            Qwen3AsrEngine.Stop stop = () -> data.stopped;
+            Qwen3AsrEngine.Transcript transcript = auto ? qwenEngine.transcribe(data.data, stop) : qwenEngine.transcribe(data.data, data.languageCode, stop);
+            if (data.stopped) {
+                return;
+            }
             text = transcript.text;
             if (auto) {
                 language = transcript.languageCode;
@@ -1285,6 +1296,8 @@ public class Recognizer extends NeuralNetworkApi {
         private boolean softLanguage;
         private boolean partial;
         private long partialTag;
+        /** Set under {@link #lock} when the finished clause is queued while this partial runs. */
+        private volatile boolean stopped;
 
         private DataContainer(float[] data, int beamSize, String languageCode, boolean softLanguage){
             this.data = data;

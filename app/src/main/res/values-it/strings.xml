@@ -259,7 +259,7 @@
     <string name="preference_description_prev_voice_duration">Seleziona la durata della registrazione precedente a quando si inizia a parlare che verrà inclusa nel riconoscimento vocale</string>
     <string name="preference_description_beam_size">Imposta la beam size dell\'algoritmo di beam search, per migliorare la qualità della traduzione a discapito delle performance (solo per la traduzione testuale)</string>
     <string name="preference_title_gemma_thinking">Ragionamento di TranslateGemma</string>
-    <string name="preference_description_gemma_thinking">Spento per impostazione predefinita. Se lo accendi, TranslateGemma scrive una breve nota prima della traduzione. Gli altri modelli lo ignorano.</string>
+    <string name="preference_description_gemma_thinking">Spento per impostazione predefinita. Se lo accendi, TranslateGemma scrive una breve nota prima della traduzione. Solo nella traduzione di testo: le modalità vocali non aspettano la nota. Gli altri modelli lo ignorano.</string>
     <string name="preference_title_gemma_thinking_level">Livello di ragionamento</string>
     <string name="preference_description_gemma_thinking_level">Quanto può essere lunga la nota. Basso è il più corto. Attuale: %s</string>
     <string name="gemma_thinking_low">Basso</string>

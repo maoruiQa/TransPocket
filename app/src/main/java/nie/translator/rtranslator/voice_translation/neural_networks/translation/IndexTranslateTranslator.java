@@ -17,30 +17,38 @@ public final class IndexTranslateTranslator {
     private IndexTranslateTranslator() {
     }
 
-    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
+    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context, @Nullable GgufTranslator.PartialListener partial) {
         File model = global.getGgufModelFile(Translator.INDEX_TRANSLATE);
         if (!model.isFile()) {
             throw new IllegalStateException("Index-Translate file is missing");
         }
-        return GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, context), GgufTranslator.voiceTokenLimit(text, context, 512), context);
+        String[] prompt = context == null ? new String[]{instruction(inputLanguage, outputLanguage) + text + ANSWER_OPEN} : voicePrompt(text, inputLanguage, outputLanguage, context);
+        return GgufTranslator.generate(model.getAbsolutePath(), prompt, GgufTranslator.voiceTokenLimit(text, context, 512), false, context, partial);
     }
 
-    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
-        String source = chineseName(inputLanguage);
-        String target = chineseName(outputLanguage);
-        String notes = GgufTranslator.voiceNotes(context, false);
-        String body;
-        if (notes.isEmpty()) {
-            body = "请将以下" + source + "文本翻译为" + target + "，直接输出翻译结果，不要进行任何解释。\n\n" + text;
-        } else {
-            boolean rated = context.selfRating;
-            body = "请将以下" + source + "文本翻译成" + target + "，并且严格遵循所有约束要求。\n"
-                    + "【源文】\n" + text + "\n"
-                    + "【约束要求】\n"
-                    + "1. 【注意】" + notes.trim() + "\n"
-                    + (rated ? "只输出译文和最后一行评分，不要有任何额外说明。" : "只输出译文，不要有任何额外说明。");
+    /** Decodes the fixed start of the voice clause prompts for this pair ahead of the first clause. */
+    public static void prepareVoice(Global global, CustomLocale inputLanguage, CustomLocale outputLanguage, TranslationContext context) {
+        File model = global.getGgufModelFile(Translator.INDEX_TRANSLATE);
+        if (model.isFile()) {
+            GgufTranslator.prefill(model.getAbsolutePath(), voicePrompt("", inputLanguage, outputLanguage, context)[0]);
         }
-        return "<|im_start|>user\n" + body + "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+    }
+
+    private static final String ANSWER_OPEN = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+
+    /** The model card's plain instruction, the one the model follows best. */
+    private static String instruction(CustomLocale inputLanguage, CustomLocale outputLanguage) {
+        return "<|im_start|>user\n请将以下" + chineseName(inputLanguage) + "文本翻译为" + chineseName(outputLanguage) + "，直接输出翻译结果，不要进行任何解释。\n\n";
+    }
+
+    /**
+     * Every clause is a turn with the plain instruction. The constraint block of the model card
+     * (earlier clauses, a rating request) sat after the text, was decoded again for each clause,
+     * and short clauses got the whole block copied into the answer.
+     */
+    private static String[] voicePrompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, TranslationContext context) {
+        String open = instruction(inputLanguage, outputLanguage);
+        return GgufTranslator.conversation(open, open, ANSWER_OPEN, "<|im_end|>\n", context, text);
     }
 
     private static String chineseName(CustomLocale locale) {

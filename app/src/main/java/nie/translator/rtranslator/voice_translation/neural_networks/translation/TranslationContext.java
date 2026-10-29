@@ -15,12 +15,23 @@ import nie.translator.rtranslator.tools.ClauseConfidence;
 public class TranslationContext {
     public static class Line {
         public final String text;
-        /** Probably one misheard word. The prompt says so instead of dropping it. */
+        /** Probably one misheard word. */
         public final boolean doubtful;
+        /**
+         * The GGUF model's raw answer to this clause, or null. The next prompt repeats it as
+         * written, so its tokens still match what the native side kept decoded.
+         */
+        @Nullable
+        public final String answer;
 
         public Line(String text, boolean doubtful) {
+            this(text, doubtful, null);
+        }
+
+        public Line(String text, boolean doubtful, @Nullable String answer) {
             this.text = text;
             this.doubtful = doubtful;
+            this.answer = answer;
         }
     }
 
@@ -32,7 +43,7 @@ public class TranslationContext {
     /** Trusted clauses in order, for the HY-MT context template. */
     @Nullable
     public final String joinedSource;
-    /** Trusted and doubtful clauses in order, for the GGUF prompts. */
+    /** Earlier clauses in order with their answers, for the GGUF prompts. */
     public final List<Line> lines;
     /** One of the {@link ClauseConfidence} grades. */
     public final int asrLevel;
@@ -40,6 +51,9 @@ public class TranslationContext {
     public final boolean selfRating;
     /** Set by {@link GgufTranslator#cancel}; the call stops and its clause is translated again whole. */
     public volatile boolean cancelled;
+    /** Set by a GGUF call to its raw answer, rating included, for {@link Line#answer}. */
+    @Nullable
+    public volatile String answer;
 
     public TranslationContext(@Nullable String lastSource, @Nullable String lastTranslation, @Nullable String joinedSource, @Nullable List<Line> lines, int asrLevel, boolean selfRating) {
         this.lastSource = lastSource;

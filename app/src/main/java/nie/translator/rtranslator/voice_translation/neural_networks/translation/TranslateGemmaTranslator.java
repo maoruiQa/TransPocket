@@ -15,17 +15,27 @@ public final class TranslateGemmaTranslator {
     private TranslateGemmaTranslator() {
     }
 
-    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context) {
+    public static String translate(Global global, String text, CustomLocale inputLanguage, CustomLocale outputLanguage, @Nullable TranslationContext context, @Nullable GgufTranslator.PartialListener partial) {
         File model = global.getGgufModelFile(Translator.TRANSLATEGEMMA);
         if (!model.isFile()) {
             throw new IllegalStateException("TranslateGemma file is missing");
         }
-        String level = global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
-        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt(text, inputLanguage, outputLanguage, level, context), maxTokens(text, level, context), context);
+        // A voice sentence is waited for; a note would add up to ~200 output tokens to each one.
+        String level = context == null && global.isGemmaThinkingEnabled() ? global.getGemmaThinkingLevel() : Global.GEMMA_THINKING_OFF;
+        String[] prompt = context == null ? new String[]{prompt(text, inputLanguage, outputLanguage, level)} : voicePrompt(text, inputLanguage, outputLanguage, context);
+        String output = GgufTranslator.generate(model.getAbsolutePath(), prompt, maxTokens(text, level, context), context != null && context.selfRating, context, partial);
         if (Global.GEMMA_THINKING_OFF.equals(level)) {
             return output;
         }
         return withoutNote(output);
+    }
+
+    /** Decodes the fixed start of the voice clause prompts for this pair ahead of the first clause. */
+    public static void prepareVoice(Global global, CustomLocale inputLanguage, CustomLocale outputLanguage, TranslationContext context) {
+        File model = global.getGgufModelFile(Translator.TRANSLATEGEMMA);
+        if (model.isFile()) {
+            GgufTranslator.prefill(model.getAbsolutePath(), voicePrompt("", inputLanguage, outputLanguage, context)[0]);
+        }
     }
 
     /**
@@ -61,7 +71,7 @@ public final class TranslateGemmaTranslator {
         return 0;
     }
 
-    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, String level, @Nullable TranslationContext context) {
+    private static String prompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, String level) {
         String source = GgufTranslator.languageLabel(inputLanguage);
         String target = GgufTranslator.languageLabel(outputLanguage);
         String sourceName = languageName(source);
@@ -74,18 +84,38 @@ public final class TranslateGemmaTranslator {
                     + thinkWords(level) + " words. Then output only the " + targetName
                     + " translation, with no extra commentary. ";
         }
-        if (context != null && context.selfRating) {
-            instruction += "Then add the rating line described below. ";
-        }
         return "<bos><start_of_turn>user\n"
                 + "You are a professional " + source + " to " + target + " translator. "
                 + "Your goal is to accurately convey the meaning and nuances of the original " + sourceName + " text "
                 + "while adhering to " + targetName + " grammar, vocabulary, and cultural sensitivities.\n"
                 + instruction
-                + GgufTranslator.voiceNotes(context, true)
                 + "Please translate the following " + sourceName + " text into " + targetName + ":\n\n"
                 + text
                 + "<end_of_turn>\n<start_of_turn>model\n";
+    }
+
+    /** The text-mode prompt as the first turn; every later clause is a turn of its own, see {@link GgufTranslator#conversation}. */
+    private static String[] voicePrompt(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, TranslationContext context) {
+        String source = GgufTranslator.languageLabel(inputLanguage);
+        String target = GgufTranslator.languageLabel(outputLanguage);
+        String sourceName = languageName(source);
+        String targetName = languageName(target);
+        StringBuilder instructions = new StringBuilder("<bos><start_of_turn>user\n")
+                .append("You are a professional ").append(source).append(" to ").append(target).append(" translator. ")
+                .append("Your goal is to accurately convey the meaning and nuances of the original ").append(sourceName).append(" text ")
+                .append("while adhering to ").append(targetName).append(" grammar, vocabulary, and cultural sensitivities.\n")
+                .append("Produce only the ").append(targetName).append(" translation, without any additional explanations or commentary. ");
+        if (context.selfRating) {
+            instructions.append("Then add the rating line described below. ")
+                    .append("The text is an automatic speech transcript and may contain recognition errors. ")
+                    .append("If a word is clearly misheard, translate the most likely intended word, but do not add content.\n")
+                    .append("After the translation, write one last line with only [Q=3] if the transcript reads naturally and the translation is reliable, ")
+                    .append("[Q=2] if some words may be misheard, or [Q=1] if the transcript looks garbled.\n");
+        }
+        instructions.append("The speech arrives one part at a time; translate each later message the same way.\n")
+                .append("Please translate the following ").append(sourceName).append(" text into ").append(targetName).append(":\n\n");
+        return GgufTranslator.conversation(instructions.toString(), "<start_of_turn>user\n",
+                "<end_of_turn>\n<start_of_turn>model\n", "<end_of_turn>\n", context, text);
     }
 
     private static int thinkWords(String level) {

@@ -213,9 +213,12 @@ public class Translator extends NeuralNetworkApi {
         return mode == TRANSLATEGEMMA || mode == QWEN35 || mode == INDEX_TRANSLATE;
     }
 
-    /** Only the instruction-following GGUF models can append a {@code [Q=n]} rating; the others are translation-only. */
+    /**
+     * Only TranslateGemma appends a useful {@code [Q=n]} rating. Qwen3.5 0.8B rated almost every
+     * clause 1 and often echoed the request; Index-Translate ignored it or copied it into the answer.
+     */
     public static boolean supportsSelfRating(int performMode) {
-        return isGgufMode(performMode);
+        return performMode == TRANSLATEGEMMA;
     }
 
     /** True when a voice clause runs on a GGUF model, whose call {@link #cancel} can stop. */
@@ -228,14 +231,63 @@ public class Translator extends NeuralNetworkApi {
         GgufTranslator.cancel(context);
     }
 
-    private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode, @Nullable TranslationContext context) {
+    /**
+     * Loads the GGUF model and decodes the fixed start of the voice clause prompts for this pair,
+     * so the first clause waits for neither. Blocks; call it off the main thread. Other engines need nothing.
+     */
+    public void prepareVoiceClauses(CustomLocale inputLanguage, CustomLocale outputLanguage, boolean selfRating) {
+        if (!canCancelVoiceClause()) {
+            return;
+        }
+        TranslationContext context = TranslationContext.withoutHistory(ClauseConfidence.UNKNOWN, selfRating);
+        long start = System.currentTimeMillis();
+        try {
+            if (mode == QWEN35) {
+                Qwen35Translator.prepareVoice(global, inputLanguage, outputLanguage, context);
+            } else if (mode == INDEX_TRANSLATE) {
+                IndexTranslateTranslator.prepareVoice(global, inputLanguage, outputLanguage, context);
+            } else {
+                TranslateGemmaTranslator.prepareVoice(global, inputLanguage, outputLanguage, context);
+            }
+            android.util.Log.i("performance", "GGUF voice prompt prepared in " + (System.currentTimeMillis() - start) + "ms");
+        } catch (RuntimeException error) {
+            // The first clause loads the model itself and reports any error.
+            android.util.Log.w("translation_error", "GGUF voice prompt not prepared", error);
+        }
+    }
+
+    private String translateWithGguf(String text, CustomLocale inputLanguage, CustomLocale outputLanguage, int performMode, @Nullable TranslationContext context, @Nullable GgufTranslator.PartialListener partial) {
         if (performMode == QWEN35) {
-            return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage, context);
+            return Qwen35Translator.translate(global, text, inputLanguage, outputLanguage, context, partial);
         }
         if (performMode == INDEX_TRANSLATE) {
-            return IndexTranslateTranslator.translate(global, text, inputLanguage, outputLanguage, context);
+            return IndexTranslateTranslator.translate(global, text, inputLanguage, outputLanguage, context, partial);
         }
-        return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage, context);
+        return TranslateGemmaTranslator.translate(global, text, inputLanguage, outputLanguage, context, partial);
+    }
+
+    /**
+     * Sends the answer to the listener while the model writes it, as non-final results with the
+     * final result's id, so the subtitle and TTS can start before the last token. Null without a listener.
+     */
+    @Nullable
+    private GgufTranslator.PartialListener partialResults(final String textToTranslate, final long resultID, final CustomLocale inputLanguage, final CustomLocale outputLanguage, @Nullable final TranslateListener responseListener) {
+        if (responseListener == null) {
+            return null;
+        }
+        return new GgufTranslator.PartialListener() {
+            private String posted = "";
+
+            @Override
+            public void onPartial(String answer) {
+                final String shown = GgufTranslator.partialText(answer);
+                if (shown.isEmpty() || shown.equals(posted)) {
+                    return;
+                }
+                posted = shown;
+                mainHandler.post(() -> responseListener.onTranslatedText(textToTranslate, shown, null, resultID, false, TranslateListener.ResultType.NORMAL, inputLanguage, outputLanguage));
+            }
+        };
     }
 
     private void onnxTranslationModelInitialization() throws OrtException, IOException {
@@ -788,10 +840,10 @@ public class Translator extends NeuralNetworkApi {
 
             if (isGgufMode(performMode)) {
                 try {
-                    String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context);
+                    final long resultID = incrementCurrentResultID();
+                    String translated = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context, partialResults(textToTranslate, resultID, inputLanguage, outputLanguage, responseListener));
                     final int rating = context != null && context.selfRating ? ClauseConfidence.modelRating(translated) : ClauseConfidence.UNKNOWN;
                     final String resultText = context != null && context.selfRating ? ClauseConfidence.withoutModelRating(translated) : translated;
-                    final long resultID = incrementCurrentResultID();
                     if (saveResults) {
                         lastOutputText = new GuiMessage(new Message(global, resultText), inputLanguage, outputLanguage, resultID, false, true);
                     }
@@ -973,7 +1025,7 @@ public class Translator extends NeuralNetworkApi {
         int rating = ClauseConfidence.UNKNOWN;
         if (isGgufMode(performMode)) {
             // The GGUF prompts carry the earlier clauses themselves, so there is nothing to strip.
-            finalResult = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context);
+            finalResult = translateWithGguf(textToTranslate, inputLanguage, outputLanguage, performMode, context, partialResults(textToTranslate, currentResultID, inputLanguage, outputLanguage, responseListener));
             if (context != null && context.selfRating) {
                 rating = ClauseConfidence.modelRating(finalResult);
                 finalResult = ClauseConfidence.withoutModelRating(finalResult);

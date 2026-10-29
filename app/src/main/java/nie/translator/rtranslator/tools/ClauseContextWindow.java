@@ -17,16 +17,28 @@ public final class ClauseContextWindow {
     public static final int MAX_CHARS = 200;
     /** After a longer pause the talk has probably moved on. */
     public static final long MAX_GAP_MS = 15000;
+    /**
+     * {@link #history} only grows until it passes one of these, then drops all but the newest
+     * {@link #KEEP_HISTORY_CLAUSES} at once. A window that slid by one clause would change the
+     * start of every GGUF prompt, and the model would decode all of it again for each clause.
+     */
+    public static final int MAX_HISTORY_CLAUSES = 8;
+    /** Source and translation characters together; about 500 prompt tokens. */
+    public static final int MAX_HISTORY_CHARS = 1000;
+    public static final int KEEP_HISTORY_CLAUSES = 2;
 
     public static final class Entry {
         public final String source;
         public final String translation;
+        /** The GGUF model's raw answer, rating included, or null for other engines. */
+        public final String answer;
         public final int level;
         public final long endedAt;
 
-        Entry(String source, String translation, int level, long endedAt) {
+        Entry(String source, String translation, String answer, int level, long endedAt) {
             this.source = source;
             this.translation = translation;
+            this.answer = answer;
             this.level = level;
             this.endedAt = endedAt;
         }
@@ -38,21 +50,62 @@ public final class ClauseContextWindow {
     }
 
     private final ArrayDeque<Entry> entries = new ArrayDeque<>();
+    /** The oldest entry of {@link #history}, or null when it is empty. */
+    private Entry historyStart;
+
+    public void add(String source, String translation, int level, long now) {
+        add(source, translation, null, level, now);
+    }
 
     /** LOW clauses are dropped. UNKNOWN (grading off) counts as trusted. */
-    public void add(String source, String translation, int level, long now) {
+    public void add(String source, String translation, String answer, int level, long now) {
         expire(now);
         if (level == ClauseConfidence.LOW || source == null || source.trim().isEmpty()) {
             return;
         }
-        entries.addLast(new Entry(source.trim(), translation == null ? "" : translation.trim(), level, now));
-        while (entries.size() > MAX_CLAUSES) {
+        Entry entry = new Entry(source.trim(), translation == null ? "" : translation.trim(), answer, level, now);
+        entries.addLast(entry);
+        if (historyStart == null) {
+            historyStart = entry;
+        }
+        List<Entry> history = history();
+        int chars = 0;
+        for (Entry item : history) {
+            chars += item.source.length() + item.translation.length();
+        }
+        if (history.size() > MAX_HISTORY_CLAUSES || chars > MAX_HISTORY_CHARS) {
+            historyStart = history.get(Math.max(0, history.size() - KEEP_HISTORY_CLAUSES));
+        }
+        // Entries older than the history are kept only as far as lines() and trusted() reach.
+        while (entries.size() > MAX_CLAUSES && entries.peekFirst() != historyStart) {
             entries.removeFirst();
         }
     }
 
     public void clear() {
         entries.clear();
+        historyStart = null;
+    }
+
+    /**
+     * Trusted and doubtful clauses, oldest first, for prompts that the GGUF runtime keeps decoded.
+     * Between cut-backs each call returns the previous list plus the newest clause.
+     */
+    public List<Entry> history(long now) {
+        expire(now);
+        return history();
+    }
+
+    private List<Entry> history() {
+        ArrayList<Entry> history = new ArrayList<>();
+        boolean started = false;
+        for (Entry entry : entries) {
+            started |= entry == historyStart;
+            if (started) {
+                history.add(entry);
+            }
+        }
+        return history;
     }
 
     /** Trusted and doubtful clauses, oldest first, within the character budget. */
@@ -76,7 +129,9 @@ public final class ClauseContextWindow {
         ArrayList<Entry> selected = new ArrayList<>();
         int chars = 0;
         Iterator<Entry> newestFirst = entries.descendingIterator();
-        while (newestFirst.hasNext()) {
+        // Only the newest MAX_CLAUSES entries; the older ones are kept for history().
+        int seen = 0;
+        while (newestFirst.hasNext() && seen++ < MAX_CLAUSES) {
             Entry entry = newestFirst.next();
             if (entry.isDoubtful() && !withDoubtful) {
                 continue;
@@ -94,7 +149,7 @@ public final class ClauseContextWindow {
     private void expire(long now) {
         Entry newest = entries.peekLast();
         if (newest != null && now - newest.endedAt > MAX_GAP_MS) {
-            entries.clear();
+            clear();
         }
     }
 }

@@ -243,7 +243,7 @@
     <string name="preference_description_prev_voice_duration">Виберіть тривалість запису, перед тим як ви почнете говорити, який буде включено до розпізнавання голосу</string>
     <string name="preference_description_beam_size">Встановіть розмір променя алгоритму пошуку променя, щоб покращити якість перекладу за рахунок швидкості (лише для перекладу тексту)</string>
     <string name="preference_title_gemma_thinking">Міркування TranslateGemma</string>
-    <string name="preference_description_gemma_thinking">За замовчуванням вимкнено. Якщо увімкнути, TranslateGemma напише коротку нотатку перед перекладом. Інші моделі це ігнорують.</string>
+    <string name="preference_description_gemma_thinking">За замовчуванням вимкнено. Якщо увімкнути, TranslateGemma напише коротку нотатку перед перекладом. Лише для перекладу тексту: голосові режими не чекають на нотатку. Інші моделі це ігнорують.</string>
     <string name="preference_title_gemma_thinking_level">Рівень міркування</string>
     <string name="preference_description_gemma_thinking_level">Якою довгою може бути нотатка. Низький — найкоротший. Зараз: %s</string>
     <string name="gemma_thinking_low">Низький</string>

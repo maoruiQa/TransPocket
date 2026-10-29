@@ -107,11 +107,11 @@ public class GgufTranslationTest {
         long start = System.currentTimeMillis();
         String result;
         if (mode == Translator.QWEN35) {
-            result = Qwen35Translator.translate(global, item[2], source, target, context);
+            result = Qwen35Translator.translate(global, item[2], source, target, context, null);
         } else if (mode == Translator.INDEX_TRANSLATE) {
-            result = IndexTranslateTranslator.translate(global, item[2], source, target, context);
+            result = IndexTranslateTranslator.translate(global, item[2], source, target, context, null);
         } else {
-            result = TranslateGemmaTranslator.translate(global, item[2], source, target, context);
+            result = TranslateGemmaTranslator.translate(global, item[2], source, target, context, null);
         }
         Log.i(TAG, global.getGgufModelFile(mode).getName() + (context != null ? " voice " : " ") + item[0] + "->" + item[1] + " "
                 + (System.currentTimeMillis() - start) + " ms: " + item[2] + " => " + result);

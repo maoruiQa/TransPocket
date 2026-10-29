@@ -80,6 +80,52 @@ public class ClauseContextWindowTest {
     }
 
     @Test
+    public void historyOnlyGrowsUntilItIsCutBack() {
+        ClauseContextWindow window = new ClauseContextWindow();
+        for (int i = 0; i < ClauseContextWindow.MAX_HISTORY_CLAUSES; i++) {
+            window.add("s" + i, "t" + i, "a" + i, ClauseConfidence.HIGH, i * 1000L);
+            List<ClauseContextWindow.Entry> history = window.history(i * 1000L);
+            assertEquals(i + 1, history.size());
+            assertEquals("s0", history.get(0).source);
+            assertEquals("a" + i, history.get(i).answer);
+        }
+        long now = ClauseContextWindow.MAX_HISTORY_CLAUSES * 1000L;
+        window.add("last", "ultimo", "answer", ClauseConfidence.HIGH, now);
+        List<ClauseContextWindow.Entry> history = window.history(now);
+        assertEquals(ClauseContextWindow.KEEP_HISTORY_CLAUSES, history.size());
+        assertEquals("last", history.get(history.size() - 1).source);
+        assertEquals(ClauseContextWindow.MAX_CLAUSES, window.trusted(now).size());
+    }
+
+    @Test
+    public void historyCharacterBudgetCutsBack() {
+        ClauseContextWindow window = new ClauseContextWindow();
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < ClauseContextWindow.MAX_HISTORY_CHARS / 3; i++) {
+            text.append('a');
+        }
+        for (int i = 0; i < 4; i++) {
+            window.add(text.toString() + i, "", ClauseConfidence.HIGH, i * 1000L);
+        }
+        List<ClauseContextWindow.Entry> history = window.history(4000);
+        assertEquals(ClauseContextWindow.KEEP_HISTORY_CLAUSES, history.size());
+        assertTrue(history.get(1).source.endsWith("3"));
+    }
+
+    @Test
+    public void historyKeepsDoubtfulAndDropsLow() {
+        ClauseContextWindow window = new ClauseContextWindow();
+        window.add("first", "primo", ClauseConfidence.HIGH, 0);
+        window.add("doubtful", "dubbio", ClauseConfidence.MEDIUM, 1000);
+        window.add("garbled", "x", ClauseConfidence.LOW, 2000);
+        assertEquals(2, window.history(3000).size());
+        window.clear();
+        assertTrue(window.history(3000).isEmpty());
+        window.add("again", "ancora", ClauseConfidence.HIGH, 4000);
+        assertEquals("again", window.history(4000).get(0).source);
+    }
+
+    @Test
     public void oversizedNewestClauseIsStillKept() {
         ClauseContextWindow window = new ClauseContextWindow();
         StringBuilder longText = new StringBuilder();

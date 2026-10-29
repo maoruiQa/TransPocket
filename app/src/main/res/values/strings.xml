@@ -334,7 +334,7 @@
     <string name="preference_description_prev_voice_duration">Select the length of the recording before you start speaking that will be included in the voice recognition</string>
     <string name="preference_description_beam_size">Set the beam size of the beam search algorithm, to improve translation quality at the expense of speed (only for text translation)</string>
     <string name="preference_title_gemma_thinking">TranslateGemma thinking</string>
-    <string name="preference_description_gemma_thinking">Off by default. Turn it on to let TranslateGemma write a short note before the translation. Other models ignore this.</string>
+    <string name="preference_description_gemma_thinking">Off by default. Turn it on to let TranslateGemma write a short note before the translation. Text translation only: voice modes never wait for the note. Other models ignore this.</string>
     <string name="preference_title_gemma_thinking_level">Reasoning level</string>
     <string name="preference_description_gemma_thinking_level">How long that note may be. Low is the shortest. Current: %s</string>
     <string name="gemma_thinking_low">Low</string>

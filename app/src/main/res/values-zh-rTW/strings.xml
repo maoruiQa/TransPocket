@@ -298,7 +298,7 @@
     <string name="preference_description_prev_voice_duration">選擇開始說話前的錄音長度，將包括在語音辨識中</string>
     <string name="preference_description_beam_size">設定波束搜尋演算法的波束大小，以犧牲速度為代價來提高翻譯品質（僅適用於文字翻譯）</string>
     <string name="preference_title_gemma_thinking">TranslateGemma 思考模式</string>
-    <string name="preference_description_gemma_thinking">預設關閉。開啟後，TranslateGemma 會先寫一段簡短推理，再給出譯文。其他模型不受影響。</string>
+    <string name="preference_description_gemma_thinking">預設關閉。開啟後，TranslateGemma 會先寫一段簡短推理，再給出譯文。僅用於文字翻譯，語音模式不會等待推理。其他模型不受影響。</string>
     <string name="preference_title_gemma_thinking_level">推理擋位</string>
     <string name="preference_description_gemma_thinking_level">控制這段推理的長短。低擋最短。目前：%s</string>
     <string name="gemma_thinking_low">低</string>

@@ -27,6 +27,8 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import nie.translator.rtranslator.Global;
@@ -322,6 +324,7 @@ public class SimultaneousService extends VoiceTranslationService {
                 if (generation != prepareGeneration) {
                     return;
                 }
+                prepareTranslator();
                 if (!opening) {
                     languagesReady = true;
                     return;
@@ -349,6 +352,21 @@ public class SimultaneousService extends VoiceTranslationService {
                 notifyError(reasons, value);
             }
         });
+    }
+
+    /**
+     * Loads the GGUF model and decodes its voice instructions while capture starts. Otherwise the
+     * first clause waits for both, several seconds for a large model. Capture does not wait for it.
+     */
+    private void prepareTranslator() {
+        final Translator preparing = translator;
+        final CustomLocale source = sourceLanguage;
+        final CustomLocale target = targetLanguage;
+        final boolean assess = global.isTranslationAssessment();
+        if (preparing == null || source == null || target == null) {
+            return;
+        }
+        new Thread(() -> preparing.prepareVoiceClauses(source, target, assess), "gguf-prepare").start();
     }
 
     /**
@@ -635,13 +653,15 @@ public class SimultaneousService extends VoiceTranslationService {
     }
 
     /**
-     * Runs when a clause closes. An early piece of it that is still translating would hold the
-     * only LLM while the final recognition competes with it for the cores, and the rest of the
-     * clause would then wait for it. It is stopped and the whole clause is translated in one call.
+     * Runs when a clause closes. An early piece of it that has not shown any text yet would hold
+     * the only LLM while the final recognition competes with it for the cores. It is stopped and
+     * the whole clause is translated in one call. A piece that already shows text is left to
+     * finish: the rest of the clause then extends the same cached conversation, which costs less
+     * than translating the whole clause again, and the shown text stays.
      */
     private void abortEarlyPiece() {
         PendingClause clause = inFlight;
-        if (clause == null || !clause.early || clause.cancelled || translator == null || !translator.canCancelVoiceClause()) {
+        if (clause == null || !clause.early || clause.cancelled || clause.sawTranslation || translator == null || !translator.canCancelVoiceClause()) {
             return;
         }
         android.util.Log.i("simultaneous", "streaming abort=" + clause.text);
@@ -753,18 +773,21 @@ public class SimultaneousService extends VoiceTranslationService {
             return TranslationContext.withoutHistory(clause.asrLevel, assess);
         }
         long now = SystemClock.elapsedRealtime();
+        ClauseContextWindow.Entry last = contextWindow.lastTrusted(now);
         StringBuilder joined = new StringBuilder();
-        for (ClauseContextWindow.Entry entry : contextWindow.trusted(now)) {
+        // Without grading the other engines get only the previous clause, as before the window kept more.
+        List<ClauseContextWindow.Entry> trusted = assess ? contextWindow.trusted(now)
+                : last == null ? Collections.<ClauseContextWindow.Entry>emptyList() : Collections.singletonList(last);
+        for (ClauseContextWindow.Entry entry : trusted) {
             if (joined.length() > 0) {
                 joined.append('\n');
             }
             joined.append(entry.source);
         }
         ArrayList<TranslationContext.Line> lines = new ArrayList<>();
-        for (ClauseContextWindow.Entry entry : contextWindow.lines(now)) {
-            lines.add(new TranslationContext.Line(entry.source, entry.isDoubtful()));
+        for (ClauseContextWindow.Entry entry : contextWindow.history(now)) {
+            lines.add(new TranslationContext.Line(entry.source, entry.isDoubtful(), entry.answer));
         }
-        ClauseContextWindow.Entry last = contextWindow.lastTrusted(now);
         android.util.Log.i("simultaneous", "context trusted=" + (joined.length() == 0 ? "-" : joined.toString().replace('\n', '|')) + " lines=" + lines.size());
         return new TranslationContext(last == null ? null : last.source, last == null ? null : last.translation, joined.length() == 0 ? null : joined.toString(), lines, clause.asrLevel, assess);
     }
@@ -775,14 +798,13 @@ public class SimultaneousService extends VoiceTranslationService {
      */
     private void rememberClause(PendingClause clause, String translation, boolean assess) {
         long now = SystemClock.elapsedRealtime();
+        String answer = clause.context != null ? clause.context.answer : null;
         if (!assess) {
-            // Without grading only the previous clause is context, as before.
-            contextWindow.clear();
-            contextWindow.add(clause.text, translation, ClauseConfidence.UNKNOWN, now);
+            contextWindow.add(clause.text, translation, answer, ClauseConfidence.UNKNOWN, now);
             return;
         }
         int contextLevel = ClauseConfidence.lowest(clause.confidence, ClauseConfidence.fragmentLevel(clause.text));
-        contextWindow.add(clause.text, translation, contextLevel, now);
+        contextWindow.add(clause.text, translation, answer, contextLevel, now);
         android.util.Log.i("simultaneous", "graded asr=" + ClauseConfidence.name(clause.asrLevel) + " model=" + ClauseConfidence.name(clause.modelRating)
                 + " shown=" + ClauseConfidence.name(clause.confidence) + " context=" + ClauseConfidence.name(contextLevel) + " text=" + clause.text);
     }

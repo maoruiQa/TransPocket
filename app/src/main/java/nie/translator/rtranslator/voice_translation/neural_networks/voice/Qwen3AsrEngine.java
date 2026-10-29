@@ -121,8 +121,21 @@ public class Qwen3AsrEngine {
         closeSession(decoderStep);
     }
 
+    /** Asked between decoder steps; once it returns true the call ends early with what it has. */
+    public interface Stop {
+        boolean requested();
+    }
+
     public Transcript transcribe(float[] samples) throws OrtException, IOException {
-        return transcribe(samples, Integer.MAX_VALUE, null, null);
+        return transcribe(samples, (Stop) null);
+    }
+
+    public Transcript transcribe(float[] samples, Stop stop) throws OrtException, IOException {
+        return transcribe(samples, Integer.MAX_VALUE, null, null, stop);
+    }
+
+    public Transcript transcribe(float[] samples, String languageCode) throws OrtException, IOException {
+        return transcribe(samples, languageCode, null);
     }
 
     /**
@@ -131,14 +144,14 @@ public class Qwen3AsrEngine {
      * that prefix back as prompt tokens turns the self-reported language into a
      * condition. Falls back to the free decode when the prefix cannot be encoded.
      */
-    public Transcript transcribe(float[] samples, String languageCode) throws OrtException, IOException {
+    public Transcript transcribe(float[] samples, String languageCode, Stop stop) throws OrtException, IOException {
         String name = AsrLanguages.qwenName(languageCode);
         long[] prefix = name == null ? null : tokenizePrefix("language " + name);
         if (prefix == null) {
             Log.i("asrLanguage", "model=qwen prefixFallback requested=" + languageCode);
-            return transcribe(samples, Integer.MAX_VALUE, null, null);
+            return transcribe(samples, Integer.MAX_VALUE, null, null, stop);
         }
-        return transcribe(samples, Integer.MAX_VALUE, prefix, languageCode);
+        return transcribe(samples, Integer.MAX_VALUE, prefix, languageCode, stop);
     }
 
     /**
@@ -146,10 +159,10 @@ public class Qwen3AsrEngine {
      * enough to stall capture, so it runs before the microphone opens.
      */
     public void warmup() throws OrtException, IOException {
-        transcribe(new float[SAMPLE_RATE], 2, null, null);
+        transcribe(new float[SAMPLE_RATE], 2, null, null, null);
     }
 
-    private Transcript transcribe(float[] samples, int decoderSteps, long[] prefix, String forcedLanguage) throws OrtException, IOException {
+    private Transcript transcribe(float[] samples, int decoderSteps, long[] prefix, String forcedLanguage, Stop stop) throws OrtException, IOException {
         if (samples == null || samples.length < HOP) {
             return new Transcript("", null);
         }
@@ -164,7 +177,7 @@ public class Qwen3AsrEngine {
         TensorCopy features = copy(featuresTensor);
         encOut.close();
         int audioTokens = features.shape.length >= 3 ? (int) features.shape[1] : (features.shape.length == 2 ? (int) features.shape[0] : 0);
-        if (audioTokens <= 0) {
+        if (audioTokens <= 0 || (stop != null && stop.requested())) {
             return new Transcript("", null);
         }
 
@@ -230,6 +243,9 @@ public class Qwen3AsrEngine {
             stopLogProb = Double.NaN;
         }
         for (int step = 1; step < stepLimit && !eos; step++) {
+            if (stop != null && stop.requested()) {
+                break;
+            }
             float[] embed = lookupEmbed(token);
             OnnxTensor embedTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(embed), new long[]{1, 1, hiddenSize});
             OnnxTensor stepPos = OnnxTensor.createTensor(env, LongBuffer.wrap(new long[]{position}), new long[]{1, 1});
@@ -720,9 +736,15 @@ public class Qwen3AsrEngine {
                 max = logits[offset + i];
             }
         }
+        // Runs once per decoded token on the path to the transcript. exp() of all ~150k logits took
+        // milliseconds per token; the ones far below the maximum add less than e^-30 each and are skipped.
         double sum = 0;
+        final float floor = max - 30f;
         for (int i = 0; i < vocab; i++) {
-            sum += Math.exp(logits[offset + i] - max);
+            float value = logits[offset + i];
+            if (value > floor) {
+                sum += Math.exp(value - max);
+            }
         }
         return (logits[offset + (int) token] - max) - Math.log(sum);
     }

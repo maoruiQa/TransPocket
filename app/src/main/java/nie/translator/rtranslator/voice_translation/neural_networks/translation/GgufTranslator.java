@@ -3,6 +3,7 @@ package nie.translator.rtranslator.voice_translation.neural_networks.translation
 import androidx.annotation.Nullable;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Locale;
 
 import nie.translator.rtranslator.tools.ClauseConfidence;
@@ -35,25 +36,36 @@ public final class GgufTranslator {
         }
     }
 
+    /** Gets the answer so far, on the translating thread, after each token that adds text. */
+    public interface PartialListener {
+        void onPartial(String answer);
+    }
+
     public static String generate(String modelPath, String prompt, int maxTokens) {
-        return generate(modelPath, prompt, maxTokens, null);
+        return generate(modelPath, new String[]{prompt}, maxTokens, false, null, null);
+    }
+
+    /** The answer exactly as the model wrote it, for a test that builds the next prompt from it. */
+    public static String generateRaw(String modelPath, String prompt, int maxTokens) {
+        TranslationContext context = TranslationContext.withoutHistory(ClauseConfidence.UNKNOWN, false);
+        generate(modelPath, new String[]{prompt}, maxTokens, false, context, null);
+        return context.answer;
     }
 
     /**
-     * @param context the clause this call translates; {@link #cancel} with the same object stops it
+     * The native side keeps the decoded prompt and answer between calls, so a prompt that repeats
+     * the previous one and its answer only decodes what was added.
+     *
+     * @param segments the prompt in parts, see {@link #conversation}. Each part is tokenized on its own.
+     * @param rating the prompt asks for a closing {@code [Q=n]} line
+     * @param context the clause this call translates; {@link #cancel} with the same object stops it.
+     *                Its {@code answer} is set to the raw answer.
      */
-    public static String generate(String modelPath, String prompt, int maxTokens, @Nullable TranslationContext context) {
+    public static String generate(String modelPath, String[] segments, int maxTokens, boolean rating, @Nullable TranslationContext context, @Nullable PartialListener partial) {
         ensureLibrary();
+        byte[][] utf8 = utf8(segments);
         synchronized (LOCK) {
-            if (!modelPath.equals(loadedPath)) {
-                try {
-                    nativeLoad(modelPath);
-                    loadedPath = modelPath;
-                } catch (RuntimeException error) {
-                    loadedPath = null;
-                    throw error;
-                }
-            }
+            loadLocked(modelPath);
             synchronized (CANCEL_LOCK) {
                 if (context != null && context.cancelled) {
                     throw new Cancelled();
@@ -63,7 +75,7 @@ public final class GgufTranslator {
             }
             byte[] generated;
             try {
-                generated = nativeGenerate(prompt, maxTokens);
+                generated = nativeGenerate(utf8, maxTokens, rating, partial == null ? null : new NativePartial(partial));
             } finally {
                 synchronized (CANCEL_LOCK) {
                     running = null;
@@ -76,12 +88,49 @@ public final class GgufTranslator {
             if (generated == null) {
                 throw new IllegalStateException("GGUF model returned no text");
             }
-            String cleaned = clean(new String(generated, StandardCharsets.UTF_8));
+            String raw = new String(generated, StandardCharsets.UTF_8);
+            if (context != null) {
+                context.answer = raw;
+            }
+            String cleaned = clean(raw);
             if (cleaned.isEmpty()) {
                 throw new IllegalStateException("GGUF model returned no text");
             }
             return cleaned;
         }
+    }
+
+    /**
+     * Loads the model and decodes {@code instructions}, the first part of the prompts that follow,
+     * so the first of them waits for neither. Nothing is generated.
+     */
+    public static void prefill(String modelPath, String instructions) {
+        ensureLibrary();
+        byte[][] utf8 = utf8(new String[]{instructions, ""});
+        synchronized (LOCK) {
+            loadLocked(modelPath);
+            nativeGenerate(utf8, 0, false, null);
+        }
+    }
+
+    private static void loadLocked(String modelPath) {
+        if (!modelPath.equals(loadedPath)) {
+            try {
+                nativeLoad(modelPath);
+                loadedPath = modelPath;
+            } catch (RuntimeException error) {
+                loadedPath = null;
+                throw error;
+            }
+        }
+    }
+
+    private static byte[][] utf8(String[] segments) {
+        byte[][] utf8 = new byte[segments.length][];
+        for (int i = 0; i < segments.length; i++) {
+            utf8[i] = segments[i].getBytes(StandardCharsets.UTF_8);
+        }
+        return utf8;
     }
 
     /**
@@ -136,43 +185,53 @@ public final class GgufTranslator {
     }
 
     /**
-     * Prompt lines for a voice clause: the earlier clauses, and with self-rating the
-     * transcript warning and the {@code [Q=n]} request. Empty when there is nothing to add,
-     * so the text-mode prompts stay unchanged.
+     * A voice clause prompt as a conversation: the fixed instructions, each earlier clause with
+     * the answer the model gave it, then the new clause. The next clause's prompt is this one plus
+     * the answer plus the new clause, so the native side decodes only that. Earlier prompts that
+     * listed the earlier clauses inside the instructions changed near the start with every clause
+     * and were decoded whole each time (~200 tokens); the small models also copied the list into the answer.
      *
-     * With {@code rulesFirst} the fixed rules come before the earlier clauses, so consecutive
-     * clauses share a long prompt prefix that the native side keeps decoded. Only TranslateGemma
-     * gets that order: Qwen3.5 0.8B and Index-Translate then copy the earlier clauses into the answer.
+     * Each part is tokenized on its own, so a part ends where a later prompt may differ. A
+     * recurrent model keeps checkpoints at the end of the first part, the start of the last one
+     * and the end of the prompt.
+     *
+     * @param firstOpen   everything before the first clause's text, including the instructions
+     * @param nextOpen    what starts every later clause
+     * @param answerOpen  what follows a clause's text and starts the answer
+     * @param answerClose what ends an answer
      */
-    static String voiceNotes(@Nullable TranslationContext context, boolean rulesFirst) {
-        if (context == null) {
+    static String[] conversation(String firstOpen, String nextOpen, String answerOpen, String answerClose, @Nullable TranslationContext context, String text) {
+        ArrayList<String> segments = new ArrayList<>();
+        segments.add(firstOpen);
+        boolean first = true;
+        if (context != null) {
+            for (TranslationContext.Line line : context.lines) {
+                if (line.answer == null) {
+                    continue;
+                }
+                segments.add((first ? "" : nextOpen) + line.text.trim() + answerOpen);
+                segments.add(line.answer + answerClose);
+                first = false;
+            }
+        }
+        segments.add((first ? "" : nextOpen) + text.trim() + answerOpen);
+        return segments.toArray(new String[0]);
+    }
+
+    /**
+     * What may be shown of an answer that is still being written: cleaned as the final answer,
+     * without a rating tag or the start of one. Empty while the answer is a note in angle brackets.
+     */
+    public static String partialText(String answer) {
+        String out = clean(answer);
+        if (out.startsWith("<")) {
             return "";
         }
-        StringBuilder rules = new StringBuilder();
-        if (context.selfRating) {
-            rules.append("The text is an automatic speech transcript and may contain recognition errors. ")
-                    .append("If a word is clearly misheard, translate the most likely intended word, but do not add content.\n");
-            if (!rulesFirst && context.asrLevel != ClauseConfidence.UNKNOWN) {
-                rules.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
-            }
-            rules.append("After the translation, write one last line with only [Q=3] if the transcript reads naturally and the translation is reliable, ")
-                    .append("[Q=2] if some words may be misheard, or [Q=1] if the transcript looks garbled.\n");
-            if (rulesFirst && context.asrLevel != ClauseConfidence.UNKNOWN) {
-                rules.append("Speech recognition confidence: ").append(ClauseConfidence.name(context.asrLevel)).append(".\n");
-            }
+        int open = out.lastIndexOf('[');
+        if (open >= 0 && out.indexOf(']', open) < 0) {
+            out = out.substring(0, open);
         }
-        StringBuilder lines = new StringBuilder();
-        if (!context.lines.isEmpty()) {
-            lines.append("Earlier sentences of the same speech, for reference only. Do not translate them:\n");
-            for (TranslationContext.Line line : context.lines) {
-                lines.append("- ").append(line.text);
-                if (line.doubtful) {
-                    lines.append(" (may contain speech recognition errors)");
-                }
-                lines.append('\n');
-            }
-        }
-        return rulesFirst ? rules.toString() + lines : lines.toString() + rules;
+        return ClauseConfidence.withoutModelRating(out);
     }
 
     /**
@@ -222,9 +281,24 @@ public final class GgufTranslator {
         }
     }
 
+    /** Called by the native side, on the translating thread, with the UTF-8 answer so far. */
+    private static final class NativePartial {
+        private final PartialListener listener;
+
+        NativePartial(PartialListener listener) {
+            this.listener = listener;
+        }
+
+        @SuppressWarnings("unused")
+        void onPartial(byte[] answer) {
+            listener.onPartial(new String(answer, StandardCharsets.UTF_8));
+        }
+    }
+
     private static native void nativeLoad(String modelPath);
 
-    private static native byte[] nativeGenerate(String prompt, int maxTokens);
+    /** @param rating the prompt asks for a closing {@code [Q=n]} line */
+    private static native byte[] nativeGenerate(byte[][] segments, int maxTokens, boolean rating, @Nullable NativePartial listener);
 
     private static native void nativeSetCancel(boolean cancel);
 
